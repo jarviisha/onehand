@@ -14,8 +14,8 @@ pub(crate) const NARROWEST: Pixels = crate::shell::boot::open::WINDOW_MIN.width;
 /// A wide screen's width.
 pub(crate) const WIDE: Pixels = px(1920.);
 
-/// A window too short to hold a page of a full list.
-pub(crate) const SHORT_WINDOW_H: Pixels = px(480.);
+/// The least the window may be: too short to hold a page of a full list.
+pub(crate) const SHORT_WINDOW_H: Pixels = crate::shell::boot::open::WINDOW_MIN.height;
 
 /// A name of the length most names are.
 pub(crate) const SHORT: &str = "Notes";
@@ -32,13 +32,23 @@ pub(crate) fn unbroken() -> String {
 
 /// How far two edges may differ and still be the same: layout rounds to the
 /// pixel's fractions.
-const SLACK: f32 = 0.5;
+pub(crate) const SLACK: Pixels = px(0.5);
 
-/// Draw the window at `width`, as tall as a laptop's, and let it settle.
+/// Draw the window at `width`, as tall as it is, and let it settle.
 pub(crate) fn width(cx: &mut VisualTestContext, width: Pixels) {
-    cx.simulate_resize(size(width, px(800.)));
+    let height = cx.update(|window, _| window.viewport_size().height);
+    cx.simulate_resize(size(width, height));
     cx.run_until_parked();
 }
+
+/// How many presses of the zoom's key take a pane from 100% to `factor`,
+/// to the nearest press.
+pub(crate) const fn zoom_steps(factor: f32) -> usize {
+    ((factor - 1.) / crate::zoom::STEP + 0.5) as usize
+}
+
+/// The presses to 150%, the zoom the tests draw a zoomed pane at.
+pub(crate) const TO_150: usize = zoom_steps(1.5);
 
 /// A selector built at run time, as the repeated parts are named.
 pub(crate) fn selector(name: String) -> &'static str {
@@ -54,12 +64,12 @@ pub(crate) fn bounds(cx: &mut VisualTestContext, sel: &'static str) -> Bounds<Pi
 
 /// Whether `a` and `b` are the same length, give or take the rounding.
 pub(crate) fn same(a: Pixels, b: Pixels) -> bool {
-    (f32::from(a) - f32::from(b)).abs() <= SLACK
+    (a - b).abs() <= SLACK
 }
 
 #[track_caller]
 pub(crate) fn assert_inside(part: Bounds<Pixels>, within: Bounds<Pixels>, what: &str) {
-    let slack = px(SLACK);
+    let slack = SLACK;
     assert!(
         part.left() + slack >= within.left()
             && part.top() + slack >= within.top()

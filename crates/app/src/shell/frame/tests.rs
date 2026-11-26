@@ -29,11 +29,11 @@ fn every_menu_item_is_a_command() {
 mod strain {
     use crate::shell::Shell;
     use crate::shell::rig::strain::{
-        NARROWEST, SHORT, WIDE, assert_inside, assert_one_height, bounds, long, same, unbroken,
-        width,
+        NARROWEST, SHORT, SLACK, WIDE, assert_inside, assert_one_height, bounds, long, same,
+        unbroken, width,
     };
     use crate::shell::rig::{folder, shell};
-    use gpui::{Bounds, Entity, Pixels, TestAppContext, VisualTestContext, px};
+    use gpui::{Bounds, Entity, Pixels, TestAppContext, VisualTestContext};
 
     /// The widths the window takes: its least, and a wide screen's.
     const WIDTHS: [Pixels; 2] = [NARROWEST, WIDE];
@@ -211,7 +211,7 @@ mod strain {
             cx.run_until_parked();
             let (field, list) = (bounds(cx, "palette-field"), bounds(cx, "palette-list"));
             assert!(
-                list.top() + px(0.5) >= field.top() + field.size.height
+                list.top() + SLACK >= field.top() + field.size.height
                     || list.bottom() <= field.top(),
                 "at {w:?} the list {list:?} covers its field {field:?}"
             );

@@ -151,11 +151,13 @@ fn a_page_head_with_no_actions_gives_the_title_the_row(cx: &mut TestAppContext) 
     cx.update(gpui_component::init);
     for (width, rem) in DRAWN {
         let [head, title, _] = parts(&unbroken(), 0, width, rem, cx);
-        // The actions' empty box and the gap before it are all that stand
-        // between the title and the head's end.
-        let gap = rems(1.).to_pixels(px(rem));
+        // The gap the head keeps before its actions, as one action shows it:
+        // with none, it and their empty box are all that stand between the
+        // title and the head's end.
+        let [_, one_title, one_actions] = parts(&unbroken(), 1, width, rem, cx);
+        let gap = one_actions.left() - one_title.right();
         assert!(
-            title.right() + gap + px(SLACK) >= head.right(),
+            same(title.right() + gap, head.right()),
             "at {width} rems, {rem} px: {title:?} leaves the head {head:?} unfilled"
         );
     }

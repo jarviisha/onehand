@@ -82,7 +82,7 @@ fn a_task_offers_the_tasks_pages_acts() {
 mod strain {
     use super::super::column::COLUMN_W;
     use crate::shell::rig::strain::{
-        NARROWEST, WIDE, assert_inside, bounds, same, selector, unbroken, width,
+        NARROWEST, TO_150, WIDE, assert_inside, bounds, same, selector, unbroken, width,
     };
     use crate::shell::rig::{board_page, folder, keep_projects, nowhere, shell_on, zoom_pane};
     use gpui::{Entity, Pixels, TestAppContext, VisualTestContext};
@@ -91,9 +91,6 @@ mod strain {
     use onehand_core::workflow::Template;
     use onehand_core::workspace::Workspace;
     use std::time::Duration;
-
-    /// How many steps of the pane's zoom reach 150%.
-    const TO_150: usize = 5;
 
     /// The shipped board workflow, which has more steps than a narrow pane
     /// holds side by side.

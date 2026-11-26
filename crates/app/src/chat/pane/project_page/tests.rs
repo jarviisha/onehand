@@ -4,7 +4,7 @@
 
 use super::HOME_ROWS;
 use crate::shell::rig::strain::{
-    NARROWEST, SHORT, WIDE, assert_inside, assert_one_height, bounds, long, same, selector,
+    NARROWEST, SHORT, TO_150, WIDE, assert_inside, assert_one_height, bounds, long, same, selector,
     unbroken, width,
 };
 use crate::shell::rig::{folder, keep_projects, kept_conversation, nowhere, shell_on, zoom_pane};
@@ -16,9 +16,6 @@ use onehand_core::config::PanelLayout;
 use onehand_core::project::{Project, ProjectId};
 use onehand_core::workspace::Workspace;
 use std::time::Duration;
-
-/// How many steps of the pane's zoom reach 150%.
-const TO_150: usize = 5;
 
 /// A project page of a project holding `titles`' conversations, beside the
 /// narrowest rail, drawn once they are read.

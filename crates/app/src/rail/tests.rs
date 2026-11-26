@@ -741,7 +741,7 @@ fn a_session_in_a_worktree_is_marked_with_its_branch() {
 
 mod strain {
     use crate::shell::rig::strain::{
-        SHORT, assert_inside, assert_one_height, bounds, long, same, selector, unbroken,
+        SHORT, SLACK, assert_inside, assert_one_height, bounds, long, same, selector, unbroken,
     };
     use crate::shell::rig::{folder, git, shell_on};
     use gpui::{Bounds, Pixels, TestAppContext, VisualTestContext};
@@ -831,7 +831,7 @@ mod strain {
                 "row {i}'s actions gave way to its name"
             );
             assert!(
-                named.name.right() <= named.tail.left() + Pixels::from(0.5),
+                named.name.right() <= named.tail.left() + SLACK,
                 "row {i}'s name runs into its tail: {:?} {:?}",
                 named.name,
                 named.tail
