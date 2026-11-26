@@ -110,12 +110,15 @@ A change a person can see ends with a review its author does not write.
 **When.** Every change a person can see, before it is called finished. Skip it for a change to
 words alone, or one no screenshot can show (a key binding, focus order, a refusal's tooltip
 text), and say so in one line in the report and the pull request: *Not pictured: words only*,
-or *Not pictured: nothing a screenshot shows*. A contract-only change takes the contract path
-below and no reviewer.
+or *Not pictured: nothing a screenshot shows*. Where no headless session can run, the pull
+request says *Not pictured: no headless session here*. A contract-only change takes the
+contract path below and no reviewer.
 
 **The author first.** Build the app and drive the changed view with the `drive` skill's
-`matrix`: both palettes, at the narrowest width the view's region allows and a wide one. Where
-the window's minimum is not the region's (a dock), the steps file drags the dock to its minimum.
+`matrix`: both palettes, at the narrowest width the view's region allows and a wide one. The
+scripts cannot drag, so a dock is pictured at the width the window gives it, and at a 720-wide
+window the Workbench no longer stands beside the conversation but takes the pane as a tab: a
+dock's own narrowest width beside the conversation goes under what the reviewer could not see.
 Picture the states the change touches (a long name, an empty list, a hover) with more steps
 files. Read each picture yourself first.
 
@@ -129,7 +132,9 @@ stands alone.
 
 ```text
 You review a UI change you did not write. Intent, in one line: <what the change is for>.
-The diff: <git diff <base>...HEAD -- crates .claude docs DESIGN.md>
+The diff, pasted whole: the output of
+  git diff BASE...HEAD -- crates .claude docs DESIGN.md AGENTS.md CONTEXT.md
+  (BASE the branch's base, main as a rule).
 The pictures, each with its width, palette and state: <path> (<width>, <light|dark>, <state>) …
 The rules the change touches; read each before answering: <the rule by its document and
 section, e.g. DESIGN.md, Colour and state; by its id once rules carry ids> …
@@ -142,10 +147,11 @@ Then anything else a picture shows wrong that no rule above names.
 It is told nothing of the author's own judgment of the work.
 
 **Its findings** are fixed in the change, with the affected pictures taken again and given to the
-same reviewer, or listed in the pull request as open. The pull request says in words what was
-pictured (the view, the widths, the palettes, the states) and what the reviewer found, fixed or
-left open. It gives no path: a picture under `/tmp` means nothing to a later reader. Nothing is
-dropped silently.
+same reviewer, or to a fresh one given the earlier findings where it cannot be continued; at most
+two rounds, after which what is left is listed in the pull request as open. The pull request
+says in words what was pictured (the view, the widths, the palettes, the states) and what the
+reviewer found, fixed or left open. It gives no path: a picture under `/tmp` means nothing to a
+later reader. Nothing is dropped silently.
 
 ## Finishing
 
@@ -169,13 +175,14 @@ Take the path the diff needs; neither path's evidence proves the other complete.
 
 **Implementation changes.**
 
-1. **Answer [checklist.md](checklist.md)**: each item yes, no (its file and line) or n/a (why),
-   after reading the rule the item names. Items 5, 8, 9 and 17, which a picture can show, cite
-   the reviewer's lines (step 3) rather than your own judgment.
-2. **Run the checks**: `cargo test -p onehand --locked`,
+1. **Run the checks**: `cargo test -p onehand --locked`,
    `cargo test -p <crate> --locked` for every other crate touched,
    `make clippy CLIPPY_EXTRA="-- -D warnings"` and `make fmt`. Quote any failure.
-3. **Picture and review**, as *The reviewer* says, or say why it was skipped.
+2. **Picture and review**, as *The reviewer* says, or say why it was skipped.
+3. **Answer [checklist.md](checklist.md)**: each item yes, no (its file and line) or n/a (why),
+   after reading the rule the item names. Items 5, 8 and 9, which a picture can show, cite the
+   reviewer's lines from step 2 rather than your own judgment; item 17 stays the owner's own
+   checks, named.
 4. **Carry the documents** in the same change: what a screen holds or its order to
    `docs/screens.md` (or the feature's own document); a principle, the frame, the transcript or a
    visual rule to `DESIGN.md`, which gets at most one line per new region; a pattern or a
