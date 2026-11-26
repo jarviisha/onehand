@@ -75,7 +75,7 @@ Availability or installation does not authorize a skill's side effects.
 | Tool or workflow | Fit for this repository |
 |---|---|
 | `ui` | Any visible change (tokens, controls, layout, states, keys and words) and, before it is finished, the checklist and the checks. |
-| `drive` | Only when the owner asks to test in the app: it runs onehand in a headless sway session and drives it end to end. Unrelated to a *drive*, the glossary's term. |
+| `drive` | Before a visible change is called finished, to picture the view it changed; or when the owner asks to test in the app. It runs onehand in a headless sway session of its own and drives it end to end. Unrelated to a *drive*, the glossary's term. |
 | Matt Pocock review, debugging, domain modeling | Use for the requested concern; keep the existing glossary and document ownership. Tracker/triage workflows publish to this repository's GitHub issues: a spec gets `ready-for-agent`. A proposal under `docs/proposals/` keeps its own table of which step has a spec. |
 | Matt Pocock `setup-pre-commit`, TypeScript setup | Do not apply npm/Husky/Prettier or TypeScript defaults to this Rust workspace. Use the Makefile and Cargo checks. |
 | `ponytail` | Simplify within the requested behaviour. Preserve the module seams, guards, rendering bounds and deliberate exceptions; fewer files is not a reason to bypass them. |
@@ -220,9 +220,10 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
   module (`foo.rs` + `foo/bar.rs`, or a file beside it in the same directory). Tests move to
   `foo/tests.rs` first. When a change would push a file past the line, split it in the same PR.
   Never split mid-thought just to hit a number.
-- **Don't self-verify UI by launching or screenshotting.** Build, test, stop; the user looks.
-  When the owner asks for it, `/drive` ([.claude/skills/drive/](.claude/skills/drive/)) runs
-  the app in a headless sway session of its own and drives it.
+- **Drive what you changed, never the owner's app.** The agent does not open the owner's app or
+  desktop, and does drive what it changed in the headless session (`/drive`,
+  [.claude/skills/drive/](.claude/skills/drive/)) before it says a visible change is finished;
+  the `ui` skill says how, and who reviews the pictures.
 
 ## Load-bearing specifics
 

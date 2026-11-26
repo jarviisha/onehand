@@ -83,8 +83,11 @@ The full text behind the short forms in `AGENTS.md`, with the reason for each.
   Make the split in the change that would cross the limit, so the next change starts with a
   usable seam. The number is approximate; splitting one coherent operation arbitrarily only
   makes its control flow harder to follow. Source guards do not enforce a line-count limit.
-- **Don't self-verify UI by launching or screenshotting.** Make the change, make sure it builds and
-  tests pass, then stop — the user inspects the result visually.
+- **Drive what you changed, never the owner's app.** Opening the owner's running onehand or
+  desktop could change their data or interrupt their work; the headless session has a data root
+  of its own under `/tmp`, so the agent builds, runs the checks, then drives the changed view
+  there and has the pictures reviewed before it says the change is finished. The owner still
+  looks, for taste.
 
 ## Guard coverage
 

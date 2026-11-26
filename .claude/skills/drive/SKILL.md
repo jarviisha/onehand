@@ -1,15 +1,15 @@
 ---
 name: drive
-description: Launch onehand in a headless sway session and drive it (click, type, screenshot) to verify a change end to end, when the owner asks for it.
-disable-model-invocation: true
+description: Launch onehand in a headless sway session of its own and drive it (click, type, resize, switch palette, screenshot) to picture a visible change before calling it finished, or to test end to end when the owner asks.
 ---
 
 # Drive
 
 Run the real app on a Wayland compositor of its own: one headless output of 1600x1000, a data
 root under `/tmp`, and a pointer and keyboard the agent controls. The person's own onehand and
-desktop are never touched. Use it only when the owner asks you to test in the app. The repository's
-default stays "build, test, stop; the user looks".
+desktop are never touched. Use it to picture the view a visible change touched before calling
+the change finished (the `ui` skill says how, and who reviews the pictures), or when the owner
+asks you to test in the app.
 
 The scripts are in `scripts/` beside this file; run them from anywhere. `DRIVE_ROOT` (default
 `/tmp/onehand-drive`) holds everything: logs, pids, screenshots, the data root and the project.
