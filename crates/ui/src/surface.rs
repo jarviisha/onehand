@@ -60,7 +60,7 @@ pub fn region(cx: &App) -> Div {
 pub fn scrollbar<H: gpui_component::scroll::ScrollbarHandle + Clone>(
     handle: &H,
 ) -> gpui_component::scroll::Scrollbar {
-    weighed(gpui_component::scroll::Scrollbar::vertical(handle))
+    at_app_weight(gpui_component::scroll::Scrollbar::vertical(handle))
 }
 
 /// [`scrollbar`]'s sideways twin, at the same weight, for a region that
@@ -68,11 +68,11 @@ pub fn scrollbar<H: gpui_component::scroll::ScrollbarHandle + Clone>(
 pub fn scrollbar_horizontal<H: gpui_component::scroll::ScrollbarHandle + Clone>(
     handle: &H,
 ) -> gpui_component::scroll::Scrollbar {
-    weighed(gpui_component::scroll::Scrollbar::horizontal(handle))
+    at_app_weight(gpui_component::scroll::Scrollbar::horizontal(handle))
 }
 
 /// A thumb at the app's weight: its width is its thickness, on either axis.
-fn weighed(bar: gpui_component::scroll::Scrollbar) -> gpui_component::scroll::Scrollbar {
+fn at_app_weight(bar: gpui_component::scroll::Scrollbar) -> gpui_component::scroll::Scrollbar {
     bar.styles(|styles| {
         styles
             .thumb(|thumb| thumb.width(tokens::SCROLLBAR_THUMB))
