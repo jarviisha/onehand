@@ -1,19 +1,19 @@
 //! A project's board: its Backlog, its To do, a column per step of its
 //! workflow and what is done, side by side, scrolling sideways when they do
-//! not fit. What stands in each column is `onehand_core::board`'s to say;
+//! not fit, each column scrolling its own rows. What stands in each column is `onehand_core::board`'s to say;
 //! this draws it and carries the person's To do changes to the projects'
 //! drive. An entity of the window's, drawn by the chat pane as the Tasks
 //! page is.
 
 use crate::controls::Short as _;
 use crate::drag::DragGhost;
-use crate::page_parts::{page_card, page_head, page_top, ruled};
+use crate::page_parts::{page_head, page_top};
 use crate::state::Shared;
 use crate::task::Row;
 use gpui::{
     App, AppContext as _, BorrowAppContext as _, Context, EventEmitter, FocusHandle,
-    InteractiveElement, IntoElement, ParentElement, Rems, Render, SharedString, Stateful,
-    StatefulInteractiveElement, Styled, Subscription, Window, div, rems,
+    InteractiveElement, IntoElement, ParentElement, Render, ScrollHandle, SharedString, Stateful,
+    StatefulInteractiveElement, Styled, Subscription, Window, div,
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::menu::ContextMenuExt as _;
@@ -26,10 +26,9 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::rc::Rc;
 
-/// How wide each column stands: a task's title and its line of facts with
-/// room for its `⋯`, so a board of four steps fits a wide pane and a longer
-/// one scrolls sideways rather than squeezing every title.
-const COLUMN_W: Rems = rems(17.);
+mod column;
+
+use column::{ColumnKey, ColumnParts, column};
 
 /// The page of one project's board.
 pub(crate) struct BoardPage {
@@ -42,6 +41,10 @@ pub(crate) struct BoardPage {
     _issues_seen: Option<Subscription>,
     /// One tab stop per row drawn, so the keyboard reaches each row's `⋯`.
     rows: HashMap<RowKey, FocusHandle>,
+    /// Where the columns stand scrolled sideways.
+    across: ScrollHandle,
+    /// Where each column's rows stand scrolled, by the column's key.
+    down: HashMap<ColumnKey, ScrollHandle>,
     /// Focused when the page shows, so its keys have somewhere to land.
     focus: FocusHandle,
 }
@@ -92,6 +95,8 @@ impl BoardPage {
             issues: None,
             _issues_seen: None,
             rows: HashMap::new(),
+            across: ScrollHandle::new(),
+            down: HashMap::new(),
             focus: cx.focus_handle(),
         }
     }
@@ -105,6 +110,8 @@ impl BoardPage {
     pub(crate) fn show(&mut self, project: ProjectId, window: &mut Window, cx: &mut Context<Self>) {
         if self.project.as_ref() != Some(&project) {
             self.rows.clear();
+            self.down.clear();
+            self.across = ScrollHandle::new();
         }
         let local = (Shared::global(cx).projects.get(&project))
             .and_then(|p| onehand_core::board::local(p).ok());
@@ -138,6 +145,11 @@ impl BoardPage {
             .entry(key)
             .or_insert_with(|| cx.focus_handle().tab_stop(true))
             .clone()
+    }
+
+    /// Where the rows of the column `key` stand scrolled.
+    fn column_scroll(&mut self, key: &ColumnKey) -> ScrollHandle {
+        self.down.entry(key.clone()).or_default().clone()
     }
 
     /// The page, read per frame: a task moving already redraws every window,
@@ -186,21 +198,31 @@ impl BoardPage {
         let mut taken = tasks.taken;
         taken.extend(Shared::global(cx).projects.starting(&id));
         let columns = self.columns(&id, &board, tasks.steps, tasks.done, &taken, cx);
+        // Sideways alone: gpui turns a plain wheel into sideways travel only
+        // on a box that scrolls on x and not y, so the gaps and the heads
+        // move the board while each column moves its own rows. The scroller
+        // is the row of columns itself: a row nested inside it is only as
+        // wide as the scroller, so the columns past its edge would overflow
+        // that row and leave the scroller nothing to scroll.
         let body = div()
-            .id("board-columns")
+            .relative()
             .flex_1()
             .min_h_0()
-            .overflow_scroll()
-            .px_8()
-            .py_6()
             .child(
                 div()
+                    .id("board-columns")
+                    .size_full()
                     .h_flex()
                     .items_start()
                     .gap_6()
+                    .overflow_x_scroll()
+                    .track_scroll(&self.across)
+                    .px_8()
+                    .py_6()
                     .text_size(crate::tokens::CHROME_TEXT)
                     .children(columns),
             )
+            .child(onehand_ui::scrollbar_horizontal(&self.across).id("board-columns-bar"))
             .into_any_element();
         self.frame(head, body)
     }
@@ -267,17 +289,28 @@ impl BoardPage {
         // Taking an issue out of To do is the one drop the Backlog takes.
         let backlog = {
             let id = id.clone();
-            column("Backlog", count, drawn, backlog_note, None, cx)
-                .drag_over::<IssueDrag>(|style, drag, _, cx| match drag.from {
-                    Column::Todo => style.bg(cx.theme().list_hover),
-                    Column::Backlog => style,
-                })
-                .on_drop(move |drag: &IssueDrag, _, cx| {
-                    if drag.from == Column::Todo {
-                        change_todo(&id, Todo::Drop(drag.issue), cx);
-                    }
-                })
-                .into_any_element()
+            column(
+                ColumnParts {
+                    title: "Backlog".into(),
+                    count,
+                    rows: drawn,
+                    note: backlog_note,
+                    control: None,
+                    scroll: self.column_scroll(&ColumnKey::Backlog),
+                    key: ColumnKey::Backlog,
+                },
+                cx,
+            )
+            .drag_over::<IssueDrag>(|style, drag, _, cx| match drag.from {
+                Column::Todo => style.bg(cx.theme().list_hover),
+                Column::Backlog => style,
+            })
+            .on_drop(move |drag: &IssueDrag, _, cx| {
+                if drag.from == Column::Todo {
+                    change_todo(&id, Todo::Drop(drag.issue), cx);
+                }
+            })
+            .into_any_element()
         };
 
         // To do, in the order the team pulls it.
@@ -313,11 +346,16 @@ impl BoardPage {
         let todo = {
             let id = id.clone();
             column(
-                "To do",
-                board.todo.len(),
-                drawn,
-                empty.then(|| "Nothing to do; move an issue here from the Backlog".to_string()),
-                None,
+                ColumnParts {
+                    title: "To do".into(),
+                    count: board.todo.len(),
+                    rows: drawn,
+                    note: empty
+                        .then(|| "Nothing to do; move an issue here from the Backlog".to_string()),
+                    control: None,
+                    scroll: self.column_scroll(&ColumnKey::Todo),
+                    key: ColumnKey::Todo,
+                },
                 cx,
             )
             .drag_over::<IssueDrag>(move |style, _, _, cx| match empty {
@@ -338,10 +376,21 @@ impl BoardPage {
             step,
         } in steps
         {
-            let col = self.task_column(&label, head, rows, step, "Nothing at this step", cx);
+            let key = match step {
+                Some(step) => ColumnKey::Step(step),
+                None => ColumnKey::Removed(label.clone()),
+            };
+            let col = self.task_column(key, &label, head, rows, "Nothing at this step", cx);
             columns.push(col);
         }
-        columns.push(self.task_column("Done", "Done".into(), done, None, "Nothing done yet", cx));
+        columns.push(self.task_column(
+            ColumnKey::Done,
+            "Done",
+            "Done".into(),
+            done,
+            "Nothing done yet",
+            cx,
+        ));
         columns
     }
 
@@ -350,10 +399,10 @@ impl BoardPage {
     /// opens that step.
     fn task_column(
         &mut self,
+        key: ColumnKey,
         label: &str,
         head: String,
         rows: Vec<Row>,
-        step: Option<String>,
         empty: &str,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
@@ -363,7 +412,12 @@ impl BoardPage {
             .take(BOARD_SHOWN)
             .map(|row| self.task_row(label, row, cx))
             .collect();
-        let more = step.map(|step| {
+        let scroll = self.column_scroll(&key);
+        let more = match &key {
+            ColumnKey::Step(step) => Some(step.clone()),
+            _ => None,
+        }
+        .map(|step| {
             let page = cx.entity().downgrade();
             let key = format!("board-step-{step}-more");
             let press: onehand_ui::Press = Rc::new(move |_, _, cx| {
@@ -374,11 +428,15 @@ impl BoardPage {
                 .into_any_element()
         });
         column(
-            head,
-            count,
-            drawn,
-            (count == 0).then(|| empty.to_string()),
-            more,
+            ColumnParts {
+                title: head.into(),
+                count,
+                rows: drawn,
+                note: (count == 0).then(|| empty.to_string()),
+                control: more,
+                scroll,
+                key,
+            },
             cx,
         )
         .into_any_element()
@@ -565,28 +623,6 @@ fn edit_workflow(cx: &Context<BoardPage>) -> gpui::AnyElement {
         .label("Edit workflow")
         .on_click(cx.listener(|_, _, _, cx| cx.emit(BoardPageEvent::EditWorkflow { step: None })))
         .into_any_element()
-}
-
-/// A column: a box with its name and count, `control` at its head's end,
-/// `rows` capped at [`BOARD_SHOWN`] (said under them when it bites), and
-/// `note` where there is nothing to list.
-fn column(
-    title: impl Into<SharedString>,
-    count: usize,
-    rows: Vec<gpui::AnyElement>,
-    note: Option<String>,
-    control: Option<gpui::AnyElement>,
-    cx: &App,
-) -> gpui::Div {
-    let muted = cx.theme().muted_foreground;
-    let muted_line = |text: String| div().text_xs().text_color(muted).child(text);
-    let hidden = count.saturating_sub(BOARD_SHOWN);
-    page_card(title.into(), Some(count), control, cx)
-        .flex_none()
-        .w(COLUMN_W)
-        .children(note.map(muted_line))
-        .child(ruled(rows, cx))
-        .children((hidden > 0).then(|| muted_line(format!("{hidden} more not shown"))))
 }
 
 /// Why the board cannot run, in place of its columns, with the way to the

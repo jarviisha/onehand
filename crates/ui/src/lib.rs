@@ -61,7 +61,9 @@ pub use row::{mark_slot, row, tree_row};
 pub use row_actions::{HoverSlot, Press, RowAct, hover_slot, row_menu_items, row_more};
 pub use stepper::{STEP_LINE_H, StepMark, step_dot, step_line};
 pub use strip::{mode_strip, strip, strip_control, workbench_strip};
-pub use surface::{card_box, dock_surface, end_fade, region, scrollbar, well};
+pub use surface::{
+    card_box, dock_surface, end_fade, region, scrollbar, scrollbar_horizontal, well,
+};
 pub use tabs::{
     Measured, TAB_MAX_W, measure_width, panel_tab_frame, tab_bar, tab_chip, tab_close, tab_select,
     unmeasured,

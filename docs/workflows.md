@@ -110,14 +110,16 @@ on_fail = "implement"     # a failing check or a conflict goes back here
 wait = "1h"               # how long the checks may take; the default
 ```
 
-onehand ships three, read-only: *Work in checkout* (Plan → Approve → Implement → Verify, in the
+onehand ships four, read-only: *Work in checkout* (Plan → Approve → Implement → Verify, in the
 checkout, left uncommitted), *Implement on a branch* (Plan → Implement → Verify, on a new
 `workflow/<title>` branch in a worktree in the project's worktree folder (beside the project's
 repository with none set), recorded in the project, committed; a project that
 is a folder inside its repository works in the same folder of the new checkout, as a worktree made
 from the project menu does) and *Work an issue* (`builtin:issue`, the same steps on a branch, then
 Push → Pull request → Status checks; what a lead's `start_issue` runs by default, see
-[control.md](control.md)). The person's own are in
+[control.md](control.md)) and *Board team* (`builtin:board`, made for a project's board: the same
+steps with a *Review* after Implement, which a reviewer in a session of its own, on the run's agent,
+answers with approval or a send back, one task at a time (`limit = 1`)). The person's own are in
 `<config_dir>/onehand/workflows/<slug>.toml`, made by duplicating a shipped one or from *New
 workflow* on the Workflows page. A build from before the rename kept them in `pipelines/`;
 they move here at start, behind the one-instance lock (`workflow::store::migrate_old_dir_blocking`), and the

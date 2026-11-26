@@ -1,0 +1,79 @@
+schema_version = 2
+id = "builtin:board"
+version = 1
+name = "Board team"
+description = "For a project's board: plan, change the code and pass the check on a branch of its own; a reviewer in a session of its own approves the change or sends it back; then push, open a draft pull request and repair it until its status checks pass. The review takes one task at a time."
+place = "worktree"
+misses = 3
+timeout = "45m"
+
+[[steps]]
+id = "plan"
+label = "Plan"
+kind = "agent"
+gates = ["answered", "code_unchanged"]
+keep_answer = true
+prompt = """
+Work this issue in the repository:
+
+{brief}
+
+This step is the plan. Read the code this touches and answer with a plan: what you will change, where, and how you will know it works.
+"""
+
+[[steps]]
+id = "implement"
+label = "Implement"
+kind = "agent"
+gates = ["code_changed", "committed"]
+prompt = """
+Work this issue in the repository:
+
+{brief}
+
+This step is the change. Follow the plan, run the repository's checks, and commit your work on this branch.
+
+The plan:
+
+{output.plan}
+"""
+
+[[steps]]
+id = "verify"
+label = "Verify"
+kind = "command"
+on_fail = "implement"
+
+[[steps]]
+id = "review"
+label = "Review"
+kind = "review"
+of = "implement"
+limit = 1
+prompt = """
+Review the change on this branch against this issue:
+
+{brief}
+
+The plan it followed:
+
+{output.plan}
+
+Read what the branch changed since it left the base branch, run the repository's checks if you need to, and judge whether the change does what the issue asks and nothing it should not.
+"""
+
+[[steps]]
+id = "push"
+label = "Push"
+kind = "push"
+
+[[steps]]
+id = "pull_request"
+label = "Pull request"
+kind = "pull_request"
+
+[[steps]]
+id = "status_checks"
+label = "Status checks"
+kind = "status_checks"
+on_fail = "implement"

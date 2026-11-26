@@ -10,8 +10,9 @@ on this machine. A project on a host has none: its issues are not kept here.
 ## What a person gets
 
 - **Binding.** *Settings ▸ Projects ▸ Board* has a *Workflow* menu: *No board* and the library's
-  workflows. A workflow that works in the checkout cannot be bound, since several tasks work at
-  once and a checkout holds one; the reason is said under the menu and nothing is bound
+  workflows (*Board team* is the built-in made for a board). A workflow that works in the
+  checkout cannot be bound, since several tasks work at once and a checkout holds one; the reason
+  is said under the menu and nothing is bound
   (`board::usable`). Once bound, *Team* sets how many tasks work at once, 1 to 8, 2 at first.
   Choosing *No board* on a board whose To do is not empty asks first (*Remove the board from
   <project>?*): its To do goes, the issues stay open in no list, and tasks already started run on.
@@ -26,8 +27,10 @@ on this machine. A project on a host has none: its issues are not kept here.
   workflow is opened, or when the form is closed.
   A board whose workflow is gone draws no *Edit workflow*.
 - **The page.** *Board* in a project's dots menu, and the link on the project's page (*Board · N
-  running · M to do*), open it. Columns side by side, scrolling sideways: *Backlog*, *To do*, a
-  column per step of the workflow, *Done*. Each column draws at most `BOARD_SHOWN` rows and says
+  running · M to do*), open it. Columns side by side: *Backlog*, *To do*, a
+  column per step of the workflow, *Done*. They scroll sideways (a wheel over the gaps between
+  them or over their heads, or the scrollbar along the page's foot), and each column scrolls on
+  its own: a wheel over a column taller than the page moves only its rows. Each column draws at most `BOARD_SHOWN` rows and says
   how many more it left out. A task's row opens it on the Tasks page, and its `⋯` and right-click
   offer *Show task* and then what the Tasks page's row offers it (*Open session*, *Stop*, *Resume*,
   *Retry…*, *Dismiss*, as its state allows). Under its title it says *Needs attention*, *Running*

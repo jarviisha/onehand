@@ -84,7 +84,7 @@ Draw none of these by hand: a `div` that looks like a button, a label, a key cap
 | A dialog's footer (a third action at its start) | `footer_row` | `crates/app/src/dialogs.rs` |
 | A run dialog's sections parted by hairlines; a preflight finding with its state's mark | `sections`, `finding_line` | `crates/app/src/dialogs.rs` |
 | A Settings sub-page's scope line | `page_head` | `crates/app/src/settings.rs` |
-| A scrollbar on a region the app scrolls itself | `scrollbar` (its thumb at `SCROLLBAR_THUMB`) | `crates/ui/src/surface.rs` |
+| A scrollbar on a region the app scrolls itself, down or (for one that scrolls on x alone) across | `scrollbar`, `scrollbar_horizontal` (the thumb at `SCROLLBAR_THUMB` on both) | `crates/ui/src/surface.rs` |
 | Text running past a field's end melting into what follows (the Issues tab's search) | `end_fade(cx)`: the box's fill fading in over `BAR_FADE`, absolute over a `relative` parent | `crates/ui/src/surface.rs` |
 | A sunk box of machine text | `well` (sets the code text size; callers set padding) | `crates/ui/src/surface.rs` |
 | A mono well on a page | `mono_well`, built on `well` | `crates/app/src/tasks_page/detail.rs` |

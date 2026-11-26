@@ -54,6 +54,10 @@ minor bump may break any of them.
 
 ### Workflows and tasks
 
+- A fourth built-in workflow, **Board team**, is made for a project's board: it plans, changes the
+  code and passes the check on a branch, has a reviewer in a session of its own approve the change
+  or send it back (one task at a time), then pushes, opens a draft pull request and repairs it
+  until its status checks pass.
 - A workflow step can carry a **limit**: at most that many tasks of a project at the step at
   once. A task that reaches a full step shows *Waiting for room at <step>* on the Tasks page and
   the board, keeps its place and its worktree, does not spend its working time, and goes on first
