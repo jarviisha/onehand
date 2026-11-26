@@ -28,9 +28,9 @@ use gpui_component::{Icon, IconName, Selectable as _};
 /// **It lives here rather than in the app** because a feature crate draws
 /// buttons too and cannot reach into the binary that hosts it. A second copy in
 /// each half is two places for the library's default to be let through, and the
-/// bypass is one line and looks exactly like ordinary code — which is why a
-/// guard counts the call sites and why there must be only one of these to count
-/// against.
+/// bypass is one line and looks exactly like ordinary code — which is why the
+/// library's constructor is banned everywhere but here, and why there must be
+/// only one of these to make it lawful.
 #[expect(
     clippy::disallowed_methods,
     reason = "the wrapper every button is made through, which gives it the pointer"

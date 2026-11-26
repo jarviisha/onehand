@@ -5,9 +5,10 @@ Name the evidence: code inspection, an automated check or the user's observation
 visual judgment verified from a source scan. Each item names the section that owns its rule; read
 the rule, not just the question. For prose-only work, use the contract path in `SKILL.md`.
 
-1. `cargo test -p onehand --locked` passes? No source guard scans the visual rules (colour,
-   length, spacing, type, corner, shadow, motion, the button and field wrappers, icons), so the
-   items below are checked by review (`docs/rules-and-gotchas.md`, *Guard coverage*).
+1. `cargo test -p onehand --locked` passes? The lints and source guards hold where a colour, a
+   size, a button and the pointer are written; the rest of the visual rules (spacing, type,
+   corner, shadow, motion, the field wrappers, icons) is checked by review in the items below
+   (`docs/rules-and-gotchas.md`, *Guard coverage*).
 2. A same-role component or screen named and compared for height, text axis, ink, icon size and
    slot, spacing, corner and states, and a shared change checked in its callers across app and
    feature crates (`DESIGN.md`, *Principles*)?
