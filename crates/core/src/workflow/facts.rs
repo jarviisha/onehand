@@ -2,7 +2,7 @@
 //! mark a step is measured from, what a turn left, whether a gate holds, and
 //! the command a step runs.
 
-use super::template::{GateKind, COMMAND_LIMIT};
+use super::template::GateKind;
 use crate::worktree;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -112,13 +112,14 @@ impl CommandResult {
 pub fn run_command_blocking(
     dir: &Path,
     command: &str,
+    limit: Option<std::time::Duration>,
     cancel: &std::sync::atomic::AtomicBool,
 ) -> CommandResult {
     let mut cmd = std::process::Command::new("sh");
     cmd.arg("-c")
         .arg(format!("exec 2>&1\n{command}"))
         .current_dir(dir);
-    let ran = crate::process::output_until(&mut cmd, COMMAND_LIMIT, cancel);
+    let ran = crate::process::output_until(&mut cmd, limit, cancel);
     let (passed, exit, tail) = match ran {
         Err(crate::process::Failure::TimedOut(limit)) => (
             false,

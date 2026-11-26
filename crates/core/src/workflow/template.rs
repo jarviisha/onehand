@@ -514,7 +514,7 @@ impl GateKind {
 }
 
 /// How long a command step's command may run when the step names no timeout.
-pub(crate) const COMMAND_LIMIT: Duration = Duration::from_secs(15 * 60);
+const COMMAND_LIMIT: Duration = Duration::from_secs(15 * 60);
 
 /// What means no limit where a timeout is written.
 const NO_LIMIT: &str = "none";

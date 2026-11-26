@@ -5,7 +5,7 @@
 use super::{settings, Asked, Effect, Lane, RunDrive};
 use crate::chat::{Chat, Link};
 use crate::preflight::{found_late, mode_refused, About};
-use crate::workflow::{Action, Outcome, Pick, StepKind, Stop};
+use crate::workflow::{Action, Outcome, Pick, StepKind, StepSpec, Stop};
 use crate::Now;
 
 /// The longest answer kept from a turn. An answer the length of a book is cut
@@ -45,7 +45,11 @@ impl RunDrive {
             Action::RunCommand(command) => {
                 self.command = true;
                 self.asked.push(Asked::Note(format!("Running: {command}")));
-                fx.push(Effect::RunCommand { dir, command });
+                fx.push(Effect::RunCommand {
+                    dir,
+                    command,
+                    limit: self.run.current().and_then(StepSpec::command_limit),
+                });
             }
             Action::AwaitApproval => {
                 self.asked.push(Asked::Note(
@@ -88,7 +92,11 @@ impl RunDrive {
             Action::Finish(outcome) => return self.finish(None, outcome, now, fx),
             Action::RunCommand(command) if self.sessionless => {
                 self.command = true;
-                fx.push(Effect::RunCommand { dir, command });
+                fx.push(Effect::RunCommand {
+                    dir,
+                    command,
+                    limit: self.run.current().and_then(StepSpec::command_limit),
+                });
             }
             Action::Measure if self.sessionless => fx.push(Effect::Measure { dir }),
             Action::AwaitRoom => self.await_room(false, now, fx),

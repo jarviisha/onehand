@@ -42,6 +42,11 @@ impl std::fmt::Display for Failure {
 /// How long a command that has exited is given to hand over its output.
 const DRAIN_FLOOR: Duration = Duration::from_secs(1);
 
+/// How long what a command printed is waited for once it has exited, when it
+/// ran with no deadline: long enough for its last output to land, bounded so
+/// a pipe something else still holds cannot keep it.
+const UNBOUNDED_DRAIN: Duration = Duration::from_secs(10);
+
 /// Run `cmd` to completion, or stop it once it has run for `limit`.
 ///
 /// **A command nobody is watching must not be able to hang its caller.** A
@@ -60,16 +65,17 @@ const DRAIN_FLOOR: Duration = Duration::from_secs(1);
 /// On Unix the command runs in a process group of its own, and stopping it
 /// stops the whole group, so what it started goes with it.
 pub fn output_within(cmd: &mut Command, limit: Duration) -> Result<Output, Failure> {
-    output_until(cmd, limit, &AtomicBool::new(false))
+    output_until(cmd, Some(limit), &AtomicBool::new(false))
 }
 
-/// [`output_within`], also stopped as soon as `cancel` is set. Only once the
+/// [`output_within`], also stopped as soon as `cancel` is set, and with no
+/// deadline when `limit` is `None`. Only once the
 /// command and its process group have been stopped does it return, so a
 /// caller that hears [`Failure::Cancelled`] knows nothing of it is left
 /// running.
 pub fn output_until(
     cmd: &mut Command,
-    limit: Duration,
+    limit: Option<Duration>,
     cancel: &AtomicBool,
 ) -> Result<Output, Failure> {
     // Called off already: never started, so it cannot touch the work in the
@@ -91,7 +97,7 @@ pub fn output_until(
     // Both are piped just above, so both are there to take.
     let out = drain(child.stdout.take().expect("stdout was piped"));
     let err = drain(child.stderr.take().expect("stderr was piped"));
-    let deadline = Instant::now() + limit;
+    let deadline = limit.map(|limit| Instant::now() + limit);
     // From a millisecond, doubling to a twentieth of a second: most commands
     // run here (git asked one thing) end in a few milliseconds, and a first
     // look only after 50ms made each of them cost that much.
@@ -99,9 +105,9 @@ pub fn output_until(
     let status = loop {
         match child.try_wait().map_err(Failure::Unstarted)? {
             Some(status) => break status,
-            None if Instant::now() >= deadline => {
+            None if deadline.is_some_and(|deadline| Instant::now() >= deadline) => {
                 stop(&mut child);
-                return Err(Failure::TimedOut(limit));
+                return Err(Failure::TimedOut(limit.unwrap_or_default()));
             }
             None if cancel.load(Ordering::SeqCst) => {
                 stop(&mut child);
@@ -120,14 +126,19 @@ pub fn output_until(
     // the last poll before it would otherwise come back successful and silent,
     // and a caller reading its stdout (the number of an issue it just made)
     // would take the silence for an answer.
-    let left = |at: Instant| {
-        at.saturating_duration_since(Instant::now())
+    // With no deadline, what is still held open past a short while is let
+    // go: the command has exited and its group is gone.
+    let left = || {
+        deadline
+            .map_or(UNBOUNDED_DRAIN, |at| {
+                at.saturating_duration_since(Instant::now())
+            })
             .max(DRAIN_FLOOR)
     };
     Ok(Output {
         status,
-        stdout: out.recv_timeout(left(deadline)).unwrap_or_default(),
-        stderr: err.recv_timeout(left(deadline)).unwrap_or_default(),
+        stdout: out.recv_timeout(left()).unwrap_or_default(),
+        stderr: err.recv_timeout(left()).unwrap_or_default(),
     })
 }
 
@@ -193,13 +204,36 @@ mod tests {
         let script = format!("(sleep 1; touch {}) & sleep 30", marker.display());
         let out = output_until(
             Command::new("sh").args(["-c", &script]),
-            Duration::from_secs(60),
+            Some(Duration::from_secs(60)),
             &cancel,
         );
         assert!(matches!(out, Err(Failure::Cancelled)));
         assert!(started.elapsed() < Duration::from_secs(3));
         std::thread::sleep(Duration::from_millis(1500));
         assert!(!marker.exists(), "a child of the stopped command still ran");
+    }
+
+    /// With no limit, a command runs until it exits or is called off; being
+    /// called off still stops it at once.
+    #[test]
+    fn no_limit_runs_until_called_off() {
+        let finished = output_until(
+            Command::new("sh").args(["-c", "sleep 0.2; echo done"]),
+            None,
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        assert!(String::from_utf8_lossy(&finished.stdout).contains("done"));
+        let cancel = std::sync::Arc::new(AtomicBool::new(false));
+        let calling_off = cancel.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(100));
+            calling_off.store(true, Ordering::SeqCst);
+        });
+        let started = Instant::now();
+        let out = output_until(Command::new("sleep").arg("5"), None, &cancel);
+        assert!(matches!(out, Err(Failure::Cancelled)));
+        assert!(started.elapsed() < Duration::from_secs(3));
     }
 
     /// Called off before it began: it never starts, so it cannot touch the
@@ -211,7 +245,7 @@ mod tests {
         let cancel = AtomicBool::new(true);
         let out = output_until(
             Command::new("touch").arg(&marker),
-            Duration::from_secs(5),
+            Some(Duration::from_secs(5)),
             &cancel,
         );
         assert!(matches!(out, Err(Failure::Cancelled)));

@@ -185,7 +185,12 @@ pub enum Effect {
     ///
     /// Awaited: a run stopped while it runs calls it off and ends only once
     /// it has exited, and its place is held until then.
-    RunCommand { dir: PathBuf, command: String },
+    RunCommand {
+        dir: PathBuf,
+        command: String,
+        /// How long it may run; `None` for no limit.
+        limit: Option<std::time::Duration>,
+    },
     /// Call off the step's command running. Not answered itself: the
     /// command's own answer says it is over. A forge call is not called off:
     /// it is awaited.

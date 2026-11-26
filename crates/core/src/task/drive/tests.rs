@@ -474,6 +474,18 @@ fn the_clock_does_not_run_before_the_first_prompt() {
     assert_eq!(rig.drive.run().spent_secs, 0);
 }
 
+/// A command step's command carries the step's own limit: fifteen
+/// minutes when it names none.
+#[test]
+fn a_command_carries_its_step_s_limit() {
+    let (_, fx) = checking();
+    let limit = fx.iter().find_map(|e| match e {
+        Effect::RunCommand { limit, .. } => Some(*limit),
+        _ => None,
+    });
+    assert_eq!(limit, Some(Some(Duration::from_secs(15 * 60))), "{fx:?}");
+}
+
 /// A command step is bounded by its own limit; the run's clock stands
 /// still while it runs.
 #[test]
