@@ -312,7 +312,8 @@ the run's history, capped at 200.
   never taken for checked work.
   **It runs as long as its `timeout` says**: fifteen minutes when it names none, no limit for
   `none`. A command past its limit is stopped, with what it started, and fails; the run's own
-  clock does not run meanwhile.
+  clock does not run meanwhile. It runs on the PATH an agent's commands run on, the route shims
+  first, so a build the project routes goes to its build host as the agent's would.
 - **The forge steps** go to the connector the run's setup names (`Setup::forge`, the one that
   serves the project when a worktree task starts). With none, each passes at once: the branch is the
   result. **A push carries the commit the check passed on**: `Push` is `marks.verified_at`, never

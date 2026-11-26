@@ -2666,6 +2666,7 @@ fn a_command_past_a_short_limit_says_its_limit() {
         &std::env::temp_dir(),
         "sleep 5",
         Some(std::time::Duration::from_secs(1)),
+        None,
         &std::sync::atomic::AtomicBool::new(false),
     );
     assert!(!ran.passed);
@@ -2791,4 +2792,23 @@ fn a_long_branch_lists_a_bounded_number_of_commits() {
     let (_, body) = brief().pull_request_text(&many);
     assert_eq!(body.lines().count(), 21, "{body}");
     assert!(body.ends_with("- and 5 more"), "{body}");
+}
+
+/// A command step runs on the PATH it is given, the shims an agent's
+/// commands go through first, so its build goes where the agent's would.
+#[test]
+fn a_command_runs_on_the_path_it_is_given() {
+    let path = std::ffi::OsString::from(format!(
+        "/onehand-shims:{}",
+        std::env::var("PATH").unwrap_or_default()
+    ));
+    let ran = facts::run_command_blocking(
+        &std::env::temp_dir(),
+        "echo \"$PATH\"",
+        None,
+        Some(path),
+        &std::sync::atomic::AtomicBool::new(false),
+    );
+    assert!(ran.passed, "{}", ran.tail);
+    assert!(ran.tail.starts_with("/onehand-shims:"), "{}", ran.tail);
 }

@@ -108,17 +108,22 @@ impl CommandResult {
 ///
 /// Through `sh`, because a check is often a chain (`make fmt && cargo test`),
 /// with stderr folded into stdout first so the two stay in the order they
-/// were written.
+/// were written. On `path` when given: the PATH an agent's commands run on,
+/// so a build the project routes goes where the agent's would.
 pub fn run_command_blocking(
     dir: &Path,
     command: &str,
     limit: Option<std::time::Duration>,
+    path: Option<std::ffi::OsString>,
     cancel: &std::sync::atomic::AtomicBool,
 ) -> CommandResult {
     let mut cmd = std::process::Command::new("sh");
     cmd.arg("-c")
         .arg(format!("exec 2>&1\n{command}"))
         .current_dir(dir);
+    if let Some(path) = path {
+        cmd.env("PATH", path);
+    }
     let ran = crate::process::output_until(&mut cmd, limit, cancel);
     let (passed, exit, tail) = match ran {
         Err(crate::process::Failure::TimedOut(limit)) => (

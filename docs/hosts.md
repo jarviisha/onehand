@@ -182,7 +182,10 @@ bring back what it built. Nothing of this needs the host service: it is the pers
 An agent onehand started runs a project's build command on the project's build host without being
 told: its `cargo build` goes through a shim to the running onehand, which builds it on the host
 the project picked and hands back its lines and its exit code. The agent sees the command it ran,
-and one line saying where it ran.
+and one line saying where it ran. A workflow's command step, the project's check command
+included, runs on the same PATH, shims first (`agent_path_blocking`, given to
+`run_command_blocking`), so its `cargo test` builds where the agent's would rather than from
+nothing in a worktree here.
 
 - **A routed command** is one a project names, kept in its project file beside its build hosts
   as `[[routes]]` (`RoutedCommand`, `crates/core/src/workspace/routed.rs`; `Project::routes`):

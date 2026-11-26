@@ -648,7 +648,12 @@ fn run_command(
         let ran = cx
             .background_executor()
             .spawn(async move {
-                let ran = run_command_blocking(&dir, &command, limit, &cancel);
+                // On the agent's PATH, shims first: a build the project routes
+                // goes to its build host, as the agent's own would.
+                let path = onehand_core::host::route::shim::agent_path_blocking(
+                    std::env::var_os("PATH").as_deref(),
+                );
+                let ran = run_command_blocking(&dir, &command, limit, path, &cancel);
                 drop(running);
                 ran
             })
