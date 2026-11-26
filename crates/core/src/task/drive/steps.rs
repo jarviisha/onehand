@@ -29,8 +29,9 @@ impl RunDrive {
         }
         // The clock counts the agent's work on a step and nothing else: it
         // stands still for whatever onehand does next, and goes on when a
-        // prompt is handed over.
-        if !matches!(action, Action::Prompt(_)) {
+        // prompt is handed over. Nothing to do changes nothing: a press the
+        // run refused leaves a turn under way counted.
+        if !matches!(action, Action::Prompt(_) | Action::Idle) {
             self.budget.pause(now.at);
         }
         let dir = self.run.setup.dir.clone();

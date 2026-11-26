@@ -15,7 +15,6 @@ pub(super) enum Held {
     Answer(Answer),
     Cut(Stop),
     End(Stop),
-    RanOut,
 }
 
 /// A person's answer to an approval.
@@ -105,7 +104,6 @@ impl RunDrive {
             Held::Answer(answer) => self.answer(answer, chat, now, fx),
             Held::Cut(stop) => self.cut(stop, chat, now, fx),
             Held::End(stop) => self.end(stop, chat, now, fx),
-            Held::RanOut => self.ran_out(chat, now, fx),
         }
     }
 }
