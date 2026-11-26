@@ -556,7 +556,8 @@ pub(super) fn step_panel(
                     ))
                     .child(field(
                         "Timeout",
-                        about("Such as 15m or 2h, or none; 15m when empty"),
+                        // The default is the field's placeholder, from core.
+                        about("Such as 30m or 2h, or none; the default when empty"),
                         text_input(&step.timeout, cx).tall().disabled(shipped),
                         cx,
                     ))

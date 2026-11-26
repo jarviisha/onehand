@@ -54,8 +54,9 @@ impl Run {
         self.extended_secs += by.as_secs();
         self.log_here(&format!("extended by {more}"), now);
         let text = format!(
-            "You ran out of time at {label}. You have {more} more. \
-             Carry on with the step from where you were."
+            "You ran out of time at {label}. You have {}. \
+             Carry on with the step from where you were.",
+            more_said(by)
         );
         // The room it held went when it came to rest: it asks again first.
         if self.limit_at(self.step).is_some() && !holds_room {
@@ -64,5 +65,30 @@ impl Run {
         }
         self.awaiting = Await::Turn;
         Action::Prompt(text)
+    }
+}
+
+/// `by`, as the agent is told what it has more: in minutes, or in seconds
+/// when it is not whole minutes.
+fn more_said(by: Duration) -> String {
+    match by.as_secs() {
+        60 => "1 more minute".to_string(),
+        secs if secs % 60 == 0 => format!("{} more minutes", secs / 60),
+        1 => "1 more second".to_string(),
+        secs => format!("{secs} more seconds"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn more_is_said_in_minutes_or_seconds() {
+        let s = Duration::from_secs;
+        assert_eq!(more_said(s(2700)), "45 more minutes");
+        assert_eq!(more_said(s(60)), "1 more minute");
+        assert_eq!(more_said(s(90)), "90 more seconds");
+        assert_eq!(more_said(s(7200)), "120 more minutes");
     }
 }
