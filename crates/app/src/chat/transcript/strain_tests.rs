@@ -1,18 +1,17 @@
 //! A parked card's answers in a narrow pane and a zoomed one: they stand on
 //! one line while they fit, and past that they wrap whole, never cut, since
-//! a cut grant is one nobody can read the reach of.
+//! a cut grant is one nobody can read the reach of. A question card's two
+//! answers, Skip and Submit, fit the narrowest pane at every zoom, so only
+//! their one line is held.
 
 use crate::shell::rig::strain::{
-    NARROWEST, WIDE, assert_inside, assert_one_line, bounds, same, selector, width,
+    NARROWEST, WIDE, assert_inside, assert_one_line, bounds, same, selector, width, zoom_steps,
 };
 use crate::shell::rig::{folder, nowhere, shell_on, shown_session, zoom_pane};
 use gpui::{Bounds, Entity, Pixels, TestAppContext, VisualTestContext};
 use onehand_core::acp::{AcpEvent, Elicitation, PermissionOption, PermissionRequest, ToolKind};
 use onehand_core::config::PanelLayout;
 use onehand_core::workspace::Workspace;
-
-/// How many steps of the pane's zoom reach 150%.
-const TO_150: usize = 5;
 
 /// A window whose pane is at its least beside the narrowest rail, a session
 /// shown in it, and the agent's channel.
@@ -122,7 +121,8 @@ fn one_line_where_they_fit(prefix: &str, n: usize, cx: &mut VisualTestContext) {
     }
 }
 
-/// At the pane's least, each answer is as tall and as wide as it is in a
+/// At the pane's least, zoomed as far as it goes when `zoomed`, the answers
+/// no longer fit one line, and each is as tall and as wide as it is in a
 /// wide window at the same zoom, so none was cut or broken inside itself,
 /// and each stays in the foot.
 fn whole_where_they_do_not(
@@ -133,12 +133,18 @@ fn whole_where_they_do_not(
     cx: &mut VisualTestContext,
 ) {
     if zoomed {
-        zoom_pane(shell, TO_150, cx);
+        zoom_pane(shell, zoom_steps(crate::zoom::MAX), cx);
     }
     width(cx, WIDE);
     let (_, roomy) = foot(prefix, n, cx);
     width(cx, NARROWEST);
     let (foot, answers) = foot(prefix, n, cx);
+    assert!(
+        answers
+            .iter()
+            .any(|answer| !same(answer.top(), answers[0].top())),
+        "the answers fit on one line here, so nothing had to wrap: {answers:?}"
+    );
     for (i, (answer, roomy)) in answers.iter().zip(&roomy).enumerate() {
         assert!(
             same(answer.size.height, roomy.size.height)
@@ -191,12 +197,4 @@ fn a_question_cards_answers_as_worded_stand_on_one_line(cx: &mut TestAppContext)
     ask_question(&mut events);
     cx.run_until_parked();
     one_line_where_they_fit("ask", 2, cx);
-}
-
-#[gpui::test]
-fn a_question_cards_answers_that_do_not_fit_wrap_whole(cx: &mut TestAppContext) {
-    let (shell, mut events, cx) = pane("strain-ask-zoomed", cx);
-    ask_question(&mut events);
-    cx.run_until_parked();
-    whole_where_they_do_not("ask", 2, &shell, true, cx);
 }
