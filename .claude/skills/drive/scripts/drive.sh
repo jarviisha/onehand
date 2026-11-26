@@ -7,7 +7,7 @@
 #   drive.sh key ARGS…                             wtype arguments, e.g. -k Escape
 #   drive.sh shot NAME                             screenshot to $DRIVE_ROOT/NAME.png
 #   drive.sh size W [H]                            the window's size in output pixels: W at
-#                                                  least 720, the app's narrowest; H 1000
+#                                                  least 720 and H 480, the app's least; H 1000
 #   drive.sh matrix NAME [STEPS]                   NAME-W-P.png at each width, light then dark
 #   drive.sh alive                                 is the app still running? exit 1 if not
 set -euo pipefail
@@ -45,7 +45,7 @@ case ${1:-} in
     # size; it changes live, and the app lays out again within a second.
     size)
         [[ ${2:-} =~ ^[0-9]+$ && ${3:-1000} =~ ^[0-9]+$ ]] || usage
-        (( $2 >= 720 && ${3:-1000} > 0 )) || usage
+        (( $2 >= 720 && ${3:-1000} >= 480 )) || usage
         swaymsg -s "/run/user/$(id -u)/sway-ipc.$(id -u).$(cat "$root/sway.pid").sock" \
             output HEADLESS-1 mode "$2x${3:-1000}" >/dev/null
         echo "$2 ${3:-1000}" >"$root/size"
@@ -66,7 +66,7 @@ case ${1:-} in
             # A step that fails stops the matrix, saying its line.
             if [ -n "${3:-}" ]; then
                 # shellcheck disable=SC2016 # expanded by the inner bash
-                bash -eE -c 'trap '\''echo "step failed: line $LINENO of $0" >&2'\'' ERR; . "$0"' "$(realpath "$3")"
+                bash -eE -o pipefail -c 'trap '\''echo "step failed: line $LINENO of $0" >&2'\'' ERR; . "$0"' "$(realpath "$3")"
             fi
             alive_or_stop
             # Widest first, so the steps' layout is the first one shot.

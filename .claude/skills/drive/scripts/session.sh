@@ -117,19 +117,24 @@ drop_keyboard() {
     rm -f "$root/keyboard.pid"
 }
 
-# The binary to run: the one given, kept for the commands after it; else
-# the one kept; else the repo's debug build. Said by its path, before
-# anything starts, when it is not there.
+# The binary to run: the one given, kept for the commands after it once it
+# is there; else the one kept; else the repo's debug build. Said by its
+# path, before anything starts, when it is not there.
 take_bin() {
-    if [ -n "${1:-}" ]; then realpath -m "$1" >"$root/bin"; fi
-    bin=$(cat "$root/bin" 2>/dev/null || echo "$repo/target/debug/onehand")
+    bin=${1:+$(realpath -m "$1")}
+    bin=${bin:-$(cat "$root/bin" 2>/dev/null || echo "$repo/target/debug/onehand")}
     [ -x "$bin" ] || { echo "no onehand binary at $bin" >&2; exit 1; }
+    if [ -n "${1:-}" ]; then echo "$bin" >"$root/bin"; fi
 }
 
-start_app() {
+need_sway() {
     if ! { [ -f "$root/sway.pid" ] && kill -0 "$(cat "$root/sway.pid")" 2>/dev/null; }; then
         echo "the session's sway is not running; start it with: session.sh up" >&2; exit 1
     fi
+}
+
+start_app() {
+    need_sway
     # `cd` on its own line: with `cd … && app &`, the whole list goes to the
     # background and `$!` is a shell, not the app, so a stop misses the app.
     (
@@ -141,7 +146,8 @@ start_app() {
     local sock; sock=$(sway_sock)
     for _ in $(seq 60); do
         swaymsg -s "$sock" -t get_tree 2>/dev/null | grep -q '"app_id": "onehand"' && return 0
-        kill -0 "$(cat "$root/app.pid")" 2>/dev/null || { tail -5 "$root/app.log" >&2; exit 1; }
+        kill -0 "$(cat "$root/app.pid")" 2>/dev/null ||
+            { echo "onehand exited before its window showed; the end of its log:" >&2; tail -5 "$root/app.log" >&2; exit 1; }
         sleep 0.5
     done
     echo "no onehand window; see $root/app.log" >&2; exit 1
@@ -158,11 +164,13 @@ case ${1:-} in
         stop app.pid; drop_keyboard; hold_keyboard; start_app ;;
     palette)
         case ${2:-} in light | dark) ;; *) usage ;; esac
+        need_sway
         take_bin "${3:-}"
         cfg=$root/home/config.toml
         # Written beside and moved, so the app never boots on half a file;
         # first in the file, so it is a top-level key, not a table's, and any
-        # top-level one before the first table, however spaced, dropped.
+        # top-level one before the first table, however spaced, dropped. It does
+        # not read a multi-line array's line starting with `[`, nor a quoted key.
         trap 'rm -f "$cfg.tmp"' EXIT
         { printf 'appearance = "%s"\n' "$2"
           awk '/^[[:space:]]*\[/ { t = 1 } t || !/^[[:space:]]*appearance[[:space:]]*=/' "$cfg"
@@ -174,6 +182,7 @@ case ${1:-} in
         hold_keyboard
         start_app ;;
     restart)
+        need_sway
         take_bin "${2:-}"
         stop app.pid
         rm -rf "$root/home/tasks" "$root/home/conversations"

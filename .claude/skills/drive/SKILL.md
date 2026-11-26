@@ -52,17 +52,17 @@ The scripts are in `scripts/` beside this file; run them from anywhere. `DRIVE_R
    - `drive.sh alive` after any action that could crash. If the app is gone it prints the panic
      and backtrace and exits 1.
    - `drive.sh size W [H]` sets the window's size in output pixels (H defaults to 1000), live.
-     The narrowest the window goes is 720 wide (`WINDOW_MIN`, `crates/app/src/shell/boot/open.rs`);
-     a narrower width or a zero height is refused.
+     The window goes no smaller than 720 by 480 (`WINDOW_MIN`, `crates/app/src/shell/boot/open.rs`);
+     a narrower width or a lower height is refused.
    - `session.sh palette light|dark` draws the app light or dark. The choice is read at boot, so
      the app starts again, its data kept and its view lost.
    - `drive.sh matrix NAME [STEPS]` pictures one view in both palettes and at each width of
      `$DRIVE_WIDTHS` (default `720 1600`), narrowest last: `NAME-<width>-<palette>.png`. After
      each palette it reaches the view again by running STEPS at 1600 wide, then narrows the
      window. It runs light, then dark, and leaves the app dark at 1600 wide. STEPS is a bash
-     file of `$DRIVE …` lines, keys before clicks, its coordinates read off a 1600-wide
-     screenshot. A step that fails stops the matrix, saying its line, and so does the app
-     dying, with its log's tail:
+     file of plain `$DRIVE …` lines, no functions, keys before clicks, its coordinates read off
+     a 1600-wide screenshot. A step that fails, a pipe's part included, stops the matrix, saying
+     its line, and so does the app dying, with its log's tail:
 
      ```bash
      $DRIVE key -M ctrl -k comma -m ctrl   # Settings
