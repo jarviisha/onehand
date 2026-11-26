@@ -24,6 +24,7 @@ fn command(id: &str, on_fail: &str) -> StepSpec {
         kind: StepKind::Command {
             command: None,
             on_fail: on_fail.to_string(),
+            timeout: None,
         },
     }
 }

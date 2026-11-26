@@ -150,7 +150,9 @@ impl StepDraft {
                     of.as_str(),
                 )
             }
-            StepKind::Command { command, on_fail } => (
+            StepKind::Command {
+                command, on_fail, ..
+            } => (
                 Kind::Command,
                 "",
                 Vec::new(),
@@ -310,6 +312,7 @@ impl StepDraft {
                 Kind::Command => StepKind::Command {
                     command: (!command.is_empty()).then_some(command),
                     on_fail: self.target.clone(),
+                    timeout: None,
                 },
                 Kind::Approval => StepKind::Approval {
                     of: self.target.clone(),
@@ -503,6 +506,7 @@ impl WorkflowDraft {
                 Kind::Command => StepKind::Command {
                     command: None,
                     on_fail: String::new(),
+                    timeout: None,
                 },
                 Kind::Approval => StepKind::Approval { of: String::new() },
                 Kind::Push => StepKind::Push,

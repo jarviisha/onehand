@@ -394,6 +394,7 @@ fn validate_names_each_kind_of_problem() {
     t.steps[3].kind = StepKind::Command {
         command: None,
         on_fail: String::new(),
+        timeout: None,
     };
     has(
         &t,
@@ -404,6 +405,7 @@ fn validate_names_each_kind_of_problem() {
     t.steps[3].kind = StepKind::Command {
         command: Some(" ".into()),
         on_fail: "approve".into(),
+        timeout: None,
     };
     has(&t, "command is blank");
     has(&t, "no earlier agent step");
@@ -721,6 +723,7 @@ fn a_template_needs_a_check_command_only_for_a_command_step_naming_none() {
     named.steps[3].kind = StepKind::Command {
         command: Some("make check".into()),
         on_fail: "implement".into(),
+        timeout: None,
     };
     assert!(!named.needs_check());
     named.steps.pop();
@@ -741,6 +744,7 @@ fn a_template_lacking_its_check_command_names_itself() {
     named.steps[3].kind = StepKind::Command {
         command: Some("make check".into()),
         on_fail: "implement".into(),
+        timeout: None,
     };
     assert_eq!(named.lacks_check(false), None);
 }
@@ -750,11 +754,11 @@ fn a_template_lacking_its_check_command_names_itself() {
 fn a_timeout_that_does_not_read_falls_back_to_a_new_workflows() {
     let mut template = checkout();
     template.timeout = "10m".into();
-    assert_eq!(template.timeout_limit(), Duration::from_secs(10 * 60));
+    assert_eq!(template.timeout_limit(), Some(Duration::from_secs(10 * 60)));
     template.timeout = "soon".into();
     let fresh = Template::blank("new").timeout_limit();
     assert_eq!(template.timeout_limit(), fresh);
-    assert_eq!(fresh, Duration::from_secs(45 * 60));
+    assert_eq!(fresh, Some(Duration::from_secs(45 * 60)));
 }
 
 /// What a retry keeps is said the same way whether it changed or not.
@@ -1785,6 +1789,7 @@ fn packaged() -> Template {
             StepKind::Command {
                 command: None,
                 on_fail: "implement".into(),
+                timeout: None,
             },
         ),
         step(
@@ -1792,6 +1797,7 @@ fn packaged() -> Template {
             StepKind::Command {
                 command: Some("make package".into()),
                 on_fail: "implement".into(),
+                timeout: None,
             },
         ),
         step("push", StepKind::Push),
@@ -2565,4 +2571,77 @@ fn a_workflow_without_an_id_is_never_limited() {
     template.id = String::new();
     let (_, first) = begin("1".into(), template, brief(), setup(None));
     assert_eq!(first, Action::Measure);
+}
+
+// Timeouts: a duration, or none.
+
+/// A workflow whose timeout is `none` validates, has no limit, and says so.
+#[test]
+fn a_workflow_without_a_limit_has_none() {
+    let mut t = checkout();
+    t.timeout = "none".into();
+    assert!(validate::validate(&t).is_empty());
+    assert_eq!(t.timeout_limit(), None);
+    assert_eq!(t.timeout_said(), "no limit");
+    t.timeout = "45m".into();
+    assert_eq!(
+        t.timeout_limit(),
+        Some(std::time::Duration::from_secs(45 * 60))
+    );
+    assert_eq!(t.timeout_said(), "45m");
+}
+
+/// The checkout template with its Verify step's timeout set to `timeout`.
+fn verify_timing_out(timeout: Option<&str>) -> Template {
+    let mut t = checkout();
+    t.steps[3].kind = StepKind::Command {
+        command: None,
+        on_fail: "implement".into(),
+        timeout: timeout.map(str::to_string),
+    };
+    t
+}
+
+/// A command step runs fifteen minutes unless it says otherwise; `none` is
+/// no limit, and a step of another kind has none of its own.
+#[test]
+fn a_command_step_has_fifteen_minutes_unless_it_says() {
+    use std::time::Duration;
+    let limit = |t: Template| t.steps[3].command_limit();
+    assert_eq!(
+        limit(verify_timing_out(None)),
+        Some(Duration::from_secs(900))
+    );
+    assert_eq!(
+        limit(verify_timing_out(Some("30m"))),
+        Some(Duration::from_secs(1800))
+    );
+    assert_eq!(limit(verify_timing_out(Some("none"))), None);
+    assert_eq!(checkout().steps[0].command_limit(), None);
+}
+
+/// A command timeout that does not read is refused, on its step.
+#[test]
+fn an_unreadable_command_timeout_is_refused_naming_its_step() {
+    let problems = validate::validate(&verify_timing_out(Some("soon")));
+    assert!(
+        problems.iter().any(|p| p.step == Some(3)
+            && p.said == "its timeout `soon` is not a duration such as 15m or 2h, or none"),
+        "{problems:?}"
+    );
+    assert!(validate::validate(&verify_timing_out(Some("none"))).is_empty());
+}
+
+/// A command's timeout is kept through a save and a read; a step with none
+/// writes no key.
+#[test]
+fn a_command_timeout_survives_a_save_and_a_read() {
+    let t = verify_timing_out(Some("none"));
+    let text = toml::to_string(&t).unwrap();
+    assert_eq!(store::parse(&text).unwrap(), t);
+    let plain = toml::to_string(&verify_timing_out(None)).unwrap();
+    assert!(
+        !plain.contains("timeout = \"15m\"") && plain.matches("timeout").count() == 1,
+        "{plain}"
+    );
 }

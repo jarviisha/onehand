@@ -137,6 +137,8 @@ impl RunDrive {
         let limit = run
             .template
             .timeout_limit()
+            // Until the clock learns no limit: a century stands for none.
+            .unwrap_or(Duration::from_secs(100 * 365 * 24 * 3600))
             .saturating_sub(Duration::from_secs(run.spent_secs));
         let lane = Lane::at(&run);
         let mut drive = Self {

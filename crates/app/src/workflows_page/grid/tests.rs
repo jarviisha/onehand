@@ -28,7 +28,8 @@ fn tone_by_kind() {
     assert!(matches!(
         tone(&StepKind::Command {
             command: None,
-            on_fail: "plan".into()
+            on_fail: "plan".into(),
+            timeout: None,
         }),
         Tone::Command
     ));

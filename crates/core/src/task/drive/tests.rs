@@ -423,7 +423,7 @@ fn a_command_that_passes_is_said_and_judged() {
 #[test]
 fn the_budget_does_not_run_while_a_person_is_waited_on() {
     let mut rig = at_approval();
-    let fired = rig.drive.run().template.timeout_limit() * 2;
+    let fired = rig.drive.run().template.timeout_limit().unwrap() * 2;
     rig.now += fired;
     let fx = rig.on(Input::Elapsed(Timer::Timeout));
     assert_eq!(finished(&fx), None, "{fx:?}");
@@ -433,7 +433,7 @@ fn the_budget_does_not_run_while_a_person_is_waited_on() {
 #[test]
 fn the_clock_ends_the_run_once_nothing_is_left() {
     let (mut rig, _) = Rig::start(checkout(), None, connected());
-    rig.now += rig.drive.run().template.timeout_limit() + Duration::from_secs(1);
+    rig.now += rig.drive.run().template.timeout_limit().unwrap() + Duration::from_secs(1);
     let fx = rig.on(Input::Elapsed(Timer::Timeout));
     // Held behind the first pin, as every ending is; it wins once it lands.
     let fx = match finished(&fx) {
@@ -771,7 +771,7 @@ fn a_card_pauses_the_budget() {
     assert!(
         rig.drive.card() && rig.drive.waits_on_person(true) && !rig.drive.waits_on_person(false)
     );
-    rig.now += rig.drive.run().template.timeout_limit() * 2;
+    rig.now += rig.drive.run().template.timeout_limit().unwrap() * 2;
     let fx = rig.on(Input::Elapsed(Timer::Timeout));
     assert_eq!(finished(&fx), None, "a person is waited on");
 }
@@ -938,6 +938,7 @@ fn forging() -> Rig {
             StepKind::Command {
                 command: Some("make check".into()),
                 on_fail: String::new(),
+                timeout: None,
             },
         ),
         step("push", StepKind::Push),
@@ -1218,6 +1219,7 @@ fn verify_step(on_fail: &str) -> StepSpec {
         kind: StepKind::Command {
             command: Some("make check".into()),
             on_fail: on_fail.into(),
+            timeout: None,
         },
     }
 }
@@ -1723,7 +1725,7 @@ fn a_verdict_after_the_turn_is_refused() {
 fn a_review_runs_the_budget() {
     let mut rig = in_review();
     assert!(!rig.drive.waits_on_person(true) && !rig.drive.waits_on_person(false));
-    rig.now += rig.drive.run().template.timeout_limit() + Duration::from_secs(1);
+    rig.now += rig.drive.run().template.timeout_limit().unwrap() + Duration::from_secs(1);
     let fx = rig.on(Input::Elapsed(Timer::Timeout));
     assert_eq!(finished(&fx), Some(&Outcome::Stopped(Stop::TimedOut)));
 }

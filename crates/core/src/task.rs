@@ -272,6 +272,7 @@ impl Task {
             kind: StepKind::Command {
                 command: Some(command.clone()),
                 on_fail: String::new(),
+                timeout: None,
             },
         });
         let brief = Brief {

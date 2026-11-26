@@ -2,11 +2,10 @@
 //! mark a step is measured from, what a turn left, whether a gate holds, and
 //! the command a step runs.
 
-use super::template::GateKind;
+use super::template::{GateKind, COMMAND_LIMIT};
 use crate::worktree;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
-use std::time::Duration;
 
 /// Where a step's work is measured from: the commit, and the fingerprints of
 /// the uncommitted work it may still be at — as the step found it, and after
@@ -64,9 +63,6 @@ pub(crate) fn holds(gate: GateKind, facts: &Facts, from: &Mark, answer: &str) ->
         GateKind::Uncommitted => facts.commits == 0,
     }
 }
-
-/// How long a step's command may run before it counts as failed.
-const COMMAND_LIMIT: Duration = Duration::from_secs(15 * 60);
 
 /// How many lines of a command's output are kept. The end is where a
 /// build or a test run says what went wrong.

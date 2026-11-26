@@ -34,7 +34,10 @@ pub(crate) use settings::option_refused;
 pub use settings::{next, Next, Offer, Pick, Settings};
 pub use status_checks::{judge, pull_request_step, waited_on, with_logs, Seen};
 pub(crate) use template::PROMPT_ID;
-pub use template::{parse_every, GateKind, Place, StepKind, StepSpec, Template, DEFAULT_WAIT};
+pub use template::{
+    parse_every, parse_limit, said_limit, GateKind, Place, StepKind, StepSpec, Template,
+    DEFAULT_WAIT,
+};
 pub use validate::validate;
 
 /// The branch a run on a worktree works on: `workflow/<title words>`, built
