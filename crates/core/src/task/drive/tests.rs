@@ -154,6 +154,10 @@ impl Rig {
         self.call(|drive, chat, now| drive.stop(chat, now))
     }
 
+    fn extend(&mut self, at: ApprovalAt) -> Vec<Effect> {
+        self.call(|drive, chat, now| drive.extend(at, chat, now))
+    }
+
     /// What the app does to `lane`'s session for what the run asked of it.
     fn play(&mut self, lane: &Lane) {
         let picks = self.drive.take_picks();
@@ -440,11 +444,11 @@ fn prompted() -> Rig {
 }
 
 #[test]
-fn the_clock_ends_the_run_once_nothing_is_left() {
+fn the_clock_runs_out_once_nothing_is_left() {
     let mut rig = prompted();
     rig.now += rig.drive.run().template.timeout_limit().unwrap() + Duration::from_secs(1);
-    let fx = rig.on(Input::Elapsed(Timer::Timeout));
-    assert_eq!(finished(&fx), Some(&Outcome::Stopped(Stop::TimedOut)));
+    rig.on(Input::Elapsed(Timer::Timeout));
+    assert!(rig.drive.run().awaiting_extend());
 }
 
 /// A workflow with no limit arms no timer, and a timer that fires anyway
@@ -535,7 +539,7 @@ fn a_command_does_not_spend_the_clock() {
 /// A run come back with more spent than its limit runs out at once, from
 /// its first prompt.
 #[test]
-fn a_run_resumed_over_its_limit_times_out_at_once() {
+fn a_run_resumed_over_its_limit_runs_out_at_once() {
     let mut run = prompted().drive.run().clone();
     run.spent_secs = run.template.timeout_limit().unwrap().as_secs() + 1;
     let first = run.resume(0);
@@ -547,8 +551,8 @@ fn a_run_resumed_over_its_limit_times_out_at_once() {
     };
     let _ = fx;
     rig.on(Input::Measured(Ok(mark("a", "d0"))));
-    let fx = rig.on(Input::Elapsed(Timer::Timeout));
-    assert_eq!(finished(&fx), Some(&Outcome::Stopped(Stop::TimedOut)));
+    rig.on(Input::Elapsed(Timer::Timeout));
+    assert!(rig.drive.run().awaiting_extend());
 }
 
 #[test]
@@ -1843,8 +1847,11 @@ fn a_review_runs_the_budget() {
     let mut rig = in_review();
     assert!(!rig.drive.waits_on_person(true) && !rig.drive.waits_on_person(false));
     rig.now += rig.drive.run().template.timeout_limit().unwrap() + Duration::from_secs(1);
-    let fx = rig.on(Input::Elapsed(Timer::Timeout));
-    assert_eq!(finished(&fx), Some(&Outcome::Stopped(Stop::TimedOut)));
+    rig.on(Input::Elapsed(Timer::Timeout));
+    assert!(
+        rig.drive.run().awaiting_extend(),
+        "the review's lane runs out too"
+    );
 }
 
 #[test]
@@ -2032,4 +2039,195 @@ fn a_resumed_run_at_a_limited_step_asks_again_and_takes_it_up_from_its_mark() {
     let fx = rig.on(Input::Pinned(Ok("c1".into())));
     assert!(!names(&fx).contains(&"Measure"), "{fx:?}");
     assert!(rig.submitted(), "{fx:?}");
+}
+
+// Out of time: the run waits for Extend or Stop in its own session.
+
+/// A run of the checkout workflow that ran out of time in its plan's turn,
+/// the turn still being cancelled.
+fn out_of_time() -> Rig {
+    let mut rig = prompted();
+    rig.now += rig.drive.run().template.timeout_limit().unwrap() + Duration::from_secs(1);
+    let fx = rig.on(Input::Elapsed(Timer::Timeout));
+    assert_eq!(finished(&fx), None, "{fx:?}");
+    rig
+}
+
+#[test]
+fn running_out_waits_instead_of_ending() {
+    let rig = out_of_time();
+    assert!(rig.drive.run().awaiting_extend());
+    assert!(
+        rig.asked.iter().any(|a| matches!(a, Asked::Cancel)),
+        "{:?}",
+        rig.asked
+    );
+    assert!(
+        rig.notes()
+            .iter()
+            .any(|n| n.starts_with("Out of time at Plan after ") && n.ends_with("Extend to go on.")),
+        "{:?}",
+        rig.notes()
+    );
+    assert!(rig.drive.waits_on_person(true));
+}
+
+#[test]
+fn the_cancelled_turn_is_not_judged() {
+    let mut rig = out_of_time();
+    let fx = rig.turn_ends("half done");
+    assert!(!names(&fx).contains(&"ReadFacts"), "{fx:?}");
+    assert!(rig.drive.run().awaiting_extend());
+    assert_eq!(rig.drive.run().misses, 0);
+}
+
+#[test]
+fn extend_waits_for_the_cancelled_turn_then_carries_on() {
+    let mut rig = out_of_time();
+    let at = rig.drive.run().out_of_time_at().unwrap();
+    let fx = rig.extend(at);
+    assert!(!rig.submitted(), "held while the turn is cancelled: {fx:?}");
+    let fx = rig.turn_ends("");
+    assert!(rig.submitted(), "{fx:?}");
+    assert!(names(&fx).contains(&"Arm(Timeout)"), "{fx:?}");
+    let limit = rig.drive.run().template.timeout_limit().unwrap().as_secs();
+    assert_eq!(rig.drive.run().extended_secs, limit);
+    assert!(rig.drive.run().awaiting_turn());
+}
+
+#[test]
+fn an_extended_run_runs_out_again_only_after_its_extension() {
+    let mut rig = out_of_time();
+    let at = rig.drive.run().out_of_time_at().unwrap();
+    rig.turn_ends("");
+    rig.extend(at);
+    let limit = rig.drive.run().template.timeout_limit().unwrap();
+    rig.now += limit - Duration::from_secs(60);
+    let fx = rig.on(Input::Elapsed(Timer::Timeout));
+    assert!(!rig.drive.run().awaiting_extend(), "{fx:?}");
+    rig.now += Duration::from_secs(61);
+    rig.on(Input::Elapsed(Timer::Timeout));
+    assert!(rig.drive.run().awaiting_extend());
+}
+
+#[test]
+fn stop_while_out_of_time_ends_as_a_timeout() {
+    let mut rig = out_of_time();
+    rig.turn_ends("");
+    let fx = rig.stop();
+    assert_eq!(finished(&fx), Some(&Outcome::Stopped(Stop::TimedOut)));
+}
+
+#[test]
+fn typing_while_out_of_time_is_a_take_over() {
+    let mut rig = out_of_time();
+    rig.turn_ends("");
+    assert!(rig.chat.submit("my own words", &[]));
+    let fx = rig.on(Input::Appended);
+    assert_eq!(finished(&fx), Some(&Outcome::Stopped(Stop::TakenOver)));
+}
+
+#[test]
+fn a_resumed_extended_run_keeps_its_extension() {
+    let mut run = prompted().drive.run().clone();
+    let limit = run.template.timeout_limit().unwrap().as_secs();
+    run.spent_secs = limit + 10;
+    run.extended_secs = limit;
+    let first = run.resume(0);
+    let (_, fx) = Rig::start_run(run, first, connected());
+    let armed = fx.iter().find_map(|e| match e {
+        Effect::Arm {
+            timer: Timer::Timeout,
+            after,
+        } => Some(*after),
+        _ => None,
+    });
+    assert_eq!(armed, Some(Duration::from_secs(limit - 10)), "{fx:?}");
+}
+
+/// A second Extend pressed while the first one's prompt is under way is
+/// refused, not kept to fire at the next run-out.
+#[test]
+fn a_stale_extend_is_not_kept_for_the_next_run_out() {
+    let mut rig = out_of_time();
+    let at = rig.drive.run().out_of_time_at().unwrap();
+    rig.turn_ends("");
+    rig.extend(at.clone());
+    assert!(rig.submitted());
+    rig.extend(at);
+    // The extension, all of it, spent.
+    let limit = rig.drive.run().template.timeout_limit().unwrap();
+    rig.now += limit + Duration::from_secs(1);
+    rig.on(Input::Elapsed(Timer::Timeout));
+    assert!(rig.drive.run().awaiting_extend());
+    rig.turn_ends("");
+    assert!(
+        rig.drive.run().awaiting_extend() && !rig.submitted(),
+        "nobody extended it again"
+    );
+}
+
+/// Time running out while onehand, not the agent, has the step (its mark
+/// pinned, its work measured) waits for the step's prompt to go, then
+/// runs out with the agent's turn to cancel.
+#[test]
+fn running_out_between_turns_waits_for_the_prompt() {
+    let mut run = prompted().drive.run().clone();
+    run.spent_secs = run.template.timeout_limit().unwrap().as_secs() + 1;
+    let first = run.resume(0);
+    let (mut rig, _) = Rig::start_run(run, first, connected());
+    let fx = rig.on(Input::Elapsed(Timer::Timeout));
+    assert!(!rig.drive.run().awaiting_extend(), "{fx:?}");
+    assert!(names(&fx).contains(&"Arm(Timeout)"), "{fx:?}");
+    rig.on(Input::Pinned(Ok("c0".into())));
+    rig.on(Input::Measured(Ok(mark("a", "d0"))));
+    assert!(rig.chat.busy, "the step's prompt went");
+    rig.on(Input::Elapsed(Timer::Timeout));
+    assert!(rig.drive.run().awaiting_extend());
+    assert!(rig.asked.iter().any(|a| matches!(a, Asked::Cancel)));
+}
+
+/// A prompt waiting for the link when time runs out is not sent into a run
+/// that ran out: it waits, and nothing runs out until it went.
+#[test]
+fn a_prompt_waiting_for_the_link_is_not_run_out_under() {
+    let mut run = prompted().drive.run().clone();
+    run.spent_secs = run.template.timeout_limit().unwrap().as_secs() + 1;
+    let first = run.resume(0);
+    let (tx, rx): (ReqTx, _) = tokio::sync::mpsc::unbounded_channel();
+    drop(tx);
+    let (mut rig, _) = Rig::start_run(run, first, (Chat::default(), rx));
+    rig.on(Input::Pinned(Ok("c0".into())));
+    rig.on(Input::Measured(Ok(mark("a", "d0"))));
+    assert!(!rig.chat.busy, "the link is not up");
+    rig.on(Input::Elapsed(Timer::Timeout));
+    assert!(!rig.drive.run().awaiting_extend());
+}
+
+/// A card the cancelled turn parked, answered while the run waits, does not
+/// set its clock going again.
+#[test]
+fn a_card_answered_while_out_of_time_keeps_the_clock_still() {
+    let mut rig = out_of_time();
+    let spent = rig.drive.run().spent_secs;
+    rig.on(Input::AwaitingUser);
+    rig.on(Input::Notified);
+    rig.now += Duration::from_secs(600);
+    rig.turn_ends("");
+    let at = rig.drive.run().out_of_time_at().unwrap();
+    rig.extend(at);
+    assert_eq!(rig.drive.run().spent_secs, spent);
+}
+
+/// The step's turn over and its work being read when time runs out: the
+/// work is judged, not run out under, and a failed read is not taken for
+/// a run that ran out.
+#[test]
+fn a_turn_being_judged_is_not_run_out_under() {
+    let mut rig = prompted();
+    rig.now += rig.drive.run().template.timeout_limit().unwrap() + Duration::from_secs(1);
+    let fx = rig.turn_ends("The plan.");
+    assert!(names(&fx).contains(&"ReadFacts"), "{fx:?}");
+    rig.on(Input::Elapsed(Timer::Timeout));
+    assert!(!rig.drive.run().awaiting_extend());
 }

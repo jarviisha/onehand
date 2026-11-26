@@ -29,8 +29,9 @@ impl RunDrive {
         }
         // The clock counts the agent's work on a step and nothing else: it
         // stands still for whatever onehand does next, and goes on when a
-        // prompt is handed over.
-        if !matches!(action, Action::Prompt(_)) {
+        // prompt is handed over. Nothing to do changes nothing: a press the
+        // run refused leaves a turn under way counted.
+        if !matches!(action, Action::Prompt(_) | Action::Idle) {
             self.budget.pause(now.at);
         }
         let dir = self.run.setup.dir.clone();
@@ -56,6 +57,8 @@ impl RunDrive {
                     "Waiting for approval: Continue or Revise… under the header".to_string(),
                 ));
             }
+            // Said by the drive that ran out, which knows what was spent.
+            Action::AwaitExtend => {}
             Action::AwaitRoom => self.await_room(true, now, fx),
             Action::Push(commit) => {
                 self.asked.push(Asked::Note(format!(
@@ -104,6 +107,7 @@ impl RunDrive {
             | Action::Prompt(_)
             | Action::RunCommand(_)
             | Action::AwaitApproval
+            | Action::AwaitExtend
             | Action::Push(_)
             | Action::OpenPullRequest
             | Action::AwaitStatusChecks { .. }
@@ -255,6 +259,7 @@ pub(super) fn ends_run(action: &Action) -> bool {
         | Action::Prompt(_)
         | Action::RunCommand(_)
         | Action::AwaitApproval
+        | Action::AwaitExtend
         | Action::AwaitRoom
         | Action::Push(_)
         | Action::OpenPullRequest

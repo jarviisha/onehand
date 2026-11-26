@@ -15,6 +15,7 @@ use super::status_checks::Seen;
 use super::template::{Place, StepKind, StepSpec, Template};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use std::time::Duration;
 
 mod retry;
 mod review;
@@ -49,6 +50,9 @@ pub enum Action {
     RunCommand(String),
     /// Wait for a person to approve or revise.
     AwaitApproval,
+    /// Wait for a person to extend the run, which ran out of time, or to
+    /// stop it.
+    AwaitExtend,
     /// Wait for room at the step the run is at, which is limited and full:
     /// [`Run::room_given`] says when it has some.
     AwaitRoom,
@@ -207,6 +211,13 @@ enum Await {
     StatusChecks,
     /// Room at a limited step.
     Room,
+    /// A person, to extend the run that ran out of time or stop it.
+    OutOfTime,
+}
+
+/// Whether `n` is nothing, so a field of it is left out of the file.
+fn is_zero(n: &u64) -> bool {
+    *n == 0
 }
 
 /// One stay at a step: going back to a step is a new visit, never a rewrite
@@ -296,6 +307,10 @@ pub struct Run {
     check_output: Option<String>,
     /// Working time spent, in seconds, for a resumed run's clock.
     pub spent_secs: u64,
+    /// Working time a person added to the timeout when the run ran out, in
+    /// seconds: kept, so a run picked up again keeps what it was given.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub(crate) extended_secs: u64,
     pub history: Vec<Transition>,
     /// Every stay at a step, oldest first. Not capped: each one ends on a
     /// miss or a person, and the answers they keep are capped already.
@@ -336,6 +351,7 @@ impl Run {
             revise_by: None,
             check_output: None,
             spent_secs: 0,
+            extended_secs: 0,
             history: Vec::new(),
             visits: Vec::new(),
             outcome: None,
@@ -598,6 +614,52 @@ impl Run {
         self.revise = Some(note);
         self.revise_by = None;
         self.enter(back, "sent back to be revised", now)
+    }
+
+    /// The run ran out of time during the step's turn: it waits for a person,
+    /// its visit open, the turn left unjudged. Only while it waits on a turn.
+    pub(crate) fn ran_out(&mut self, now: u64) -> Action {
+        if self.awaiting != Await::Turn {
+            return Action::Idle;
+        }
+        self.awaiting = Await::OutOfTime;
+        self.log_here("out of time", now);
+        Action::AwaitExtend
+    }
+
+    /// The run ran out of time and waits for a person.
+    pub fn awaiting_extend(&self) -> bool {
+        self.awaiting == Await::OutOfTime
+    }
+
+    /// What an extend press drawn from the run now names: the run, and the
+    /// open visit that ran out. `None` while it has not run out.
+    pub fn out_of_time_at(&self) -> Option<ApprovalAt> {
+        if self.awaiting != Await::OutOfTime {
+            return None;
+        }
+        let visit = self.visits.last().filter(|v| v.ended_at.is_none())?;
+        Some(ApprovalAt {
+            run: self.id.clone(),
+            visit: visit.id,
+        })
+    }
+
+    /// A person gave the run that ran out at `at` `by` more: kept, and the
+    /// step carries on where it was, unless the run no longer waits there.
+    pub(crate) fn extended(&mut self, at: &ApprovalAt, by: Duration, now: u64) -> Action {
+        if self.out_of_time_at().as_ref() != Some(at) {
+            return Action::Idle;
+        }
+        let label = self.current().map(|s| s.label.clone()).unwrap_or_default();
+        let more = super::template::said_duration(by);
+        self.extended_secs += by.as_secs();
+        self.log_here(&format!("extended by {more}"), now);
+        self.awaiting = Await::Turn;
+        Action::Prompt(format!(
+            "You ran out of time at {label}. You have {more} more. \
+             Carry on with the step from where you were."
+        ))
     }
 
     /// The run is to stop, for `stop`. **Never judges the turn** that was

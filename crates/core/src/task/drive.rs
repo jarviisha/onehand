@@ -119,6 +119,9 @@ pub struct RunDrive {
     room: Option<usize>,
     /// The run has finished: nothing more is done.
     over: bool,
+    /// An Extend pressed while the turn cancelled at running out was still
+    /// ending: done once it has.
+    after_drain: Option<Answer>,
     /// The run never had a session: a check, which only runs a command.
     /// It has no timeout, and what needs no session is still done.
     sessionless: bool,
@@ -136,10 +139,10 @@ impl RunDrive {
         now: Now,
         chat: Option<&Chat>,
     ) -> (Self, Vec<Effect>) {
-        let limit = run
-            .template
-            .timeout_limit()
-            .map(|limit| limit.saturating_sub(Duration::from_secs(run.spent_secs)));
+        let limit = run.template.timeout_limit().map(|limit| {
+            (limit + Duration::from_secs(run.extended_secs))
+                .saturating_sub(Duration::from_secs(run.spent_secs))
+        });
         let lane = Lane::at(&run);
         let mut drive = Self {
             task,
@@ -166,6 +169,7 @@ impl RunDrive {
             save_failed: false,
             room: None,
             over: false,
+            after_drain: None,
             sessionless: chat.is_none(),
         };
         let mut fx = Vec::new();
@@ -211,7 +215,19 @@ impl RunDrive {
     /// lane's, or a card the agent parked, which is only in the current
     /// lane's (`current`).
     pub fn waits_on_person(&self, current: bool) -> bool {
-        self.run.awaiting_approval() || (current && self.here.card)
+        self.run.awaiting_approval() || self.run.awaiting_extend() || (current && self.here.card)
+    }
+
+    /// The agent has the step: its prompt went and its turn, or the work it
+    /// left running, is not over and judged yet. Only then can the run run
+    /// out, so there is always a turn to cancel and never a prompt to send
+    /// into a run that ran out.
+    fn agent_has_the_step(&self) -> bool {
+        self.run.awaiting_turn()
+            && self.held.is_none()
+            && self.here.pending.is_none()
+            && self.here.picking.is_none()
+            && self.answer.is_none()
     }
 
     /// The agent parked a card nobody has answered yet.
@@ -278,8 +294,23 @@ impl RunDrive {
     /// A person pressed Stop: the turn under way is cancelled and the run
     /// ends, once a command running has exited.
     pub(crate) fn stop(&mut self, chat: Option<&Chat>, now: Now) -> Vec<Effect> {
+        // A run that ran out of time and is stopped ends as a timeout: that is
+        // what stopped it.
+        let stop = match self.run.awaiting_extend() {
+            true => Stop::TimedOut,
+            false => Stop::ByPerson,
+        };
+        self.command_with(chat, now, move |d, chat, now, fx| {
+            d.cut(stop, chat, now, fx)
+        })
+    }
+
+    /// A person gave the run that ran out at `at` its timeout again. Held
+    /// while a mark is pinned or the cancelled turn is still ending, and
+    /// refused by the engine once the run no longer waits there.
+    pub(crate) fn extend(&mut self, at: ApprovalAt, chat: Option<&Chat>, now: Now) -> Vec<Effect> {
         self.command_with(chat, now, |d, chat, now, fx| {
-            d.cut(Stop::ByPerson, chat, now, fx)
+            d.answer(Answer::Extended(at), chat, now, fx);
         })
     }
 
@@ -343,7 +374,11 @@ impl RunDrive {
             Input::Notified => {
                 if self.here.card && chat.is_some_and(|chat| !chat.awaiting_permission()) {
                     self.here.card = false;
-                    self.budget.resume(now.at);
+                    // A card the cancelled turn left does not start a run
+                    // that waits to be extended.
+                    if !self.run.awaiting_extend() {
+                        self.budget.resume(now.at);
+                    }
                 }
                 if let Some(chat) = chat.filter(|chat| self.after_work && !self.step_at_work(chat))
                 {
@@ -429,7 +464,9 @@ impl RunDrive {
             // spent waiting on a person did not count; end the run once
             // nothing is left.
             Input::Elapsed(Timer::Timeout) => match self.budget.left(now.at) {
-                Some(left) if left.is_zero() => self.cut(Stop::TimedOut, chat, now, &mut fx),
+                Some(left) if left.is_zero() && self.agent_has_the_step() => {
+                    self.ran_out(chat, now, &mut fx)
+                }
                 // No sooner than a second: with the clock standing still and
                 // a moment left, looking again at once would spin.
                 Some(left) => fx.push(Effect::Arm {
@@ -474,6 +511,13 @@ impl RunDrive {
                     // After the rest of what the same answer emitted, so a
                     // refusal is judged before the next pick is planned.
                     fx.push(Effect::Defer(Input::PicksAnswered));
+                }
+            }
+            // The turn cancelled when the run ran out has ended: an Extend
+            // pressed meanwhile goes now. Not a person's Stop, nor an answer.
+            Input::TurnEnded if self.run.awaiting_extend() => {
+                if let Some(answer) = self.after_drain.take() {
+                    self.answer(answer, Some(chat), now, fx);
                 }
             }
             // A Stop pressed in the composer, or from the remote bridge: the
@@ -537,8 +581,57 @@ impl RunDrive {
         let action = match answer {
             Answer::Approved(at) => self.run.approved(&at, now.secs),
             Answer::Revised(at, note) => self.run.revised(&at, note, now.secs),
+            // The cancelled turn first ends: a prompt sent into it would
+            // queue behind it and read as a person's.
+            Answer::Extended(at)
+                if chat.is_some_and(|chat| chat.busy)
+                    && self.run.out_of_time_at().as_ref() == Some(&at) =>
+            {
+                self.after_drain = Some(Answer::Extended(at));
+                return;
+            }
+            Answer::Extended(at) => {
+                let by = self.run.template.timeout_limit().unwrap_or_default();
+                let action = self.run.extended(&at, by, now.secs);
+                if action != Action::Idle {
+                    self.after_drain = None;
+                    self.budget.extend(by);
+                    if let Some(after) = self.budget.left(now.at) {
+                        fx.push(Effect::Arm {
+                            timer: Timer::Timeout,
+                            after,
+                        });
+                    }
+                }
+                action
+            }
         };
         self.act(action, chat, now, fx);
+    }
+
+    /// The run's time ran out: its turn is cancelled and it waits for a person
+    /// to extend it or stop it, in the same session.
+    fn ran_out(&mut self, chat: Option<&Chat>, now: Now, fx: &mut Vec<Effect>) {
+        self.after_drain = None;
+        if chat.is_some_and(|chat| chat.busy) {
+            self.asked.push(Asked::Cancel);
+        }
+        self.after_work = false;
+        let label = self
+            .run
+            .current()
+            .map(|s| s.label.clone())
+            .unwrap_or_default();
+        let note = format!(
+            "Out of time at {label} after {} of {}. Extend to go on.",
+            crate::task::work::worked(self.spent_secs(now)),
+            self.run.template.timeout_said(),
+        );
+        let ran_out = self.run.awaiting_turn();
+        self.advance(chat, now, fx, move |run| run.ran_out(now.secs));
+        if ran_out {
+            self.asked.push(Asked::Note(note));
+        }
     }
 
     /// Cancel the turn under way and end the run as `stop`, as one call: held

@@ -270,6 +270,13 @@ pub(crate) fn approve(approval: Approval, cx: &mut App) {
     give(&approval.task, cx, move |run, now| run.approve(at, now));
 }
 
+/// A person gave the run that ran out of time, at what `approval` names, its
+/// timeout again.
+pub(crate) fn extend(approval: Approval, cx: &mut App) {
+    let at = approval.at;
+    give(&approval.task, cx, move |run, now| run.extend(at, now));
+}
+
 /// A person sent what they read, as `approval` names it, back with `note`.
 pub(crate) fn revise(approval: Approval, note: String, cx: &mut App) {
     let at = approval.at;

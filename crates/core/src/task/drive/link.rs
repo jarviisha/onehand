@@ -79,6 +79,11 @@ impl<'a> Joined<'a> {
         self.give(now, |run, chat| run.approve(at, chat, now))
     }
 
+    /// A person gave the run that ran out of time at `at` its timeout again.
+    pub fn extend(&mut self, at: ApprovalAt, now: Now) -> Out {
+        self.give(now, |run, chat| run.extend(at, chat, now))
+    }
+
     /// A person sent what they read at `at` back with `note`.
     pub fn revise(&mut self, at: ApprovalAt, note: String, now: Now) -> Out {
         self.give(now, |run, chat| run.revise(at, note, chat, now))

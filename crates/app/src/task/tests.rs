@@ -2,7 +2,7 @@
 //! check run with no session, an agent's run on a session, a queued task
 //! stopped or passed over, and a dismiss whose write fails.
 
-use super::{Tasks, add, begin, dismiss, retry, start, start_check, stop_task};
+use super::{Tasks, add, begin, dismiss, extend_task, retry, start, start_check, stop_task};
 use crate::chat::session::tests::carrier;
 use gpui::{
     AnyWindowHandle, AppContext as _, BorrowAppContext as _, IntoElement, Render, TestAppContext,
@@ -597,4 +597,53 @@ fn a_removal_lands_with_its_task_after_its_window_closed(cx: &mut TestAppContext
     assert!(kept("r1", cx).worktree_removed(), "kept with its task");
     assert!(!folder.exists(), "the worktree went");
     let _ = std::fs::remove_dir_all(&repo);
+}
+
+/// A run that runs out of time waits with its session, says so on its
+/// strip, and Extend carries on in the same session once the cancelled
+/// turn is over.
+#[gpui::test]
+fn a_run_out_of_time_waits_and_extend_carries_on(cx: &mut TestAppContext) {
+    let (work, store) = (repo("agent-out-of-time"), temp_dir("store"));
+    let window = app(cx, &store);
+    let mut template = one_agent_step();
+    // The run's clock reads the real time; the executor's only fires the timer.
+    template.timeout = "1s".into();
+    let id = placed(
+        Task::new("12".into(), template, brief(), setup(&work)),
+        window,
+        cx,
+    );
+    let (session, mut tx, _seen) = carrier::driven(cx, Chat::default());
+    let started = begun(&id, cx);
+    cx.update(|cx| start(9, &session, window, id.clone(), started, cx));
+    cx.run_until_parked();
+    let mut requests = carrier::up(&mut tx);
+    cx.run_until_parked();
+    assert!(requests.try_recv().is_ok(), "the step's prompt");
+    std::thread::sleep(Duration::from_millis(1100));
+    cx.executor().advance_clock(Duration::from_secs(2));
+    cx.run_until_parked();
+    let cancelled = std::iter::from_fn(|| requests.try_recv().ok())
+        .any(|r| matches!(r, onehand_core::acp::AcpRequest::Cancel));
+    assert!(cancelled, "the turn is cancelled");
+    assert!(
+        cx.update(|cx| super::shown(9, cx))
+            .is_some_and(|s| s.out_of_time.is_some())
+    );
+    assert_eq!(group(&id, cx), Group::Waiting);
+    assert_eq!(kept(&id, cx).outcome(), None, "not over");
+    cx.update(|cx| extend_task(&id, cx));
+    tx.try_send(onehand_core::acp::AcpEvent::TurnEnded {
+        stop_reason: "cancelled".into(),
+    })
+    .unwrap();
+    settle(cx);
+    let prompted = std::iter::from_fn(|| requests.try_recv().ok())
+        .any(|r| matches!(r, onehand_core::acp::AcpRequest::Prompt { .. }));
+    assert!(prompted, "Extend carries on in the same session");
+    assert!(
+        cx.update(|cx| super::shown(9, cx))
+            .is_some_and(|s| s.out_of_time.is_none())
+    );
 }

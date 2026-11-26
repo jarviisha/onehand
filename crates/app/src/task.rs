@@ -21,7 +21,7 @@ mod carrier;
 pub(crate) mod facts;
 mod listing;
 mod place;
-pub(crate) use carrier::{approve, revise, start, stop, verdict};
+pub(crate) use carrier::{approve, extend, revise, start, stop, verdict};
 pub(crate) use listing::*;
 pub(crate) use onehand_core::task::tasks::Placed;
 pub(crate) use place::{not_started, start_off_screen, submit};
@@ -228,6 +228,8 @@ pub(crate) struct Shown {
     pub(crate) at: usize,
     /// What it waits on *Continue* or *Revise…* for.
     pub(crate) review: Option<UnderReview>,
+    /// It ran out of time here, and waits on *Extend* or *Stop*.
+    pub(crate) out_of_time: Option<onehand_core::workflow::ApprovalAt>,
     /// Stop was pressed and its step's command is still being stopped.
     pub(crate) stopping: bool,
 }
@@ -235,6 +237,23 @@ pub(crate) struct Shown {
 /// What task `id`'s run, under way, waits for approval on now.
 pub(crate) fn review_of(id: &str, cx: &App) -> Option<UnderReview> {
     UnderReview::of(cx.try_global::<Tasks>()?.driven(id)?.run())
+}
+
+/// Extend task `id`'s run, which ran out of time, where it waits now.
+pub(crate) fn extend_task(id: &str, cx: &mut App) {
+    let at = cx
+        .try_global::<Tasks>()
+        .and_then(|t| t.driven(id))
+        .and_then(|driven| driven.run().out_of_time_at());
+    if let Some(at) = at {
+        extend(
+            onehand_core::task::Approval {
+                task: id.to_string(),
+                at,
+            },
+            cx,
+        );
+    }
 }
 
 /// Where the run on session `uid` stands, if one drives it.
@@ -257,6 +276,7 @@ pub(crate) fn shown(uid: u64, cx: &App) -> Option<Shown> {
         },
         at: run.step,
         review: UnderReview::of(run),
+        out_of_time: run.out_of_time_at(),
         stopping: driven.stopping(),
     })
 }

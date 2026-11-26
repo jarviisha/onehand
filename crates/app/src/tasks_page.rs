@@ -67,6 +67,8 @@ pub(crate) enum TasksPageEvent {
     RemoveWorktree(String),
     /// Stop task `id`, queued or running.
     StopTask(String),
+    /// Give task `id`'s run, which ran out of time, its timeout again.
+    ExtendTask(String),
 }
 
 impl EventEmitter<TasksPageEvent> for TasksPage {}
@@ -395,6 +397,7 @@ pub(super) type Press = Rc<dyn Fn(&gpui::ClickEvent, &mut Window, &mut App)>;
 /// What can be done with a task from where it is listed.
 #[derive(Clone, Copy, PartialEq)]
 pub(crate) enum TaskAct {
+    Extend,
     OpenSession,
     Stop,
     Resume,
@@ -405,6 +408,7 @@ pub(crate) enum TaskAct {
 impl TaskAct {
     pub(crate) fn label(self) -> &'static str {
         match self {
+            Self::Extend => "Extend",
             Self::OpenSession => "Open session",
             Self::Stop => "Stop",
             Self::Resume => "Resume",
@@ -418,6 +422,7 @@ impl TaskAct {
             Self::Resume => Some("Carry on from that step in a new session"),
             Self::Retry => Some("Run it again in a new run"),
             Self::Dismiss => Some("Let this task go; it is kept as history and its work stays"),
+            Self::Extend => Some("Give it its timeout again and carry on in the same session"),
             Self::OpenSession | Self::Stop => None,
         }
     }
@@ -432,6 +437,7 @@ impl TaskAct {
                 TasksPageEvent::ShowSession { uid, window }
             }
             Self::Stop => TasksPageEvent::StopTask(id),
+            Self::Extend => TasksPageEvent::ExtendTask(id),
             Self::Resume => TasksPageEvent::ResumeTask(id),
             Self::Retry => TasksPageEvent::RetryTask(id),
             Self::Dismiss => TasksPageEvent::DismissTask(id),
@@ -484,6 +490,9 @@ pub(crate) fn task_acts(row: &Row, retry_finished: bool) -> Vec<TaskAct> {
     let mut acts = Vec::new();
     match row.group {
         Group::Waiting | Group::Running | Group::Queued => {
+            if row.extendable {
+                acts.push(TaskAct::Extend);
+            }
             if row.session.is_some() {
                 acts.push(TaskAct::OpenSession);
             }

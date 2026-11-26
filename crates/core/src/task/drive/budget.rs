@@ -42,6 +42,11 @@ impl Budget {
         self.since.get_or_insert(now);
     }
 
+    /// Add `by` to the limit; a budget with no limit stays without one.
+    pub(crate) fn extend(&mut self, by: Duration) {
+        self.limit = self.limit.map(|limit| limit + by);
+    }
+
     /// What has been spent by `now`.
     pub(crate) fn spent(&self, now: Instant) -> Duration {
         let running = self

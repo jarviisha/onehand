@@ -536,6 +536,15 @@ fn said_limit(text: &str) -> String {
     }
 }
 
+/// `limit` as a timeout is written: in minutes when it is whole minutes,
+/// else in seconds.
+pub(crate) fn said_duration(limit: Duration) -> String {
+    match limit.as_secs() {
+        secs if secs >= 60 && secs % 60 == 0 => format!("{}m", secs / 60),
+        secs => format!("{secs}s"),
+    }
+}
+
 /// `"30m"`, `"2h"`, `"90s"` as a duration.
 ///
 /// One number and one unit, nothing else. A zero is refused rather than read

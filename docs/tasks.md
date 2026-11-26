@@ -16,7 +16,7 @@ running, what needs me, and what has finished.
 
   | Group | Holds | Row actions |
   |---|---|---|
-  | *Needs attention*, waiting | a live run waiting for approval, or on a card its session parked; it keeps its place | Open session, Stop |
+  | *Needs attention*, waiting | a live run waiting for approval, out of time, or on a card its session parked; it keeps its place | Extend (out of time only), Open session, Stop |
   | *Needs attention*, ended | a run that ended exhausted, failed, timed out or interrupted; its place is free | Resume (interrupted only), Retry, Dismiss |
   | *Running* | the one run working in each place | Open session, Stop |
   | *Queued* | tasks waiting for their place to be free | Stop |
@@ -46,7 +46,7 @@ running, what needs me, and what has finished.
 the prose width. It shows:
 
 - **a trail**: *Tasks* to go back (Esc too) › the project › the workflow, as a breadcrumb, then what can be done with the task: the most
-  fitting a primary (a secondary while *Awaiting approval* or the way out holds the view's one
+  fitting a primary (a secondary while *Awaiting approval*, *Out of time* or the way out holds the view's one
   primary), the next a secondary, the rest in ⋯ (*Retry…* on a finished task, and *Remove worktree…* in the danger ink once its pull request reads merged); ⋯ is
   always drawn, so that late arrival shifts nothing;
 - **a head**: the title, large, and the row's muted line;
@@ -57,6 +57,9 @@ the prose width. It shows:
   when cut, *Review…* opening all of it), *Revise…* and *Continue* each beside what it starts, and
   *Open session*. It is answered here as on the strip, through the same call: each press carries
   the visit it was drawn from, and one the run no longer waits at shows the new answer instead;
+- **Out of time**, while the last run waits after its time ran out, in the same box and inks: how
+  long it worked against which timeout, *Extend* beside what it gives, and *Open session*. *Stop*
+  is the trail's;
 - **Run N**, the last run's timeline as a vertical stepper (a dot per visit on a rail, a check once
   it ended, its number ringed in `info` while it runs): one line per step visit (the step, why it ended, when it
   started and how long it took), each opening onto what it kept or printed (its last 60 lines) and

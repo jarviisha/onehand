@@ -22,6 +22,8 @@ pub(super) enum Held {
 pub(super) enum Answer {
     Approved(ApprovalAt),
     Revised(ApprovalAt, String),
+    /// The run ran out of time at it; it is given its timeout again.
+    Extended(ApprovalAt),
 }
 
 impl RunDrive {

@@ -40,6 +40,12 @@ pub(crate) enum Stand {
     },
     /// Waiting on a card the agent parked.
     Card,
+    /// Ran out of time at `step` and waits to be extended or stopped; `said`
+    /// is how long it worked against which timeout.
+    OutOfTime {
+        step: String,
+        said: String,
+    },
     /// Its agent stopped, its session went, or a restart cut it off.
     Resumable(String),
     /// Ended where it could not get past a step: too many misses. What
@@ -177,6 +183,10 @@ fn stand(
         // An approval step's open visit is an approval; anything else that
         // waits on a person is a card.
         Some(Working::Waiting) => match (run, kind) {
+            (Some(run), _) if run.awaiting_extend() => Stand::OutOfTime {
+                step: step_label(Some(run), None),
+                said: out_of_time_said(run),
+            },
             (Some(run), Some(StepKind::Approval { .. }))
                 if run.visits().last().is_some_and(|v| v.ended_at.is_none()) =>
             {
@@ -219,7 +229,16 @@ fn stand(
 }
 
 /// How long a run worked, as a timeout is written: *45m*, *1h 30m*.
-fn worked(secs: u64) -> String {
+/// How long `run`, out of time, worked against which timeout.
+pub fn out_of_time_said(run: &Run) -> String {
+    format!(
+        "It worked {} of its {} timeout.",
+        worked(run.spent_secs),
+        run.template.timeout_said()
+    )
+}
+
+pub(crate) fn worked(secs: u64) -> String {
     match (secs / 3600, secs % 3600 / 60) {
         (0, minutes) => format!("{minutes}m"),
         (hours, 0) => format!("{hours}h"),
@@ -280,6 +299,8 @@ pub enum Act {
     OpenSession,
     AnswerInSession,
     Review,
+    /// Give a run that ran out of time its timeout again.
+    Extend,
     Stop,
     ShowTask,
     Resume,
@@ -306,6 +327,7 @@ impl Act {
             Self::OpenSession => "Open session",
             Self::AnswerInSession => "Open session to answer",
             Self::Review => "Review…",
+            Self::Extend => "Extend",
             Self::Stop => "Stop",
             Self::ShowTask => "Show task",
             Self::Resume => "Resume",
@@ -438,6 +460,11 @@ fn by_stand(work: &Work, around: Around<'_>) -> Next {
                 None => "Approving ends the run".into(),
             }),
             Some(Act::Review),
+            &[Act::OpenSession],
+        ),
+        Stand::OutOfTime { step, .. } => row(
+            Some(format!("Out of time at {step}")),
+            Some(Act::Extend),
             &[Act::OpenSession],
         ),
         Stand::Card => row(

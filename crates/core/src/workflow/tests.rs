@@ -2670,3 +2670,65 @@ fn a_command_past_a_short_limit_says_its_limit() {
     assert!(!ran.passed);
     assert_eq!(ran.tail, "timed out after 1s");
 }
+
+// Out of time: the run waits for a person to extend it or stop it.
+
+/// A checkout run at its plan's turn.
+fn at_the_plan_s_turn() -> Run {
+    let (mut run, first) = begin("1".into(), checkout(), brief(), setup(Some("make check")));
+    assert_eq!(first, Action::Measure);
+    prompt_of(run.measured(mark("a", "d0"), 0));
+    assert!(run.awaiting_turn());
+    run
+}
+
+#[test]
+fn a_run_out_of_time_waits_with_its_visit_open() {
+    let mut run = at_the_plan_s_turn();
+    assert_eq!(run.ran_out(10), Action::AwaitExtend);
+    assert!(run.awaiting_extend() && !run.over());
+    assert!(run.visits.last().is_some_and(|v| v.ended_at.is_none()));
+    assert!(run.out_of_time_at().is_some());
+    assert!(run.history.last().is_some_and(|t| t.why == "out of time"));
+    assert_eq!(run.ran_out(11), Action::Idle);
+}
+
+#[test]
+fn extending_carries_on_the_step_and_keeps_the_extension() {
+    let mut run = at_the_plan_s_turn();
+    run.ran_out(10);
+    let at = run.out_of_time_at().unwrap();
+    let text = prompt_of(run.extended(&at, std::time::Duration::from_secs(2700), 20));
+    assert_eq!(
+        text,
+        "You ran out of time at Plan. You have 45m more. Carry on with the step from where you were."
+    );
+    assert!(run.awaiting_turn());
+    assert_eq!(run.extended_secs, 2700);
+    assert!(run
+        .history
+        .last()
+        .is_some_and(|t| t.why == "extended by 45m"));
+    assert_eq!(
+        run.extended(&at, std::time::Duration::from_secs(2700), 30),
+        Action::Idle
+    );
+    assert_eq!(run.extended_secs, 2700);
+}
+
+#[test]
+fn an_extension_is_kept_through_a_save_and_a_read() {
+    let mut run = at_the_plan_s_turn();
+    let plain = serde_json::to_string(&run).unwrap();
+    assert!(!plain.contains("extended_secs"), "{plain}");
+    run.extended_secs = 2700;
+    let read: Run = serde_json::from_str(&serde_json::to_string(&run).unwrap()).unwrap();
+    assert_eq!(read.extended_secs, 2700);
+}
+
+#[test]
+fn ran_out_does_nothing_outside_a_turn() {
+    let mut run = at_approval();
+    assert_eq!(run.ran_out(10), Action::Idle);
+    assert!(run.awaiting_approval());
+}

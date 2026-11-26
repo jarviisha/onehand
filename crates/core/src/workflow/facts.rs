@@ -6,7 +6,6 @@ use super::template::GateKind;
 use crate::worktree;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
-use std::time::Duration;
 
 /// Where a step's work is measured from: the commit, and the fingerprints of
 /// the uncommitted work it may still be at — as the step found it, and after
@@ -125,7 +124,7 @@ pub fn run_command_blocking(
         Err(crate::process::Failure::TimedOut(limit)) => (
             false,
             None,
-            format!("timed out after {}", said_duration(limit)),
+            format!("timed out after {}", super::template::said_duration(limit)),
         ),
         Err(why) => (false, None, format!("the command's shell {why}")),
         Ok(out) => {
@@ -146,14 +145,5 @@ pub fn run_command_blocking(
         tail,
         commit: worktree::head_blocking(dir).ok(),
         digest: worktree::work_digest_blocking(dir).ok(),
-    }
-}
-
-/// `limit` as a timeout is written: in minutes when it is whole minutes,
-/// else in seconds.
-fn said_duration(limit: Duration) -> String {
-    match limit.as_secs() {
-        secs if secs >= 60 && secs % 60 == 0 => format!("{}m", secs / 60),
-        secs => format!("{secs}s"),
     }
 }
