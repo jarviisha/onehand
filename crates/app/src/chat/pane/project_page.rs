@@ -19,6 +19,9 @@ pub(super) use host::focus_rows as host_rows;
 mod offload_box;
 mod worktrees_box;
 
+#[cfg(test)]
+mod tests;
+
 /// How many past conversations the project page lists.
 ///
 /// The page is an entrance, not an archive browser: the newest handful is what
@@ -513,6 +516,7 @@ impl ChatPane {
                     let menu_acts = acts.clone();
                     let row = onehand_ui::row(false, cx)
                         .id(("home", i))
+                        .debug_selector(move || format!("home-row-{i}"))
                         .h_flex()
                         .items_center()
                         .gap_2()
@@ -567,6 +571,7 @@ impl ChatPane {
                         // row.
                         .child(
                             div()
+                                .debug_selector(move || format!("home-more-{i}"))
                                 .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| {
                                     cx.stop_propagation()
                                 })
@@ -591,7 +596,11 @@ impl ChatPane {
                 }),
             cx,
         ))
-        .children((hidden > 0).then(|| muted_line(format!("{hidden} more"))));
+        .children(
+            (hidden > 0).then(|| {
+                muted_line(format!("{hidden} more")).debug_selector(|| "home-hidden".into())
+            }),
+        );
 
         // One column at every width: the history leads, and what the project
         // needs and is set to follows under it, so the page reads top to
@@ -629,6 +638,7 @@ impl ChatPane {
             .child(
                 div()
                     .id("project-page")
+                    .debug_selector(|| "project-page".into())
                     .flex_1()
                     .min_h_0()
                     .overflow_y_scroll()
@@ -637,6 +647,7 @@ impl ChatPane {
                     .child(
                         div().h_flex().w_full().justify_center().child(
                             div()
+                                .debug_selector(|| "project-page-column".into())
                                 .v_flex()
                                 .gap_6()
                                 .w_full()

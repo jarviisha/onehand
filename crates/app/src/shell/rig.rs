@@ -250,3 +250,29 @@ pub(crate) fn zoom_pane(
     });
     cx.run_until_parked();
 }
+
+/// A conversation as a build kept it: `sid`, ran in `folder`, of `project`,
+/// titled `title` or untitled.
+pub(crate) fn kept_conversation(
+    sid: &str,
+    folder: &std::path::Path,
+    project: &onehand_core::project::ProjectId,
+    title: Option<&str>,
+) {
+    let dir = onehand_core::chat::conversations_dir().join(sid);
+    std::fs::create_dir_all(&dir).unwrap();
+    let meta = serde_json::json!({
+        "format": 2,
+        "session_id": sid,
+        "root": folder.display().to_string(),
+        "project": project.as_str(),
+        "agent": "Claude",
+        "created": 1,
+        "updated": 2,
+        "items": 1,
+        "title": title,
+        "preview": "hello",
+        "prefs": {},
+    });
+    std::fs::write(dir.join("meta.json"), meta.to_string()).unwrap();
+}

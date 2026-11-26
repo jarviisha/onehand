@@ -14,6 +14,9 @@ pub(crate) const NARROWEST: Pixels = crate::shell::boot::open::WINDOW_MIN.width;
 /// A wide screen's width.
 pub(crate) const WIDE: Pixels = px(1920.);
 
+/// A window too short to hold a page of a full list.
+pub(crate) const SHORT_WINDOW_H: Pixels = px(480.);
+
 /// A name of the length most names are.
 pub(crate) const SHORT: &str = "Notes";
 
