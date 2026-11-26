@@ -219,7 +219,7 @@ fn stand(
 }
 
 /// How long a run worked, as a timeout is written: *45m*, *1h 30m*.
-fn worked(secs: u64) -> String {
+pub(crate) fn worked(secs: u64) -> String {
     match (secs / 3600, secs % 3600 / 60) {
         (0, minutes) => format!("{minutes}m"),
         (hours, 0) => format!("{hours}h"),

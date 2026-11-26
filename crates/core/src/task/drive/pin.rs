@@ -15,6 +15,7 @@ pub(super) enum Held {
     Answer(Answer),
     Cut(Stop),
     End(Stop),
+    RanOut,
 }
 
 /// A person's answer to an approval.
@@ -22,6 +23,8 @@ pub(super) enum Held {
 pub(super) enum Answer {
     Approved(ApprovalAt),
     Revised(ApprovalAt, String),
+    /// The run ran out of time at it; it is given its timeout again.
+    Extended(ApprovalAt),
 }
 
 impl RunDrive {
@@ -102,6 +105,7 @@ impl RunDrive {
             Held::Answer(answer) => self.answer(answer, chat, now, fx),
             Held::Cut(stop) => self.cut(stop, chat, now, fx),
             Held::End(stop) => self.end(stop, chat, now, fx),
+            Held::RanOut => self.ran_out(chat, now, fx),
         }
     }
 }
