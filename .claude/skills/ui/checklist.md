@@ -22,7 +22,7 @@ the rule, not just the question. For prose-only work, use the contract path in `
    its role, at most one primary in a view, and no ghost alone at the start of its line or
    beside a sentence (`DESIGN.md`, *Components*, *Colour and state*)?
 7. A refusing button through `.refuses(why)` (`DESIGN.md`, *Components*), never `.disabled(`,
-   which only a menu item or a switch takes, as `.refuses` does not reach them?
+   which only a menu item takes; a switch takes `.locked(`, as `.refuses` does not reach them?
 8. `rounded_full` only on a dot or a status mark, each control at `radius` and each container at
    `radius_lg`, a badge through `badge` (`DESIGN.md`, *Type, space and shape*)?
 9. Every list capped, saying how many it left out, and text that can run long truncating or
