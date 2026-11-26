@@ -322,18 +322,21 @@ impl ChatPane {
                         .min_h_0()
                         .overflow_y_scroll()
                         .track_scroll(&self.float_scroll)
-                        .v_flex()
-                        .gap_2()
                         .p_3()
-                        .when(over > 0, |body| {
-                            body.child(
-                                div()
-                                    .text_xs()
-                                    .text_color(muted)
-                                    .child(format!("{over} earlier rows not shown")),
-                            )
-                        })
-                        .children(body),
+                        .child(
+                            div()
+                                .v_flex()
+                                .gap_2()
+                                .when(over > 0, |body| {
+                                    body.child(
+                                        div()
+                                            .text_xs()
+                                            .text_color(muted)
+                                            .child(format!("{over} earlier rows not shown")),
+                                    )
+                                })
+                                .children(body),
+                        ),
                 )
                 .into_any_element(),
         )

@@ -492,7 +492,6 @@ impl IssuesView {
         let rows = div()
             .id("issues-page-list")
             .size_full()
-            .v_flex()
             .overflow_y_scroll()
             .track_scroll(&scroll)
             .px_6()

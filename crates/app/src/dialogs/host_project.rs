@@ -509,11 +509,9 @@ fn folder_list(
             .child(
                 div()
                     .id("host-browse")
-                    .v_flex()
                     .max_h(BROWSE_H)
                     .overflow_y_scroll()
-                    .children(up)
-                    .children(rows),
+                    .child(div().v_flex().children(up).children(rows)),
             )
             .when(browse.dirs.is_empty(), |list| {
                 list.child(meta("No folders here".into()))

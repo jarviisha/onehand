@@ -103,7 +103,6 @@ impl RenderOnce for CommandBlock {
             .child(
                 div()
                     .id(("perm-command-scroll", key))
-                    .v_flex()
                     .flex_1()
                     .min_w_0()
                     // The scrollbar's gutter while there is one, held inside

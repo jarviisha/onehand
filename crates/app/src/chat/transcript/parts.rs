@@ -107,11 +107,6 @@ impl RenderOnce for BlockingBody {
             .child(
                 div()
                     .id(("blocking-body-scroll", key))
-                    .v_flex()
-                    // Enough to read the rows as separate things. These are
-                    // filled boxes, not lines of text, and a quarter-rem
-                    // between two fills reads as one block with a seam.
-                    .gap_2()
                     .w_full()
                     .max_h(MAX_BLOCKING_BODY_H)
                     .overflow_y_scroll()
@@ -122,7 +117,16 @@ impl RenderOnce for BlockingBody {
                     // cut, the list still runs to that line; scrolled to its
                     // end, the last row stands clear of it rather than on it.
                     .pb_2()
-                    .children(self.children),
+                    .child(
+                        div()
+                            .v_flex()
+                            // Enough to read the rows as separate things. These
+                            // are filled boxes, not lines of text, and a
+                            // quarter-rem between two fills reads as one block
+                            // with a seam.
+                            .gap_2()
+                            .children(self.children),
+                    ),
             )
             // The mask takes vertical wheel input in the capture phase. A bubble
             // listener runs too late inside `gpui::list`: the transcript has

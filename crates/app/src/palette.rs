@@ -338,7 +338,6 @@ fn list(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement + use<> {
         .child(
             div()
                 .id("palette-list")
-                .v_flex()
                 .max_h(gpui::rems(ROW_H.0 * PALETTE_ROWS))
                 .overflow_y_scroll()
                 .track_scroll(&palette.scroll)

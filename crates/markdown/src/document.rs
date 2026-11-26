@@ -182,12 +182,8 @@ pub(crate) fn list(
     let on_toggle = std::rc::Rc::new(on_toggle);
     let on_open = std::rc::Rc::new(on_open);
 
-    div()
-        .id("markdown-list")
+    let column = div()
         .v_flex()
-        .size_full()
-        .py_2()
-        .overflow_y_scroll()
         .children(
             rows.into_iter()
                 .enumerate()
@@ -215,7 +211,13 @@ pub(crate) fn list(
                     .text_color(cx.theme().muted_foreground)
                     .child("More documents not shown"),
             )
-        })
+        });
+    div()
+        .id("markdown-list")
+        .size_full()
+        .py_2()
+        .overflow_y_scroll()
+        .child(column)
         .into_any_element()
 }
 

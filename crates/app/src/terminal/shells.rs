@@ -190,7 +190,6 @@ impl TerminalPanel {
             // Parted from the grid by a line on the side facing it.
             .border_l_1()
             .border_color(cx.theme().border)
-            .v_flex()
             .overflow_y_scroll();
         let (shown, left_out) = shown_rows(rows.len());
         for (i, (row, handle)) in rows.into_iter().zip(focus).take(shown).enumerate() {
@@ -206,6 +205,13 @@ impl TerminalPanel {
             );
             list = list.child(
                 onehand_ui::tree_row(("terminal-shell", i), 0, false, cx)
+                    // The list stacks its rows as a plain box, so they can be
+                    // scrolled to, and a plain box merges the margins two rows
+                    // meet at into the larger one: the margin under a row
+                    // carries both, keeping the tree's pitch.
+                    .mb(gpui::rems(
+                        onehand_ui::tokens::TREE_ROW_ABOVE.0 + onehand_ui::tokens::TREE_ROW_BELOW.0,
+                    ))
                     .group(group.clone())
                     .track_focus(&handle)
                     .border_1()

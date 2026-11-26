@@ -404,34 +404,35 @@ impl IssuesView {
                     .id("issues-list")
                     .flex_1()
                     .min_h_0()
-                    .v_flex()
-                    .gap_1()
                     .p_2()
                     .overflow_y_scroll()
-                    .children(
-                        empty.map(|empty| {
-                            div().px_2().py_1().text_xs().text_color(muted).child(empty)
-                        }),
-                    )
-                    .children(drawn)
-                    .when(cut > 0, |list| {
-                        list.child(
-                            div()
-                                .px_2()
-                                .py_1()
-                                .text_xs()
-                                .text_color(muted)
-                                .child(format!("… {cut} more not shown")),
-                        )
-                    })
-                    .children(showing.map(|showing| {
+                    .child(
                         div()
-                            .px_2()
-                            .py_1()
-                            .text_xs()
-                            .text_color(muted)
-                            .child(showing)
-                    })),
+                            .v_flex()
+                            .gap_1()
+                            .children(empty.map(|empty| {
+                                div().px_2().py_1().text_xs().text_color(muted).child(empty)
+                            }))
+                            .children(drawn)
+                            .when(cut > 0, |list| {
+                                list.child(
+                                    div()
+                                        .px_2()
+                                        .py_1()
+                                        .text_xs()
+                                        .text_color(muted)
+                                        .child(format!("… {cut} more not shown")),
+                                )
+                            })
+                            .children(showing.map(|showing| {
+                                div()
+                                    .px_2()
+                                    .py_1()
+                                    .text_xs()
+                                    .text_color(muted)
+                                    .child(showing)
+                            })),
+                    ),
             )
             .children(footer)
             .into_any_element()
