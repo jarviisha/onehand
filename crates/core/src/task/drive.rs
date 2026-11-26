@@ -122,6 +122,12 @@ pub struct RunDrive {
     /// An Extend pressed while the turn cancelled at running out was still
     /// ending: done once it has.
     after_drain: Option<Answer>,
+    /// Out of time, its agent does nothing more: the cancelled turn ended and
+    /// the work it left is done.
+    rested: bool,
+    /// Extend pressed on a board task whose team was full, and when, waiting
+    /// for a place.
+    queued_extend: Option<(ApprovalAt, u64)>,
     /// The run never had a session: a check, which only runs a command.
     /// It has no timeout, and what needs no session is still done.
     sessionless: bool,
@@ -170,6 +176,8 @@ impl RunDrive {
             room: None,
             over: false,
             after_drain: None,
+            rested: false,
+            queued_extend: None,
             sessionless: chat.is_none(),
         };
         let mut fx = Vec::new();
@@ -215,7 +223,9 @@ impl RunDrive {
     /// lane's, or a card the agent parked, which is only in the current
     /// lane's (`current`).
     pub fn waits_on_person(&self, current: bool) -> bool {
-        self.run.awaiting_approval() || self.run.awaiting_extend() || (current && self.here.card)
+        self.run.awaiting_approval()
+            || (self.run.awaiting_extend() && self.queued_extend.is_none())
+            || (current && self.here.card)
     }
 
     /// The agent has the step: its prompt went and its turn, or the work it
@@ -228,6 +238,22 @@ impl RunDrive {
             && self.here.pending.is_none()
             && self.here.picking.is_none()
             && self.answer.is_none()
+    }
+
+    /// Whether the run holds no place on a team: out of time and at rest, or
+    /// waiting for one to be extended in.
+    pub fn gives_place(&self) -> bool {
+        (self.run.awaiting_extend() && self.rested) || self.queued_extend.is_some()
+    }
+
+    /// When an extend waiting for a team place asked for it, in seconds.
+    pub fn queued_extend_at(&self) -> Option<u64> {
+        self.queued_extend.as_ref().map(|(_, asked)| *asked)
+    }
+
+    /// The extend waiting for a place, now given one: what it extends.
+    pub(crate) fn take_queued_extend(&mut self) -> Option<ApprovalAt> {
+        self.queued_extend.take().map(|(at, _)| at)
     }
 
     /// The agent parked a card nobody has answered yet.
@@ -305,6 +331,19 @@ impl RunDrive {
         })
     }
 
+    /// A person pressed Extend on a board task out of time at `at` whose team
+    /// has no place: it waits for one, said so. Refused unless the run ran
+    /// out there.
+    pub(crate) fn queue_extend(&mut self, at: ApprovalAt, now: Now) -> Vec<Effect> {
+        if self.over || self.run.out_of_time_at().as_ref() != Some(&at) {
+            return Vec::new();
+        }
+        self.queued_extend = Some((at, now.secs));
+        self.asked
+            .push(Asked::Note("Waiting for a team place.".to_string()));
+        vec![Effect::Refresh]
+    }
+
     /// A person gave the run that ran out at `at` its timeout again. Held
     /// while a mark is pinned or the cancelled turn is still ending, and
     /// refused by the engine once the run no longer waits there.
@@ -379,6 +418,12 @@ impl RunDrive {
                     if !self.run.awaiting_extend() {
                         self.budget.resume(now.at);
                     }
+                }
+                // Out of time, the work the cancelled turn left has ended.
+                if self.run.awaiting_extend()
+                    && chat.is_some_and(|chat| !chat.busy && !self.step_at_work(chat))
+                {
+                    self.rest(&mut fx);
                 }
                 if let Some(chat) = chat.filter(|chat| self.after_work && !self.step_at_work(chat))
                 {
@@ -515,11 +560,11 @@ impl RunDrive {
             }
             // The turn cancelled when the run ran out has ended: an Extend
             // pressed meanwhile goes now. Not a person's Stop, nor an answer.
-            Input::TurnEnded if self.run.awaiting_extend() => {
-                if let Some(answer) = self.after_drain.take() {
-                    self.answer(answer, Some(chat), now, fx);
-                }
-            }
+            Input::TurnEnded if self.run.awaiting_extend() => match self.after_drain.take() {
+                Some(answer) => self.answer(answer, Some(chat), now, fx),
+                None if !self.step_at_work(chat) => self.rest(fx),
+                None => {}
+            },
             // A Stop pressed in the composer, or from the remote bridge: the
             // person's word that this is not to go on.
             Input::TurnEnded if chat.cancelled => self.end(Stop::ByPerson, Some(chat), now, fx),
@@ -595,6 +640,8 @@ impl RunDrive {
                 let action = self.run.extended(&at, by, now.secs);
                 if action != Action::Idle {
                     self.after_drain = None;
+                    self.rested = false;
+                    self.queued_extend = None;
                     self.budget.extend(by);
                     if let Some(after) = self.budget.left(now.at) {
                         fx.push(Effect::Arm {
@@ -611,8 +658,19 @@ impl RunDrive {
 
     /// The run's time ran out: its turn is cancelled and it waits for a person
     /// to extend it or stop it, in the same session.
+    /// The run, out of time, came to rest: the room and the team place it
+    /// held go.
+    fn rest(&mut self, fx: &mut Vec<Effect>) {
+        if std::mem::replace(&mut self.rested, true) {
+            return;
+        }
+        self.left_room(fx);
+        fx.push(Effect::Rested);
+    }
+
     fn ran_out(&mut self, chat: Option<&Chat>, now: Now, fx: &mut Vec<Effect>) {
         self.after_drain = None;
+        self.rested = false;
         if chat.is_some_and(|chat| chat.busy) {
             self.asked.push(Asked::Cancel);
         }
@@ -631,6 +689,10 @@ impl RunDrive {
         self.advance(chat, now, fx, move |run| run.ran_out(now.secs));
         if ran_out {
             self.asked.push(Asked::Note(note));
+        }
+        // Nothing of the agent's was under way: at rest at once.
+        if chat.is_some_and(|chat| !chat.busy && !self.step_at_work(chat)) {
+            self.rest(fx);
         }
     }
 

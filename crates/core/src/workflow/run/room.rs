@@ -40,6 +40,11 @@ impl Run {
         }
         self.awaiting = Await::Nothing;
         self.log_here("given room", now);
+        // An extend waited for it: the step carries on in its own visit.
+        if let Some(text) = self.extend_text.take() {
+            self.awaiting = Await::Turn;
+            return Action::Prompt(text);
+        }
         self.take_up(now)
     }
 

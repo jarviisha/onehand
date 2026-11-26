@@ -496,6 +496,23 @@ fn perform(id: &str, effects: Vec<Effect>, cx: &mut App) {
             Effect::LeaveRoom => {
                 super::with_drive(cx, |t| ((), t.leave_room(id)));
             }
+            // A board task at rest left a place on its team: the board looks
+            // again.
+            Effect::Rested => {
+                let board = super::task(id, cx).and_then(|task| match task.origin() {
+                    Some(onehand_core::task::Origin::Board { project, .. }) => {
+                        Some(project.clone())
+                    }
+                    Some(
+                        onehand_core::task::Origin::Schedule { .. }
+                        | onehand_core::task::Origin::Tool,
+                    )
+                    | None => None,
+                });
+                if let Some(project) = board {
+                    crate::board::pull_now(&project, cx);
+                }
+            }
         }
     }
 }

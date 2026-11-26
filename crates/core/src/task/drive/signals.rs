@@ -251,6 +251,9 @@ pub enum Effect {
     /// The run has left the step it held room at, for another step or for
     /// good: give that room up. Not answered.
     LeaveRoom,
+    /// The run, out of time, came to rest: its agent does nothing more, so
+    /// the place it held on a team is free. Not answered.
+    Rested,
     /// The run is over, as `outcome`: keep it and let its place go.
     Finish { outcome: Outcome },
     /// Open a session of `agent` named `name`, unshown, for `lane`, and

@@ -188,6 +188,7 @@ fn name(e: &Effect) -> &'static str {
         Effect::OpenSession { .. } => "OpenSession",
         Effect::AskRoom { .. } => "AskRoom",
         Effect::LeaveRoom => "LeaveRoom",
+        Effect::Rested => "Rested",
     }
 }
 

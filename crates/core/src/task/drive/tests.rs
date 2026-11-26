@@ -158,6 +158,10 @@ impl Rig {
         self.call(|drive, chat, now| drive.extend(at, chat, now))
     }
 
+    fn queue_extend(&mut self, at: ApprovalAt) -> Vec<Effect> {
+        self.call(|drive, _, now| drive.queue_extend(at, now))
+    }
+
     /// What the app does to `lane`'s session for what the run asked of it.
     fn play(&mut self, lane: &Lane) {
         let picks = self.drive.take_picks();
@@ -260,6 +264,7 @@ fn name(e: &Effect) -> &'static str {
         Effect::OpenSession { .. } => "OpenSession",
         Effect::AskRoom { .. } => "AskRoom",
         Effect::LeaveRoom => "LeaveRoom",
+        Effect::Rested => "Rested",
     }
 }
 
@@ -288,7 +293,8 @@ fn finished(fx: &[Effect]) -> Option<&Outcome> {
         | Effect::Signal(_)
         | Effect::OpenSession { .. }
         | Effect::AskRoom { .. }
-        | Effect::LeaveRoom => None,
+        | Effect::LeaveRoom
+        | Effect::Rested => None,
     })
 }
 
@@ -1105,7 +1111,8 @@ fn forging() -> Rig {
             | Effect::Finish { .. }
             | Effect::OpenSession { .. }
             | Effect::AskRoom { .. }
-            | Effect::LeaveRoom => None,
+            | Effect::LeaveRoom
+            | Effect::Rested => None,
         });
         fx = rig.on(next.expect("the run moves on to its push"));
     }
@@ -1279,7 +1286,8 @@ fn failing_checks_carry_at_most_three_logs_to_the_repair() {
         | Effect::Finish { .. }
         | Effect::OpenSession { .. }
         | Effect::AskRoom { .. }
-        | Effect::LeaveRoom => None,
+        | Effect::LeaveRoom
+        | Effect::Rested => None,
     });
     assert_eq!(checks, Some(3), "{fx:?}");
     let logs = vec![
@@ -1414,7 +1422,8 @@ impl Rig {
                 | Effect::Finish { .. }
                 | Effect::OpenSession { .. }
                 | Effect::AskRoom { .. }
-                | Effect::LeaveRoom => None,
+                | Effect::LeaveRoom
+                | Effect::Rested => None,
             });
             match next {
                 Some(input) => fx = self.on(input),
@@ -2230,4 +2239,137 @@ fn a_turn_being_judged_is_not_run_out_under() {
     assert!(names(&fx).contains(&"ReadFacts"), "{fx:?}");
     rig.on(Input::Elapsed(Timer::Timeout));
     assert!(!rig.drive.run().awaiting_extend());
+}
+
+// At rest, and waiting for a place.
+
+/// A run of `rig`'s that ran out of time, past its limit.
+fn run_out(mut rig: Rig) -> Rig {
+    rig.now += rig.drive.run().template.timeout_limit().unwrap() + Duration::from_secs(1);
+    rig.on(Input::Elapsed(Timer::Timeout));
+    assert!(rig.drive.run().awaiting_extend());
+    rig
+}
+
+#[test]
+fn a_run_out_of_time_rests_once_its_cancelled_turn_ends() {
+    let mut rig = out_of_time();
+    assert!(
+        !rig.drive.gives_place(),
+        "its turn is still being cancelled"
+    );
+    let fx = rig.turn_ends("");
+    assert!(rig.drive.gives_place());
+    assert!(names(&fx).contains(&"Rested"), "{fx:?}");
+}
+
+#[test]
+fn work_the_cancelled_turn_left_keeps_it_from_resting() {
+    use crate::acp::BackgroundReport;
+    let mut rig = in_turn();
+    rig.chat
+        .apply(AcpEvent::Background(BackgroundReport::Spawned {
+            id: "t1".into(),
+            name: "cargo test".into(),
+            kind: "shell".into(),
+        }));
+    let mut rig = run_out(rig);
+    rig.turn_ends("");
+    assert!(!rig.drive.gives_place(), "its build still runs");
+    rig.chat
+        .apply(AcpEvent::Background(BackgroundReport::Ended {
+            id: "t1".into(),
+            end: crate::acp::BackgroundEnd::Completed,
+        }));
+    rig.on(Input::Notified);
+    assert!(
+        !rig.drive.gives_place(),
+        "the agent wakes to say how it ended"
+    );
+    rig.chat.apply(AcpEvent::Usage(crate::acp::Usage {
+        used: 1,
+        size: 10,
+        limit: None,
+        cycle_end: true,
+        marks_cycles: true,
+    }));
+    let fx = rig.on(Input::Notified);
+    assert!(rig.drive.gives_place());
+    assert!(names(&fx).contains(&"Rested"), "{fx:?}");
+}
+
+#[test]
+fn resting_at_a_limited_step_lets_its_room_go() {
+    let mut rig = run_out(in_limited_plan());
+    let fx = rig.turn_ends("");
+    assert!(names(&fx).contains(&"LeaveRoom"), "{fx:?}");
+}
+
+#[test]
+fn a_queued_extend_waits_for_a_place_then_carries_on() {
+    let mut rig = out_of_time();
+    rig.turn_ends("");
+    let at = rig.drive.run().out_of_time_at().unwrap();
+    let fx = rig.queue_extend(at.clone());
+    assert!(names(&fx).contains(&"Refresh"), "{fx:?}");
+    assert!(rig.drive.queued_extend_at().is_some());
+    assert!(!rig.drive.waits_on_person(true));
+    assert!(rig.drive.gives_place());
+    assert!(
+        rig.notes().contains(&"Waiting for a team place."),
+        "{:?}",
+        rig.notes()
+    );
+    assert_eq!(rig.drive.take_queued_extend(), Some(at.clone()));
+    rig.extend(at);
+    assert!(rig.submitted());
+    assert!(rig.drive.queued_extend_at().is_none());
+    assert!(!rig.drive.gives_place());
+}
+
+#[test]
+fn stop_while_waiting_for_a_place_ends_timed_out() {
+    let mut rig = out_of_time();
+    rig.turn_ends("");
+    let at = rig.drive.run().out_of_time_at().unwrap();
+    rig.queue_extend(at);
+    let fx = rig.stop();
+    assert_eq!(finished(&fx), Some(&Outcome::Stopped(Stop::TimedOut)));
+}
+
+#[test]
+fn a_stale_queue_extend_is_refused() {
+    let mut rig = out_of_time();
+    rig.turn_ends("");
+    let mut at = rig.drive.run().out_of_time_at().unwrap();
+    at.visit += 7;
+    assert!(rig.queue_extend(at).is_empty());
+    assert!(rig.drive.queued_extend_at().is_none());
+}
+
+/// An extend at a limited step whose room went at rest waits for it again,
+/// then carries on in the same visit with the extend's own prompt.
+#[test]
+fn an_extend_at_a_limited_step_asks_room_again_then_carries_on() {
+    let mut rig = run_out(in_limited_plan());
+    rig.turn_ends("");
+    let visits = rig.drive.run().visits().len();
+    let at = rig.drive.run().out_of_time_at().unwrap();
+    let fx = rig.extend(at);
+    assert!(
+        fx.iter().any(|e| matches!(e, Effect::AskRoom { .. })),
+        "{fx:?}"
+    );
+    assert!(!rig.submitted());
+    rig.on(Input::RoomGiven);
+    let sent = rig.asked.iter().find_map(|a| match a {
+        Asked::Prompt { text, .. } => Some(text.clone()),
+        _ => None,
+    });
+    assert!(
+        sent.as_deref()
+            .is_some_and(|t| t.starts_with("You ran out of time at")),
+        "{sent:?}"
+    );
+    assert_eq!(rig.drive.run().visits().len(), visits);
 }
