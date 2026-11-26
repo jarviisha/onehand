@@ -338,7 +338,6 @@ pub fn rail(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> impl Int
                 .on_action(cx.listener(|shell: &mut Shell, _: &RailUnfold, _, cx| {
                     shell.rail_fold_cursor(false, cx);
                 }))
-                .v_flex()
                 .flex_1()
                 .min_h_0()
                 .overflow_y_scroll()
@@ -347,8 +346,7 @@ pub fn rail(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> impl Int
                 .px_1p5()
                 .pt_2()
                 .pb_3()
-                .gap_0p5()
-                .children(rows),
+                .child(div().v_flex().gap_0p5().children(rows)),
         )
 }
 

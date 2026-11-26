@@ -476,7 +476,8 @@ fn a_removal_lands_by_host_and_path() {
     let mut drive = bound();
     drive.open_project("/b".into(), Some(&at("/b")));
     drive.add_session(Some(spec()), 1, None);
-    drive.open_host_project(&at_on("box", "/b"));
+    // As a workspace file written before the two were refused could hold.
+    tree(&mut drive).add_host_root(HostName("box".into()), "/b".into());
     let fx = drive.remove(None, Path::new("/b"));
     assert_eq!(
         names(&fx),
@@ -500,6 +501,36 @@ fn a_removal_lands_by_host_and_path() {
     );
 }
 
+/// One folder is a project of one machine in a window: what the window
+/// keeps for a project is filed by folder, so a second on another machine
+/// is refused, and said, whichever side comes second. The same host's
+/// folder again selects its row.
+#[test]
+fn a_folder_another_machine_has_in_the_window_is_refused() {
+    let mut drive = bound();
+    let fx = drive.open_host_project(&at_on("box", "/a"));
+    assert_eq!(names(&fx), ["Refused(FolderTaken)"]);
+    assert_eq!(drive.roots.len(), 1);
+
+    drive.open_host_project(&at_on("box", "/srv"));
+    drive.open_host_project(&at_on("box", "/srv"));
+    assert_eq!(drive.roots.len(), 2, "the same host's folder selects it");
+    let fx = drive.open_host_project(&at_on("far", "/srv"));
+    assert_eq!(names(&fx), ["Refused(FolderTaken)"], "another host");
+    let fx = drive.open_project("/srv".into(), None);
+    assert_eq!(names(&fx), ["Refused(FolderTaken)"]);
+    let (kept, fx) = drive.keep_project("/srv".into(), None);
+    assert_eq!(kept, Err(Refusal::FolderTaken));
+    assert_eq!(names(&fx), ["Refused(FolderTaken)"]);
+    let fx = drive.keep_project_quietly("/srv".into(), None);
+    assert_eq!(names(&fx), ["Refused(FolderTaken)"]);
+    assert_eq!(
+        drive.add_run_session(Path::new("/srv"), spec(), 9, None),
+        None
+    );
+    assert_eq!(drive.roots.len(), 2);
+}
+
 // The git sweep.
 
 /// A sweep reads the folders here and those on an attached host, never a
@@ -509,7 +540,8 @@ fn a_sweep_reads_what_it_can_and_keeps_only_the_newest_answer() {
     let mut drive = bound();
     drive.open_host_project(&at_on("box", "/srv"));
     drive.open_host_project(&at_on("off", "/x"));
-    drive.open_host_project(&at_on("box", "/a"));
+    // As a workspace file written before the two were refused could hold.
+    tree(&mut drive).add_host_root(HostName("box".into()), "/a".into());
     let (old, roots) = swept(drive.sweep(|host| host.0 == "box"));
     let read: Vec<_> = roots.iter().map(|r| r.path.display().to_string()).collect();
     assert_eq!(read, ["/a", "/srv"]);
@@ -566,7 +598,7 @@ fn a_sweep_under_way_when_a_project_leaves_is_dropped() {
 #[test]
 fn a_late_sweep_does_not_give_a_host_folder_the_local_one_s_status() {
     let mut drive = bound();
-    drive.open_host_project(&at_on("box", "/a"));
+    tree(&mut drive).add_host_root(HostName("box".into()), "/a".into());
     let (token, roots) = swept(drive.sweep(|_| true));
     assert_eq!(roots.len(), 1, "the host's folder on /a is not read");
     drive.forget(0);
@@ -1101,7 +1133,7 @@ fn a_worktree_folder_opens_on_its_projects_row() {
         "the project's own folder: the same row"
     );
     let (idx, _) = drive.keep_project("/code/a-x".into(), Some(&p));
-    assert_eq!(idx, 1);
+    assert_eq!(idx, Ok(1));
     let (added, _) = drive.add_session_at(Some(spec()), 1, PathBuf::from("/code/a-x"));
     assert_eq!(added, Ok(1));
     assert_eq!(drive.locate(1), Some((1, 0)));
@@ -1229,7 +1261,7 @@ fn a_worktree_just_recorded_opens_on_its_row_at_once() {
     let mut q = with_worktree("/code/a");
     q.worktrees[0].path = "/code/a-y".into();
     let (idx, _) = drive.keep_project("/code/a-y".into(), Some(&q));
-    assert_eq!(idx, 1);
+    assert_eq!(idx, Ok(1));
     assert_eq!(drive.local_index(Path::new("/code/a-y")), Some(1));
 }
 

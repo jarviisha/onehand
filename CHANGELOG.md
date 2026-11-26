@@ -371,6 +371,10 @@ minor bump may break any of them.
 
 ### Fixed
 
+- A list that outgrows its box scrolls instead of squeezing its rows: the Issues list in the
+  Workbench lost its titles under a scrollbar once it held more issues than fit, and the rail, the
+  file tree, the documents list, the palette, the completion menu and the other scrolled lists were
+  built the same way.
 - A scrollbar no longer lies over what it scrolls: a board column's thumb runs down the card's
   edge beside its rows, and the dialogs that show a code block, a table or a step's answer whole
   keep theirs in the dialog's margin.

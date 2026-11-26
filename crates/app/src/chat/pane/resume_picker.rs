@@ -65,35 +65,37 @@ impl ChatPane {
                     .child(
                         div()
                             .id("resume-choices")
-                            .v_flex()
-                            .gap_3()
                             .w_full()
                             .min_h_0()
                             .overflow_y_scroll()
-                            .children(past.into_iter().take(RESUME_ROWS).enumerate().map(
-                                |(i, meta)| {
-                                    // The agent is not named here: this picker belongs to a
-                                    // session that already has one, and every row in it was
-                                    // run by that same agent.
-                                    let subtitle = format!(
-                                        "{} · {} items",
-                                        rel_time(now, meta.updated),
-                                        meta.item_count
-                                    );
-                                    conversation_card(
-                                        ("resume", i),
-                                        meta.title.clone().into(),
-                                        subtitle.into(),
-                                        cx,
-                                    )
-                                    .on_click(cx.listener(
-                                        move |pane: &mut Self, _, _, cx| {
-                                            let meta = pane.choices_of(uid).get(i).cloned();
-                                            pane.start(uid, meta, cx);
+                            .child(
+                                div().v_flex().gap_3().children(
+                                    past.into_iter().take(RESUME_ROWS).enumerate().map(
+                                        |(i, meta)| {
+                                            // The agent is not named here: this picker belongs to a
+                                            // session that already has one, and every row in it was
+                                            // run by that same agent.
+                                            let subtitle = format!(
+                                                "{} · {} items",
+                                                rel_time(now, meta.updated),
+                                                meta.item_count
+                                            );
+                                            conversation_card(
+                                                ("resume", i),
+                                                meta.title.clone().into(),
+                                                subtitle.into(),
+                                                cx,
+                                            )
+                                            .on_click(
+                                                cx.listener(move |pane: &mut Self, _, _, cx| {
+                                                    let meta = pane.choices_of(uid).get(i).cloned();
+                                                    pane.start(uid, meta, cx);
+                                                }),
+                                            )
                                         },
-                                    ))
-                                },
-                            )),
+                                    ),
+                                ),
+                            ),
                     )
                     .children((older > 0).then(|| {
                         div()

@@ -465,7 +465,6 @@ impl Composer {
                     &self.rows_scroll,
                     div()
                         .id("completion")
-                        .v_flex()
                         .w_full()
                         // What lets this shrink to whatever the surface has
                         // left after the lines below, rather than pushing them
