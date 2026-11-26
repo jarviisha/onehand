@@ -275,6 +275,10 @@ const LEAD_RULE: gpui::Rems = rems(0.5);
 ///
 /// Only the tree's rows are dragged: a flat list is in an order this app
 /// keeps nowhere, so there would be nothing for a drop to write into.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "a rail row made by hand, which no shared builder draws"
+)]
 pub(super) fn session_row(
     item: &Item,
     who: &str,

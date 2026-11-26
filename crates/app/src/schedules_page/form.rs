@@ -192,6 +192,10 @@ fn picker(
     .into_any_element()
 }
 
+#[expect(
+    clippy::disallowed_methods,
+    reason = "a switch's label that flips it, made by hand, which no shared builder draws"
+)]
 fn about_section(
     handle: &Entity<SchedulesPage>,
     draft: &ScheduleDraft,
@@ -458,6 +462,10 @@ fn said_as(name: &str) -> String {
 /// The tools its agent may use, a switch each; and the labels its issues get.
 fn tools_section(handle: &Entity<SchedulesPage>, draft: &ScheduleDraft, cx: &App) -> AnyElement {
     let muted = cx.theme().muted_foreground;
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "a switch's label that flips it, made by hand, which no shared builder draws"
+    )]
     let switches = onehand_core::control::tool_names().iter().map(|name| {
         let on = draft.tools.iter().any(|t| t == name);
         let handle = handle.clone();

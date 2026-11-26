@@ -302,6 +302,10 @@ fn state_badge(open: bool, cx: &App) -> Tag {
 
 /// The issue's reference in the trail: in the link's ink and opening it on
 /// its forge where it is linked, in full ink where it is not.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "a reference that opens its issue, made by hand, which no shared builder draws"
+)]
 fn reference_link(issue: &LocalIssue, named: String, cx: &mut Context<IssuesView>) -> AnyElement {
     let number = issue.number();
     let mono = cx.theme().mono_font_family.clone();

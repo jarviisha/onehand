@@ -64,6 +64,10 @@ pub fn tree_row(
 /// the chosen ink, a quieter ink on it taken through [`middle_ink`](crate::middle_ink)
 /// under that ink. The caller lays it out, a line or a line over a second,
 /// and adds the ring where the keyboard is.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "a row is a shared builder, and it gives the pointer"
+)]
 pub fn row(picked: bool, cx: &App) -> Div {
     let theme = cx.theme();
     let hover = theme.list_hover;

@@ -10,11 +10,12 @@ use gpui::{
     AnyElement, App, Entity, InteractiveElement as _, IntoElement, ParentElement, SharedString,
     StatefulInteractiveElement as _, Styled, Window, div,
 };
+use onehand_ui::Locked as _;
 use onehand_ui::ShortIcon as _;
 use onehand_ui::Tall as _;
 
 use crate::controls::Named as _;
-use gpui_component::{ActiveTheme, Disableable as _, Icon, IconName, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::workflow::{GateKind, Place};
 
 mod settings;
@@ -133,6 +134,10 @@ fn step_row(
         true => step.id.read(cx).value().trim().to_string(),
         false => label,
     };
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "a step's head that opens it, made by hand, which no shared builder draws"
+    )]
     let head = div()
         .id(("step-row", i))
         .h_flex()
@@ -389,6 +394,10 @@ pub(super) fn step_panel(
                         )
                     })
             };
+            #[expect(
+                clippy::disallowed_methods,
+                reason = "a switch's label that flips it, made by hand, which no shared builder draws"
+            )]
             let gates = GateKind::ALL
                 .iter()
                 .filter(|gate| gate.fits(place) || step.gates.contains(gate))
@@ -405,7 +414,7 @@ pub(super) fn step_panel(
                                 on,
                             )
                             .label(gate.label())
-                            .disabled(shipped)
+                            .locked(shipped)
                             .on_click(
                                 move |_: &bool, window: &mut Window, cx: &mut App| {
                                     handle.update(cx, |page, cx| {
@@ -424,6 +433,10 @@ pub(super) fn step_panel(
                         )
                 })
                 .collect::<Vec<_>>();
+            #[expect(
+                clippy::disallowed_methods,
+                reason = "a switch's label that flips it, made by hand, which no shared builder draws"
+            )]
             let keep = {
                 let handle = handle.clone();
                 div()
@@ -432,7 +445,7 @@ pub(super) fn step_panel(
                     .child(
                         onehand_ui::toggle(("keep-answer", i), step.keep_answer)
                             .label("Keep its answer")
-                            .disabled(shipped)
+                            .locked(shipped)
                             .on_click(move |_: &bool, window: &mut Window, cx: &mut App| {
                                 handle.update(cx, |page, cx| {
                                     page.edit_workflow_draft(window, cx, |d, _, _| {

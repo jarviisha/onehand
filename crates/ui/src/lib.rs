@@ -68,5 +68,5 @@ pub use tabs::{
     Measured, TAB_MAX_W, measure_width, panel_tab_frame, tab_bar, tab_chip, tab_close, tab_select,
     unmeasured,
 };
-pub use toggle::toggle;
+pub use toggle::{Locked, toggle};
 pub use tooltip::{put_tooltips_away, tip, tooltip_guard};

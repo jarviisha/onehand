@@ -182,6 +182,10 @@ pub const DIALOG_FORM: Rems = rems(40.);
 /// opacity, so the number that matters is not the alpha written here but what
 /// lands on the surface underneath — which is what the app's palette test
 /// measures.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the lift is black thinned, the one colour a shadow is made of"
+)]
 pub fn lift(cx: &App) -> Vec<BoxShadow> {
     let alpha = lift_alpha(cx.theme().mode.is_dark());
     let shadow = |y: f32, blur: f32, spread: f32, alpha: f32| BoxShadow {

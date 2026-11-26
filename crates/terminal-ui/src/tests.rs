@@ -17,6 +17,10 @@ fn busy_is_a_foreground_group_other_than_the_shell() {
 /// What the reader gives reaches the grid, and its end is the tab's exit,
 /// told once. A tab fed by a stream has no process here.
 #[gpui::test]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the stream needs some ink, and which one does not matter"
+)]
 fn a_stream_tab_shows_what_its_reader_gives_and_exits_at_eof(cx: &mut TestAppContext) {
     // The reader runs on a thread of its own, and a wake from it is activity
     // the test executor refuses unless parking is allowed.

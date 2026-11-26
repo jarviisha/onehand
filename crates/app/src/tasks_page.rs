@@ -361,6 +361,10 @@ fn task_row(
     });
     let group = SharedString::from(format!("{name}-row-{i}"));
     let id = row.id.clone();
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "a task's words open it, a hand-made press no shared builder draws"
+    )]
     let text = div()
         .id(SharedString::from(format!("{name}-open-{i}")))
         .v_flex()

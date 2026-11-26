@@ -157,6 +157,10 @@ pub(super) struct Place {
 /// A click goes to the project: its page shows, over whatever sessions it has
 /// open, and the keyboard's row moves there. Only the chevron, a button
 /// of its own, folds it.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "a rail row made by hand, which no shared builder draws"
+)]
 pub(super) fn project_row(
     window_state: &WorkspaceWindow,
     root_idx: usize,

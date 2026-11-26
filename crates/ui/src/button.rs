@@ -31,6 +31,10 @@ use gpui_component::{Icon, IconName, Selectable as _};
 /// bypass is one line and looks exactly like ordinary code — which is why a
 /// guard counts the call sites and why there must be only one of these to count
 /// against.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the wrapper every button is made through, which gives it the pointer"
+)]
 pub fn action(id: impl Into<ElementId>) -> Button {
     Button::new(id)
         .cursor_pointer()
@@ -74,6 +78,10 @@ pub trait Refuses: Sized {
 }
 
 impl Refuses for Button {
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the refusal is the one way a button is disabled, and it says why"
+    )]
     fn refuses(self, why: Option<impl Into<SharedString>>) -> Self {
         use gpui_component::Disableable as _;
 

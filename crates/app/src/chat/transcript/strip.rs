@@ -305,6 +305,10 @@ fn file_row(
     ]);
     let row_key = turn_file_key(anchor, &file.path);
 
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "a file row that opens the file, made by hand, which no shared builder draws"
+    )]
     let row = div()
         .id(gpui::ElementId::NamedInteger(
             SharedString::from(format!("turn-file-{}", file.path)),
