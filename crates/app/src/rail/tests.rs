@@ -5,6 +5,7 @@ use super::model::{
 use super::model::{emptied, nest_workers};
 use super::project::{GitLine, project_hint};
 use super::row::project_key;
+use super::search::workspace_hint;
 use super::session::{LABEL_SHAPE_CAP, session_label, signal_hint};
 use super::workspace::new_session_hint;
 use crate::chat::pane::SessionSignal;
@@ -737,6 +738,22 @@ fn a_session_in_a_worktree_is_marked_with_its_branch() {
         Some("feat")
     );
     assert_eq!(super::model::branch_mark(&root, Path::new("/a")), None);
+}
+
+/// The workspace control is named with the workspace's name whole, short
+/// or long, before what a press does.
+#[test]
+fn the_workspace_hint_says_the_name_whole_before_what_a_press_does() {
+    for name in ["Notes".to_string(), "word ".repeat(40)] {
+        let hint = workspace_hint(&name);
+        let what = hint
+            .strip_prefix(name.as_str())
+            .unwrap_or_else(|| panic!("{hint:?} does not start with the name whole"));
+        assert!(
+            what.contains("Open another workspace"),
+            "{hint:?} does not say what a press does after the name"
+        );
+    }
 }
 
 mod strain {

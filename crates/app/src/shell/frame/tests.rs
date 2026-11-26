@@ -158,7 +158,7 @@ mod strain {
     }
 
     #[gpui::test]
-    fn a_name_the_narrowest_window_cuts_is_said_whole_in_its_tooltip(cx: &mut TestAppContext) {
+    fn the_narrowest_window_cuts_a_name_a_wide_one_shows_whole(cx: &mut TestAppContext) {
         let dir = folder("strain-title-tooltip");
         let (_, shell, cx) = shell(cx, dir.join("tasks"), Vec::new());
         let name = "Client infrastructure";
@@ -171,10 +171,6 @@ mod strain {
             cut.size.width < whole.size.width,
             "a {}-character name is not cut in the narrowest window: {cut:?} against {whole:?}",
             name.len()
-        );
-        assert!(
-            crate::rail::workspace_hint(name).starts_with(name),
-            "the tooltip does not say the name whole first"
         );
     }
 
