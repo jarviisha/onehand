@@ -119,6 +119,11 @@ impl Tasks {
         self.seen().working(id)
     }
 
+    /// Whether task `id` holds a place on its board's team.
+    fn holds_team(&self, id: &str) -> bool {
+        self.seen().holds_team(id)
+    }
+
     /// Every task and the runs under way, to read.
     fn seen(&self) -> Seen<'_, AnyWindowHandle> {
         Seen::new(&self.drive, self.live.values().map(carrier::Driven::drive))

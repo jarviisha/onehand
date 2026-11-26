@@ -239,8 +239,45 @@ fn cut_off_task_not_counted() {
         task("3", "q", 0, None),
     ];
     let project: ProjectId = serde_json::from_str("\"p\"").unwrap();
-    let working = |id: &str| (id == "1" || id == "3").then_some(Working::Queued);
-    assert_eq!(running(tasks.iter(), &project, &working), 1);
+    let holds = |id: &str| id == "1" || id == "3";
+    assert_eq!(running(tasks.iter(), &project, &holds), 1);
+}
+
+/// A board task out of time at rest, or waiting for a place, holds none.
+#[test]
+fn a_board_task_that_gives_its_place_is_not_running() {
+    let tasks = [task("1", "p", 0, None), task("2", "p", 0, None)];
+    let project: ProjectId = serde_json::from_str("\"p\"").unwrap();
+    assert_eq!(running(tasks.iter(), &project, &|id| id == "1"), 1);
+}
+
+/// Places go to extends waiting, the one that asked first first, never past
+/// the team.
+#[test]
+fn extends_waiting_take_places_oldest_first() {
+    let waiting = ["a".to_string(), "b".to_string()];
+    assert_eq!(extends_given(&board(2, &[]), 1, &waiting), ["a"]);
+    assert_eq!(extends_given(&board(3, &[]), 0, &waiting), ["a", "b"]);
+    assert!(extends_given(&board(2, &[]), 2, &waiting).is_empty());
+}
+
+/// The waiting extends of a project's board, by when each asked.
+#[test]
+fn extends_waiting_are_listed_by_when_they_asked() {
+    let tasks = [
+        task("1", "p", 0, None),
+        task("2", "p", 0, None),
+        task("3", "q", 0, None),
+        task("4", "p", 0, None),
+    ];
+    let project: ProjectId = serde_json::from_str("\"p\"").unwrap();
+    let asked = |id: &str| match id {
+        "1" => Some(20),
+        "2" => Some(10),
+        "3" => Some(5),
+        _ => None,
+    };
+    assert_eq!(extends_waiting(tasks.iter(), &project, &asked), ["2", "1"]);
 }
 
 #[test]

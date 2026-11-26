@@ -168,7 +168,8 @@ impl ProjectsDrive {
     }
 
     /// Which of project `id`'s To do to start while `running` of its board
-    /// tasks work, its starts on their way counted with them, over its
+    /// tasks work, its starts on their way and `extends_waiting` extends
+    /// waiting for a place counted with them, over its
     /// `issues` and the issues its tasks hold (`taken`); none without a
     /// board, or when its workflow, `template`, is one a board cannot run,
     /// which its page says. `first` is the room at the workflow's first
@@ -180,6 +181,7 @@ impl ProjectsDrive {
         id: &ProjectId,
         template: &Template,
         running: usize,
+        extends_waiting: usize,
         first: Option<Room>,
         issues: &Issues,
         forge: Option<&'static dyn Connector>,
@@ -190,7 +192,9 @@ impl ProjectsDrive {
         let starting = self.starting.get(id).map_or(0, BTreeSet::len);
         Some(crate::board::pull(
             board,
-            running + starting,
+            // An extend waiting for a place is first in line: To do gets
+            // only what is left after it.
+            running + starting + extends_waiting,
             // ponytail: a start counts here only until it lands; a task kept
             // and not yet asking for room is counted nowhere at the first
             // step, so a pull then may start one too many. The team cap and

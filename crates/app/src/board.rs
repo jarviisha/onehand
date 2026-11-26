@@ -148,7 +148,7 @@ fn pull_read(
     let first = crate::task::room_at(root, &template, 0, cx);
     let Some(pull) = Shared::global(cx)
         .projects
-        .pull(project, &template, running, first, kept, forge, &taken)
+        .pull(project, &template, running, 0, first, kept, forge, &taken)
     else {
         return;
     };
