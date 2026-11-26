@@ -6,10 +6,12 @@
 #   drive.sh type TEXT                             keys into the focused field
 #   drive.sh key ARGS…                             wtype arguments, e.g. -k Escape
 #   drive.sh shot NAME                             screenshot to $DRIVE_ROOT/NAME.png
+#   drive.sh size W [H]                            the window's size, in output pixels (H 1000)
 #   drive.sh alive                                 is the app still running?
 set -euo pipefail
 root=${DRIVE_ROOT:-/tmp/onehand-drive}
 export WAYLAND_DISPLAY; WAYLAND_DISPLAY=$(cat "$root/display")
+usage() { sed -n '2,10p' "$0"; exit 2; }
 case ${1:-} in
     click | move) "$root/vpclick" "$2" "$3" "$1" ;;
     scroll) "$root/vpclick" "$2" "$3" scroll "${4:-3}" ;;
@@ -25,6 +27,13 @@ case ${1:-} in
     type) wtype "$2"; sleep 0.3 ;;
     key) shift; wtype "$@"; sleep 0.3 ;;
     shot) grim -o HEADLESS-1 "$root/$2.png" && echo "$root/$2.png" ;;
+    # The window fills the headless output, so the output's mode is its
+    # size; it changes live, and the app lays out again within a second.
+    size)
+        [[ ${2:-} =~ ^[0-9]+$ && ${3:-1000} =~ ^[0-9]+$ ]] || usage
+        swaymsg -s "/run/user/$(id -u)/sway-ipc.$(id -u).$(cat "$root/sway.pid").sock" \
+            output HEADLESS-1 mode "$2x${3:-1000}" >/dev/null
+        sleep 1 ;;
     alive) kill -0 "$(cat "$root/app.pid")" 2>/dev/null && echo alive || { echo dead; grep -v MESA "$root/app.log" | tail -20; } ;;
-    *) sed -n '2,10p' "$0"; exit 2 ;;
+    *) usage ;;
 esac
