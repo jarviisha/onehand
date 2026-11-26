@@ -6,7 +6,7 @@
 //! likes, and holding it to these rules would bury the real offenders in
 //! fixtures.
 
-use super::ui_sources;
+use super::{ui_sources, workspace_root};
 
 /// The files a parent declares test code: for every `mod NAME;` under
 /// `#[cfg(test)]`, the module's file and the directory of its children, as
@@ -175,19 +175,19 @@ fn holds_size_number(line: &str) -> bool {
     })
 }
 
-/// The name of the `const` item a line opens, if it opens one; `const fn` is
-/// a function, not a constant.
-fn opens_const(line: &str) -> Option<&str> {
+/// The name of the `const` item a line opens, and what follows its colon,
+/// if it opens one; `const fn` is a function, not a constant.
+fn opens_const(line: &str) -> Option<(&str, &str)> {
     let t = line.trim_start();
     let t = match t.strip_prefix("pub") {
         Some(rest) if rest.starts_with('(') => rest.split_once(')')?.1.trim_start(),
         Some(rest) => rest.trim_start(),
         None => t,
     };
-    let (name, _) = t.strip_prefix("const ")?.split_once(':')?;
+    let (name, rest) = t.strip_prefix("const ")?.split_once(':')?;
     let name = name.trim();
     (!name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'))
-        .then_some(name)
+        .then_some((name, rest))
 }
 
 #[test]
@@ -326,5 +326,133 @@ fn a_size_is_written_once_in_a_constant() {
         offenders.is_empty(),
         "a size written as a number outside a constant at {offenders:?}: give it a name \
          in a `const` beside its use."
+    );
+}
+
+/// The census of one file's sizes, as `<path>  <NAME> = <value as written>`.
+///
+/// A constant typed `Rems` or `Pixels`, every constant of the shared tokens
+/// whatever its type, and every slot of the palette, its dark value then its
+/// light one. A value is the source's own text, its whitespace runs joined
+/// to one space, so a constant computed from others or written over two
+/// lines reads as the source has it.
+fn census_of(path: &str, lines: &[(usize, String)]) -> Vec<String> {
+    let tokens = path == "crates/ui/src/tokens.rs";
+    let palette = path == "crates/app/src/theme.rs";
+    let mut out = Vec::new();
+    let mut item: Option<String> = None;
+    for (_, line) in lines {
+        let t = line.trim();
+        if t.starts_with("//") {
+            continue;
+        }
+        if palette
+            && let Some((slot, values)) = t.split_once(": \"#")
+            && slot.chars().all(|c| c.is_ascii_lowercase() || c == '_')
+        {
+            let values = values.trim_end_matches(';');
+            out.push(format!("{path}  {slot} = \"#{values}"));
+            continue;
+        }
+        match item.as_mut() {
+            Some(text) => {
+                text.push(' ');
+                text.push_str(t);
+            }
+            None if opens_const(t).is_some() => item = Some(t.to_string()),
+            None => continue,
+        }
+        let Some(text) = item.take_if(|text| text.contains(';')) else {
+            continue;
+        };
+        let shared = tokens && text.starts_with("pub const ");
+        let Some((name, rest)) = opens_const(&text) else {
+            continue;
+        };
+        let Some((ty, value)) = rest.split_once('=') else {
+            continue;
+        };
+        let ty = ty.trim().trim_start_matches("gpui::");
+        if shared || ty == "Rems" || ty == "Pixels" {
+            let value = value.split_once(';').map_or(value, |(value, _)| value);
+            let value = value.split_whitespace().collect::<Vec<_>>().join(" ");
+            out.push(format!("{path}  {name} = {value}"));
+        }
+    }
+    out
+}
+
+/// Every size and palette value of the UI, sorted, one line each.
+fn census() -> Vec<String> {
+    let root = format!("{}/", workspace_root().display());
+    let mut out: Vec<String> = production()
+        .iter()
+        .flat_map(|(path, lines)| census_of(path.strip_prefix(&root).unwrap_or(path), lines))
+        .collect();
+    out.sort();
+    out
+}
+
+#[test]
+fn the_census_reads_a_constant_as_written() {
+    let lines: Vec<(usize, String)> = [
+        "const A: Rems = rems(1.);",
+        "const B: Pixels =",
+        "    px(2.);",
+        "pub(crate) const C: gpui::Rems = rems(D.0 * 2.);",
+        "pub(in crate::chat) const E: Rems = rems(3.);",
+        "const N: usize = 3;",
+        "const fn half() -> Rems { rems(0.5) }",
+    ]
+    .iter()
+    .enumerate()
+    .map(|(i, line)| (i + 1, line.to_string()))
+    .collect();
+    assert_eq!(
+        census_of("x/a.rs", &lines),
+        [
+            "x/a.rs  A = rems(1.)",
+            "x/a.rs  B = px(2.)",
+            "x/a.rs  C = rems(D.0 * 2.)",
+            "x/a.rs  E = rems(3.)"
+        ]
+    );
+}
+
+/// The shared sizes, the local ones and the palette are the listed ones.
+///
+/// A size added, changed or removed fails here until `sizes.txt` says so, so
+/// a change to the foundation shows by name in the diff that makes it. The
+/// list is brought up to date by hand from this test's own words; nothing is
+/// written on the machine that runs it.
+#[test]
+fn the_sizes_are_the_listed_ones() {
+    let found = census();
+    let listed: Vec<&str> = include_str!("sizes.txt")
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .collect();
+    assert!(
+        found.len() > 200,
+        "found {} sizes -- this census has stopped counting",
+        found.len()
+    );
+    let add: Vec<String> = found
+        .iter()
+        .filter(|line| !listed.contains(&line.as_str()))
+        .map(|line| format!("+ {line}"))
+        .collect();
+    let drop: Vec<String> = listed
+        .iter()
+        .filter(|line| !found.iter().any(|f| f == *line))
+        .map(|line| format!("- {line}"))
+        .collect();
+    assert!(
+        add.is_empty() && drop.is_empty(),
+        "the sizes differ from sizes.txt.\n\
+         A shared size or a palette value changes only when the owner asked for it; \
+         bring the list up to date by hand from these lines.\n{}\n{}",
+        add.join("\n"),
+        drop.join("\n")
     );
 }
