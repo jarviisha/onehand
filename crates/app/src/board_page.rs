@@ -107,12 +107,6 @@ impl BoardPage {
     }
 
     /// Come on screen on `project`'s board.
-    /// How far the columns can scroll sideways, as last drawn.
-    #[cfg(test)]
-    pub(crate) fn across_max(&self) -> gpui::Pixels {
-        self.across.max_offset().x
-    }
-
     pub(crate) fn show(&mut self, project: ProjectId, window: &mut Window, cx: &mut Context<Self>) {
         if self.project.as_ref() != Some(&project) {
             self.rows.clear();
@@ -142,6 +136,12 @@ impl BoardPage {
         self.project = Some(project);
         self.focus.clone().focus(window, cx);
         cx.notify();
+    }
+
+    /// How far the columns can scroll sideways, as last drawn.
+    #[cfg(test)]
+    pub(crate) fn across_max(&self) -> gpui::Pixels {
+        self.across.max_offset().x
     }
 
     fn handle(&mut self, key: RowKey, cx: &mut Context<Self>) -> FocusHandle {
