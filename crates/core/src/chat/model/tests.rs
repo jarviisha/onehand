@@ -2202,10 +2202,36 @@ fn a_turn_that_said_nothing_answers_nothing_rather_than_the_turn_before() {
     chat.items
         .push(ChatItem::User(UserMsg::text("now change it")));
     chat.items.push(ChatItem::notice("a tool ran"));
-    assert_eq!(chat.prose_since(from), "");
+    assert_eq!(chat.answer_since(from), "");
     chat.items.push(ChatItem::Agent(Md::parse("changed")));
-    assert_eq!(chat.prose_since(from), "changed");
-    assert_eq!(chat.prose_since(from + 10), "");
+    assert_eq!(chat.answer_since(from), "changed");
+    assert_eq!(chat.answer_since(from + 10), "");
+}
+
+/// A turn's answer is what the agent said last, after the work between: the
+/// words it said on its way, before a tool ran, are not the answer.
+#[test]
+fn a_turn_s_answer_is_what_it_said_after_its_last_work() {
+    let mut chat = Chat::default();
+    chat.items.push(ChatItem::User(UserMsg::text("plan it")));
+    let from = chat.items.len();
+    chat.items
+        .push(ChatItem::Agent(Md::parse("Reading the three tests first.")));
+    chat.items.push(ChatItem::notice("a tool ran"));
+    chat.items.push(ChatItem::Agent(Md::parse("The plan:")));
+    chat.items
+        .push(ChatItem::Agent(Md::parse("1. Wait for the event.")));
+    assert_eq!(
+        chat.answer_since(from),
+        "The plan:\n\n1. Wait for the event."
+    );
+    // Work after the last words leaves them the answer.
+    chat.items.push(ChatItem::notice("another tool ran"));
+    assert_eq!(
+        chat.answer_since(from),
+        "The plan:\n\n1. Wait for the event."
+    );
+    assert_eq!(chat.answer_since(from + 10), "");
 }
 
 /// The moment an agent says which modes it offers is reported, so the app can
