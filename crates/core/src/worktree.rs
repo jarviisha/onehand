@@ -487,6 +487,50 @@ pub(crate) fn work_digest_blocking(dir: &Path) -> Result<String, String> {
     Ok(format!("{:016x}", crate::chat::store::fnv1a(&work)))
 }
 
+/// One commit, as a pull request is written from it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Commit {
+    pub subject: String,
+    pub body: String,
+}
+
+/// The commits of `branch` at `root` up to `tip`, oldest first: those on no
+/// other branch of a remote, its own pushed copy left out, which is the work
+/// the branch adds. Blocking: it runs git.
+pub fn branch_commits_blocking(
+    root: &Path,
+    tip: &str,
+    branch: &str,
+) -> Result<Vec<Commit>, String> {
+    // Matched as `--remotes` names them: without `refs/remotes/`.
+    let own = format!("--exclude=*/{branch}");
+    let out = git(root)
+        .args([
+            "log",
+            "--reverse",
+            "--format=%s%x1f%b%x1e",
+            tip,
+            "--not",
+            &own,
+            "--remotes",
+        ])
+        .output()
+        .map_err(|err| format!("git log could not be run: {err}"))?;
+    if !out.status.success() {
+        return Err(git_message(&out.stderr));
+    }
+    Ok(String::from_utf8_lossy(&out.stdout)
+        .split('\x1e')
+        .filter_map(|record| {
+            let (subject, body) = record.trim_start_matches('\n').split_once('\x1f')?;
+            Some(Commit {
+                subject: subject.trim().to_string(),
+                body: body.trim().to_string(),
+            })
+        })
+        .collect())
+}
+
 /// `git -C <root>`, with every way git has of asking a person for something
 /// switched off.
 pub(crate) fn git(root: &Path) -> std::process::Command {
@@ -575,6 +619,70 @@ fn free_branch_blocking(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The branch's own commits, oldest first: those no other branch on a
+    /// remote has, its own pushed copy left out.
+    #[test]
+    fn a_branch_s_own_commits_are_read_oldest_first() {
+        let top =
+            std::env::temp_dir().join(format!("onehand-branch-commits-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&top);
+        let (origin, work) = (top.join("origin.git"), top.join("work"));
+        let run = |dir: &Path, args: &[&str]| {
+            let out = git(dir).args(args).output().unwrap();
+            assert!(
+                out.status.success(),
+                "{args:?}: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+        };
+        std::fs::create_dir_all(&top).unwrap();
+        run(&top, &["init", "--quiet", "--bare", "origin.git"]);
+        run(
+            &top,
+            &["clone", "--quiet", origin.to_str().unwrap(), "work"],
+        );
+        let commit = |message: &str| {
+            run(
+                &work,
+                &[
+                    "-c",
+                    "user.name=t",
+                    "-c",
+                    "user.email=t@t",
+                    "commit",
+                    "--quiet",
+                    "--allow-empty",
+                    "-m",
+                    message,
+                ],
+            );
+        };
+        commit("base");
+        run(
+            &work,
+            &["push", "--quiet", "origin", "HEAD:refs/heads/main"],
+        );
+        run(&work, &["checkout", "--quiet", "-b", "w"]);
+        commit("feat: a\n\nWhy a.");
+        commit("fix: b");
+        run(&work, &["push", "--quiet", "origin", "w"]);
+        let read = branch_commits_blocking(&work, "HEAD", "w").unwrap();
+        assert_eq!(
+            read,
+            [
+                Commit {
+                    subject: "feat: a".into(),
+                    body: "Why a.".into()
+                },
+                Commit {
+                    subject: "fix: b".into(),
+                    body: String::new()
+                },
+            ]
+        );
+        let _ = std::fs::remove_dir_all(&top);
+    }
 
     #[test]
     fn git_lists_the_main_checkout_then_the_linked_one() {

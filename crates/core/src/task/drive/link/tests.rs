@@ -37,6 +37,7 @@ fn run_in(mode: Option<&str>) -> (String, Run, Action) {
         title: "Fix the thing".into(),
         body: "It is broken.".into(),
         instructions: None,
+        closes: None,
     };
     let setup = Setup {
         repo: PathBuf::from("/repo"),

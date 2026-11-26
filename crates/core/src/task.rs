@@ -279,6 +279,7 @@ impl Task {
             title: "Check".to_string(),
             body: command,
             instructions: None,
+            closes: None,
         };
         Self {
             source: Source::Check,

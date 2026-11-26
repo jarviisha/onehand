@@ -35,6 +35,7 @@ fn task(id: &str) -> Task {
             title: "Fix the thing".into(),
             body: String::new(),
             instructions: None,
+            closes: None,
         },
         Setup {
             repo: PathBuf::from("/repo"),

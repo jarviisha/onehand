@@ -58,6 +58,7 @@ fn starting(project: &Path, template: &Template, title: &str) -> Starting {
             title: title.into(),
             body: String::new(),
             instructions: None,
+            closes: None,
         },
         origin: Origin::Tool,
         grant: Default::default(),

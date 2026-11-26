@@ -1,6 +1,6 @@
 schema_version = 2
 id = "builtin:board"
-version = 1
+version = 2
 name = "Board team"
 description = "For a project's board: plan, change the code and pass the check on a branch of its own; a reviewer in a session of its own approves the change or sends it back; then push, open a draft pull request and repair it until its status checks pass. The review takes one task at a time."
 place = "worktree"
@@ -59,7 +59,7 @@ The plan it followed:
 
 {output.plan}
 
-Read what the branch changed since it left the base branch, run the repository's checks if you need to, and judge whether the change does what the issue asks and nothing it should not.
+onehand has just run the project's check on this commit, and it passed: do not run it again. Read what the branch changed since it left the base branch, and judge whether the change does what the issue asks and nothing it should not.
 """
 
 [[steps]]

@@ -838,7 +838,8 @@ pub fn supervised_brief_blocking(
                  from a forge the project is no longer kept in step with"
             )
         })?;
-    let names = match synced.and_then(|forge| Some((forge, issue.link_on(forge.name())?))) {
+    let on_forge = synced.and_then(|forge| Some((forge, issue.link_on(forge.name())?)));
+    let names = match &on_forge {
         Some((forge, link)) => format!("{} issue {}", forge.name(), link.reference),
         None => format!("issue #{number}, which is kept in onehand rather than on a forge"),
     };
@@ -846,6 +847,7 @@ pub fn supervised_brief_blocking(
         title: issue.title.clone(),
         body: issue.body.trim().to_string(),
         instructions: Some(format!("This is {names}.")),
+        closes: on_forge.map(|(_, link)| link.reference.clone()),
     })
 }
 

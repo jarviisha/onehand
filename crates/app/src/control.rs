@@ -258,6 +258,7 @@ fn perform_now(
                 title: title.trim().to_string(),
                 body: brief.unwrap_or_default().trim().to_string(),
                 instructions: None,
+                closes: None,
             };
             let answer = answer.take();
             cx.spawn(async move |cx| {

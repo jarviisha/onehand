@@ -12,15 +12,47 @@ pub struct Brief {
     pub title: String,
     pub body: String,
     pub instructions: Option<String>,
+    /// What the work closes on the run's forge, as the forge names it
+    /// (`#409`): the issue the brief was made from, when it is kept in step
+    /// with one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub closes: Option<String>,
 }
 
+/// How many of a branch's commits its pull request lists, the rest counted.
+const PR_COMMITS_LISTED: usize = 20;
+
 impl Brief {
-    /// The title and body of the pull request a run of this brief opens.
-    pub fn pull_request_text(&self) -> (String, String) {
-        (
-            self.title.clone(),
-            "Opened by onehand. What was pushed passed the project's check first.".to_string(),
-        )
+    /// The title and body of the pull request a run of this brief opens,
+    /// from the `commits` its branch adds, oldest first: one commit is the
+    /// pull request, title and body, as a squash merge will keep it; several
+    /// are the brief's title and a line each. Closing the issue is said once.
+    pub fn pull_request_text(&self, commits: &[crate::worktree::Commit]) -> (String, String) {
+        let (title, mut body) = match commits {
+            [one] => (one.subject.clone(), one.body.clone()),
+            [] => (self.title.clone(), String::new()),
+            many => {
+                let mut lines: Vec<String> = many
+                    .iter()
+                    .take(PR_COMMITS_LISTED)
+                    .map(|commit| format!("- {}", commit.subject))
+                    .collect();
+                if many.len() > PR_COMMITS_LISTED {
+                    lines.push(format!("- and {} more", many.len() - PR_COMMITS_LISTED));
+                }
+                (self.title.clone(), lines.join("\n"))
+            }
+        };
+        if let Some(closes) = &self.closes {
+            let line = format!("Closes {closes}");
+            if !body.contains(&line) {
+                if !body.is_empty() {
+                    body.push_str("\n\n");
+                }
+                body.push_str(&line);
+            }
+        }
+        (title, body)
     }
 }
 

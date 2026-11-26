@@ -79,12 +79,17 @@ pub(super) fn find(id: &str, cx: &mut App) {
     });
 }
 
-/// Open the run's pull request as a draft, with the text its brief gives it,
-/// then read it back.
+/// Open the run's pull request as a draft, written from the commits its
+/// branch adds and its brief, then read it back. Commits that cannot be read
+/// leave the brief to name it.
 pub(super) fn open(id: &str, cx: &mut App) {
-    let text = read(id, cx, |d| d.run().brief.pull_request_text()).unwrap_or_default();
+    let Some(brief) = read(id, cx, |d| d.run().brief.clone()) else {
+        return;
+    };
     call(id, cx, move |f| {
-        let (title, body) = text;
+        let commits = onehand_core::worktree::branch_commits_blocking(&f.dir, &f.branch, &f.branch)
+            .unwrap_or_default();
+        let (title, body) = brief.pull_request_text(&commits);
         let opened = f
             .connector
             .open_pull_request_blocking(&f.dir, &f.branch, &title, &body)
