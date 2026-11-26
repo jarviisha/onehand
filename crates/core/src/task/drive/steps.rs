@@ -31,7 +31,7 @@ impl RunDrive {
         // stands still for whatever onehand does next, and goes on when a
         // prompt is handed over. Nothing to do changes nothing: a press the
         // run refused leaves a turn under way counted.
-        if !matches!(action, Action::Prompt(_) | Action::Idle) {
+        if stills_the_clock(&action) {
             self.budget.pause(now.at);
         }
         let dir = self.run.setup.dir.clone();
@@ -247,6 +247,23 @@ impl RunDrive {
         }
         self.run.spent_secs = self.spent_secs(now);
         fx.push(Effect::Finish { outcome });
+    }
+}
+
+/// Whether doing `action` is onehand's, or a wait, rather than the agent's:
+/// the clock stands still for it. A new action is placed here on purpose.
+fn stills_the_clock(action: &Action) -> bool {
+    match action {
+        Action::Prompt(_) | Action::Idle => false,
+        Action::Measure
+        | Action::RunCommand(_)
+        | Action::AwaitApproval
+        | Action::AwaitExtend
+        | Action::AwaitRoom
+        | Action::Push(_)
+        | Action::OpenPullRequest
+        | Action::AwaitStatusChecks { .. }
+        | Action::Finish(_) => true,
     }
 }
 

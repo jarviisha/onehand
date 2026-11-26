@@ -253,24 +253,23 @@ pub(crate) fn review_of(id: &str, cx: &App) -> Option<UnderReview> {
 /// task asks its team for a place first, given at once when there is one;
 /// any other goes on at once.
 pub(crate) fn extend(approval: onehand_core::task::Approval, cx: &mut App) {
-    // A run not yet at rest still holds its place: it goes on in it.
+    use onehand_core::board::ExtendWay;
     let holds = cx
         .try_global::<Tasks>()
         .is_some_and(|t| t.holds_team(&approval.task));
-    let board = task(&approval.task, cx)
-        .and_then(|task| task.board_issue().map(|(project, _)| project.clone()))
-        .filter(|project| {
-            crate::state::Shared::global(cx)
-                .projects
-                .get(project)
-                .is_some_and(|p| p.board().is_some())
-        });
-    match board.filter(|_| !holds) {
-        Some(project) => {
+    let projects = &crate::state::Shared::global(cx).projects;
+    let has_board = |project: &onehand_core::project::ProjectId| {
+        projects.get(project).is_some_and(|p| p.board().is_some())
+    };
+    let way = task(&approval.task, cx).map_or(ExtendWay::Now, |task| {
+        onehand_core::board::extend_way(&task, &has_board, holds)
+    });
+    match way {
+        ExtendWay::WaitForPlace(project) => {
             carrier::queue_extend(approval, cx);
             crate::board::give_places(&project, cx);
         }
-        None => carrier::extend(approval, cx),
+        ExtendWay::Now => carrier::extend(approval, cx),
     }
 }
 

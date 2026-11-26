@@ -516,8 +516,6 @@ fn perform(id: &str, effects: Vec<Effect>, cx: &mut App) {
                 let board = super::task(id, cx)
                     .and_then(|task| task.board_issue().map(|(project, _)| project.clone()));
                 if let Some(project) = board {
-                    // Waiting extends first, whether or not the pull can run.
-                    crate::board::give_places(&project, cx);
                     crate::board::pull_now(&project, cx);
                 }
             }

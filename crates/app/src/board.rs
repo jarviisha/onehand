@@ -31,6 +31,9 @@ pub(crate) fn pull_all(cx: &mut App) {
 /// Start as many of `project`'s To do as its team has room for, first
 /// first, and drop from To do what is closed or gone.
 pub(crate) fn pull_now(project: &ProjectId, cx: &mut App) {
+    // Extends waiting for a place are first in line, and need neither the
+    // issues read nor a window.
+    give_places(project, cx);
     let Some((root, file)) = local(project, cx) else {
         return;
     };
@@ -147,7 +150,7 @@ fn pull_read(
     else {
         return;
     };
-    // Extends waiting for a place are first in line, and need no window.
+    // Places freed while the issues were read go to waiting extends first.
     give_places(project, cx);
     // ponytail: with no window holding the project nothing is pulled until
     // To do or the team changes, a board task ends or the app starts again;

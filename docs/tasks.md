@@ -58,7 +58,8 @@ the prose width. It shows:
   *Open session*. It is answered here as on the strip, through the same call: each press carries
   the visit it was drawn from, and one the run no longer waits at shows the new answer instead;
 - **Out of time**, while the last run waits after its time ran out, in the same box and inks: how
-  long it worked against which timeout, *Extend* beside what it gives, and *Open session*. *Stop*
+  long it worked against what it was given, *Extend* beside what it gives, and *Open session*; gone
+  once Extend was pressed and waits for a team place, which the head's line says. *Stop*
   is the trail's;
 - **Run N**, the last run's timeline as a vertical stepper (a dot per visit on a rail, a check once
   it ended, its number ringed in `info` while it runs): one line per step visit (the step, why it ended, when it

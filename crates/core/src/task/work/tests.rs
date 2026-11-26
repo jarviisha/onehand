@@ -819,3 +819,14 @@ fn a_run_out_of_time_stands_out_of_time_and_is_extended() {
         (Some(Act::Extend), vec![Act::OpenSession, Act::Edit])
     );
 }
+
+/// After an extend, how long it worked is said against what it was given.
+#[test]
+fn out_of_time_counts_the_extension_in_what_it_was_given() {
+    let mut task = out_of_time(90 * 60);
+    task.runs.last_mut().unwrap().extended_secs = 45 * 60;
+    assert_eq!(
+        out_of_time_said(&task.runs[0]),
+        "It worked 1h 30m of the 1h 30m it was given."
+    );
+}

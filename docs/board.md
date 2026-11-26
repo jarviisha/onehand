@@ -69,9 +69,11 @@ on this machine. A project on a host has none: its issues are not kept here.
 - **Extend on a board task waits for a team place** when the team is full: the task reads *Waiting
   for a team place* and is queued, not needing attention. Places go to waiting extends first, the
   one asked first first, and **no To do issue starts while one waits** (`board::extends_given`,
-  `board::extends_waiting`, the reservation in `ProjectsDrive::pull`). Given a place, it asks
-  room at a limited step again, then carries on in the same session. A task whose project no
-  longer has a board extends at once.
+  `board::extends_waiting`, `ProjectsDrive::extends_given`, which counts starts on their way, and
+  the reservation in `ProjectsDrive::pull`). Given a place, it asks
+  room at a limited step again, then carries on in the same session. An Extend pressed before the
+  run rests goes on at once, in the team place and the step's room it still holds, and so does one
+  whose project no longer has a board (`board::extend_way`).
 - **A refused pull** before its task is made (no brief, no worktree, no place) puts the issue back
   in the Backlog, with a toast naming it and the reason. It is not retried, and nothing is pulled
   in its place, so a reason every issue shares is said once.

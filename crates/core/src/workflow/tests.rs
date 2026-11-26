@@ -2698,7 +2698,7 @@ fn extending_carries_on_the_step_and_keeps_the_extension() {
     let mut run = at_the_plan_s_turn();
     run.ran_out(10);
     let at = run.out_of_time_at().unwrap();
-    let text = prompt_of(run.extended(&at, std::time::Duration::from_secs(2700), 20));
+    let text = prompt_of(run.extended(&at, std::time::Duration::from_secs(2700), false, 20));
     assert_eq!(
         text,
         "You ran out of time at Plan. You have 45m more. Carry on with the step from where you were."
@@ -2710,7 +2710,7 @@ fn extending_carries_on_the_step_and_keeps_the_extension() {
         .last()
         .is_some_and(|t| t.why == "extended by 45m"));
     assert_eq!(
-        run.extended(&at, std::time::Duration::from_secs(2700), 30),
+        run.extended(&at, std::time::Duration::from_secs(2700), false, 30),
         Action::Idle
     );
     assert_eq!(run.extended_secs, 2700);
