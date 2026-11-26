@@ -185,11 +185,7 @@ fn stand(
         Some(Working::Waiting) => match (run, kind) {
             (Some(run), _) if run.awaiting_extend() => Stand::OutOfTime {
                 step: step_label(Some(run), None),
-                said: format!(
-                    "It worked {} of its {} timeout.",
-                    worked(run.spent_secs),
-                    run.template.timeout_said()
-                ),
+                said: out_of_time_said(run),
             },
             (Some(run), Some(StepKind::Approval { .. }))
                 if run.visits().last().is_some_and(|v| v.ended_at.is_none()) =>
@@ -233,6 +229,15 @@ fn stand(
 }
 
 /// How long a run worked, as a timeout is written: *45m*, *1h 30m*.
+/// How long `run`, out of time, worked against which timeout.
+pub fn out_of_time_said(run: &Run) -> String {
+    format!(
+        "It worked {} of its {} timeout.",
+        worked(run.spent_secs),
+        run.template.timeout_said()
+    )
+}
+
 pub(crate) fn worked(secs: u64) -> String {
     match (secs / 3600, secs % 3600 / 60) {
         (0, minutes) => format!("{minutes}m"),

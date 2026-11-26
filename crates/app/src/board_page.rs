@@ -763,6 +763,7 @@ mod tests {
             resumable: false,
             stoppable: false,
             stopping: false,
+            extendable: false,
         }
     }
 
@@ -819,5 +820,9 @@ mod tests {
         running.stoppable = true;
         assert_eq!(labels(&running), ["Show task", "Stop"]);
         assert_eq!(labels(&row(Group::Finished, "done", None)), ["Show task"]);
+        let mut out = row(Group::Waiting, "Build", Some("Out of time at Build"));
+        out.stoppable = true;
+        out.extendable = true;
+        assert_eq!(labels(&out), ["Show task", "Extend", "Stop"]);
     }
 }

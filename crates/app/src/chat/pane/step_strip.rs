@@ -101,6 +101,25 @@ impl ChatPane {
                                     }),
                             )
                         })
+                        .when_some(shown.out_of_time, |row, at| {
+                            let pressed = onehand_core::task::Approval {
+                                task: shown.task.to_string(),
+                                at,
+                            };
+                            row.child(
+                                crate::controls::action("workflow-extend")
+                                    .short()
+                                    .primary()
+                                    .label("Extend")
+                                    .tooltip("Give it its timeout again and carry on here")
+                                    .on_click(move |_, _, cx| {
+                                        // Deferred: the run reaches into its
+                                        // session, which offers this.
+                                        let pressed = pressed.clone();
+                                        cx.defer(move |cx| crate::task::extend(pressed, cx));
+                                    }),
+                            )
+                        })
                         .child(
                             crate::controls::action("workflow-stop")
                                 .short()

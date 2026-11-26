@@ -34,6 +34,8 @@ pub(crate) struct Row {
     /// Stop was pressed and the task has not given its place up yet: its
     /// step's command, or its check, is still being stopped.
     pub(crate) stopping: bool,
+    /// Its run ran out of time and waits to be extended.
+    pub(crate) extendable: bool,
 }
 
 /// Whether a check is running on the project at `root`, so its *Run check*
@@ -120,6 +122,7 @@ fn row_of(t: &Tasks, task: &Task) -> Row {
         resumable: task.resumable(),
         stoppable: live.is_some() || t.drive.queue().queued(task.id()),
         stopping: t.stopping(task.id()),
+        extendable: live.is_some_and(|d| d.run().awaiting_extend()),
     }
 }
 

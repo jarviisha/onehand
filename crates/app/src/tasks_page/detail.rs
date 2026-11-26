@@ -231,11 +231,16 @@ pub(super) fn task_detail(
     let review = last
         .and_then(UnderReview::of)
         .map(|review| review_card(task.id(), row, &review, cx));
+    let ran_out = last.and_then(|run| {
+        let at = run.out_of_time_at()?;
+        Some(out_of_time_card(task.id(), row, run, at, cx))
+    });
     let way = match (last, row.group) {
         (Some(_), Group::Ended) => way_out(task, cx),
         _ => None,
     };
-    let held = review.is_some() || way.as_ref().is_some_and(|(_, primary)| *primary);
+    let held =
+        review.is_some() || ran_out.is_some() || way.as_ref().is_some_and(|(_, primary)| *primary);
     let mut out = vec![trail(detail, task, row, held, cx).into_any_element()];
     out.push(
         div()
@@ -255,6 +260,7 @@ pub(super) fn task_detail(
         return out;
     };
     out.extend(review);
+    out.extend(ran_out);
     out.extend(way.map(|(section, _)| section));
     // Only a task at work has a visit under way: an open visit of any other
     // was cut off, by a quit or a lost session, before it could end.
@@ -571,6 +577,60 @@ fn review_card(
             .on_click(move |_, window, cx| press_continue(&pressed, window, cx)),
         review.continue_said(),
     ))
+    .into_any_element()
+}
+
+/// A run that ran out of time, waiting on *Extend* or *Stop*: how long it
+/// worked, and *Extend* beside what it does. *Stop* is the trail's.
+fn out_of_time_card(
+    task: &str,
+    row: &Row,
+    run: &onehand_core::workflow::Run,
+    at: onehand_core::workflow::ApprovalAt,
+    cx: &mut Context<TasksPage>,
+) -> gpui::AnyElement {
+    let muted = cx.theme().muted_foreground;
+    let open = open_session("task-out-of-time-open", row, cx).map(IntoElement::into_any_element);
+    let pressed = Approval {
+        task: task.to_string(),
+        at,
+    };
+    // Waits on the person, as an approval does: the warning ink on its mark
+    // and title alone.
+    let warning = crate::theme::status_ink(cx).warning;
+    page_card(
+        div()
+            .h_flex()
+            .items_center()
+            .gap_2()
+            .text_color(warning)
+            .child(Icon::new(IconName::TriangleAlert).small())
+            .child("Out of time"),
+        None,
+        open,
+        cx,
+    )
+    .child(div().child(onehand_core::task::work::out_of_time_said(run)))
+    .child(
+        div()
+            .h_flex()
+            .gap_2()
+            .items_center()
+            .child(
+                crate::controls::action("task-out-of-time-extend")
+                    .primary()
+                    .short()
+                    .label("Extend")
+                    .on_click(move |_, _, cx| {
+                        let pressed = pressed.clone();
+                        cx.defer(move |cx| crate::task::extend(pressed, cx));
+                    }),
+            )
+            .child(div().text_xs().text_color(muted).child(format!(
+                "Gives it {} more and carries on in the same session",
+                run.template.timeout_said()
+            ))),
+    )
     .into_any_element()
 }
 

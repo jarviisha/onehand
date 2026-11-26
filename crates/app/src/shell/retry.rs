@@ -524,6 +524,10 @@ impl Shell {
                 let id = id.clone();
                 cx.defer(move |cx| crate::task::stop_task(&id, cx));
             }
+            E::ExtendTask(id) => {
+                let id = id.clone();
+                cx.defer(move |cx| crate::task::extend_task(&id, cx));
+            }
         }
         cx.notify();
     }

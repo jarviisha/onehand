@@ -223,7 +223,8 @@ working when the session closes is kept as *interrupted*.
 Under the header, only while a run drives the session on screen: the workflow's name muted, each
 step's label between chevrons (done ones with a muted check, the current one in full ink; a
 schedule's prompt names no step), then
-*Review…*, *Revise…* and *Continue* (primary) while it waits for approval, and *Stop* always. Only
+*Review…*, *Revise…* and *Continue* (primary) while it waits for approval, *Extend* (primary) while
+it is out of time, and *Stop* always. Only
 the step labels clip. *Review…* reads the answer from the run; *Revise…* refuses an empty note; a
 press the run no longer waits at shows the new answer, in the warning ink, rather than approving it
 unread.
@@ -551,7 +552,7 @@ room and leaves the terminal as it is.
   over workflow, step or outcome and project, its actions by state (*Open session*, *Stop*,
   *Resume*, *Retry…*, *Dismiss*) in a `⋯` on hover and on a right-click, under *Needs attention*
   also drawn as buttons beside it; its text opens the task's detail, a page of its own at the
-  prose width: a trail, the title, then *Awaiting approval* in a page's box, its mark and title in the warning ink,
+  prose width: a trail, the title, then *Awaiting approval* or *Out of time* in a page's box, its mark and title in the warning ink,
   *Way out*, and the runs on a vertical stepper.
 - *Issues*, a list page (`docs/ui-patterns.md`, *List pages*): a head (*Issues*, then *Refresh*
   and *New issue*, its primary, at the end); the row under it (the search, then *Open* and
