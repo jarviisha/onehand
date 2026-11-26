@@ -202,7 +202,7 @@ mod strain {
             for w in [NARROWEST, WIDE] {
                 width(cx, w);
                 assert_inside(
-                    bounds(cx, "board-issue-1"),
+                    bounds(cx, "board-backlog-1-title"),
                     bounds(cx, "board-column-backlog-box"),
                     &format!("a long issue title at {w:?}, zoomed {steps}"),
                 );

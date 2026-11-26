@@ -559,7 +559,12 @@ impl BoardPage {
             .gap_0p5()
             .flex_1()
             .min_w_0()
-            .child(div().truncate().child(title))
+            .child(
+                div()
+                    .debug_selector(|| format!("{name}-title"))
+                    .truncate()
+                    .child(title),
+            )
             .child(div().text_xs().text_color(ink).truncate().child(line));
         let text = match open {
             Some(open) => text

@@ -770,8 +770,8 @@ mod strain {
     /// A rail `rail_w` wide over three projects, each a repository on
     /// `main`, named short, long and with nowhere to break, once their
     /// branches are read.
-    fn rail(rail_w: f32, cx: &mut TestAppContext) -> &mut VisualTestContext {
-        let dir = folder(&format!("strain-rail-{rail_w}"));
+    fn rail<'a>(name: &str, rail_w: f32, cx: &'a mut TestAppContext) -> &'a mut VisualTestContext {
+        let dir = folder(&format!("strain-rail-{name}-{rail_w}"));
         let names = [SHORT.to_string(), long(), unbroken()];
         let roots = names.iter().enumerate().map(|(i, name)| {
             let path = dir.join(format!("p{i}"));
@@ -814,12 +814,31 @@ mod strain {
         );
     }
 
-    fn holds(cx: &mut VisualTestContext) {
-        let rem = cx.update(|window, _| window.rem_size());
-        let rail = bounds(cx, "rail");
+    /// How wide `text` is in the rail's own size, laid out on one line.
+    fn text_width(text: &str, cx: &mut VisualTestContext) -> Pixels {
+        cx.update(|window, _| {
+            let size = crate::tokens::CHROME_TEXT.to_pixels(window.rem_size());
+            let run = window.text_style().to_run(text.len());
+            window
+                .text_system()
+                .shape_line(text.to_string().into(), size, &[run], None)
+                .width
+        })
+    }
+
+    #[gpui::test]
+    fn a_long_project_name_truncates_and_its_tail_keeps_its_width(cx: &mut TestAppContext) {
+        let names = [SHORT.to_string(), long(), unbroken()];
+        let cx = rail("cut", PanelLayout::RAIL_MIN, cx);
         let short = row(0, cx);
-        for i in 0..3 {
+        for (i, name) in names.iter().enumerate().skip(1) {
             let named = row(i, cx);
+            assert!(
+                named.name.size.width < text_width(name, cx),
+                "row {i}'s name of {} chars is not cut: {:?}",
+                name.len(),
+                named.name
+            );
             assert!(
                 same(named.tail.size.width, short.tail.size.width),
                 "row {i}'s tail gave way to its name: {:?} against {:?}",
@@ -836,6 +855,16 @@ mod strain {
                 named.name,
                 named.tail
             );
+        }
+    }
+
+    /// Every row of the rail `cx` draws stands inside it, at a row's height,
+    /// its name and its tail inside it.
+    fn inside(cx: &mut VisualTestContext) {
+        let rem = cx.update(|window, _| window.rem_size());
+        let rail = bounds(cx, "rail");
+        let rows: Vec<Row> = (0..3).map(|i| row(i, cx)).collect();
+        for (i, named) in rows.iter().enumerate() {
             assert!(
                 same(named.row.size.height, crate::tokens::ROW_H.to_pixels(rem)),
                 "row {i} is {:?} tall",
@@ -845,16 +874,14 @@ mod strain {
             assert_inside(named.name, named.row, "a project's name");
             assert_inside(named.tail, named.row, "a project's tail");
         }
-        assert_one_height(&[short.row, row(1, cx).row, row(2, cx).row], "the rows");
-    }
-
-    #[gpui::test]
-    fn a_long_project_name_truncates_and_its_tail_keeps_its_width(cx: &mut TestAppContext) {
-        holds(rail(PanelLayout::RAIL_MIN, cx));
+        assert_one_height(&rows.iter().map(|r| r.row).collect::<Vec<_>>(), "the rows");
     }
 
     #[gpui::test]
     fn a_project_row_stays_inside_the_rail(cx: &mut TestAppContext) {
-        holds(rail(PanelLayout::RAIL_MAX, cx));
+        inside(rail("inside", PanelLayout::RAIL_MIN, cx));
+        let mut wide = TestAppContext::single();
+        inside(rail("inside", PanelLayout::RAIL_MAX, &mut wide));
+        wide.quit();
     }
 }

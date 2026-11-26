@@ -118,16 +118,24 @@ fn a_long_page_title_leaves_its_actions_in_place(cx: &mut TestAppContext) {
 }
 
 /// Every action's bounds, read off the head's actions by their ids.
-fn each_action(n: usize, width: f32, rem: f32, cx: &mut TestAppContext) -> Vec<Bounds<Pixels>> {
+/// The head, and every action's bounds, read off the head's actions by
+/// their ids.
+fn each_action(
+    n: usize,
+    width: f32,
+    rem: f32,
+    cx: &mut TestAppContext,
+) -> (Bounds<Pixels>, Vec<Bounds<Pixels>>) {
     let cx = drawn("Notes", n, width, rem, cx);
-    (0..n)
+    let acts = (0..n)
         .map(|i| {
             part(
                 cx,
                 ["page-head-act-0", "page-head-act-1", "page-head-act-2"][i],
             )
         })
-        .collect()
+        .collect();
+    (part(cx, "page-head"), acts)
 }
 
 #[gpui::test]
@@ -135,11 +143,20 @@ fn a_page_heads_actions_share_one_height_and_one_line(cx: &mut TestAppContext) {
     cx.update(gpui_component::init);
     for (width, rem) in DRAWN {
         for n in [1, 3] {
-            let acts = each_action(n, width, rem, cx);
+            let (head, acts) = each_action(n, width, rem, cx);
+            assert!(
+                same(head.size.width, rems(width).to_pixels(px(rem))),
+                "at {width} rems, {rem} px the head is not its box's width: {head:?}"
+            );
             for act in &acts {
                 assert!(
                     same(act.size.height, acts[0].size.height) && same(act.top(), acts[0].top()),
                     "at {width} rems, {rem} px: {acts:?}"
+                );
+                assert!(
+                    act.left() + px(SLACK) >= head.left()
+                        && act.right() <= head.right() + px(SLACK),
+                    "at {width} rems, {rem} px an action stands outside the head {head:?}: {act:?}"
                 );
             }
         }
