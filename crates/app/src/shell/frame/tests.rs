@@ -158,6 +158,27 @@ mod strain {
     }
 
     #[gpui::test]
+    fn a_name_the_narrowest_window_cuts_is_said_whole_in_its_tooltip(cx: &mut TestAppContext) {
+        let dir = folder("strain-title-tooltip");
+        let (_, shell, cx) = shell(cx, dir.join("tasks"), Vec::new());
+        let name = "Client infrastructure";
+        rename(&shell, name, cx);
+        width(cx, WIDE);
+        let whole = bounds(cx, "title-workspace");
+        width(cx, NARROWEST);
+        let cut = bounds(cx, "title-workspace");
+        assert!(
+            cut.size.width < whole.size.width,
+            "a {}-character name is not cut in the narrowest window: {cut:?} against {whole:?}",
+            name.len()
+        );
+        assert!(
+            crate::rail::workspace_hint(name).starts_with(name),
+            "the tooltip does not say the name whole first"
+        );
+    }
+
+    #[gpui::test]
     fn the_title_bar_controls_share_one_height(cx: &mut TestAppContext) {
         let dir = folder("strain-title-height");
         let (_, shell, cx) = shell(cx, dir.join("tasks"), Vec::new());

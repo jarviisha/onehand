@@ -43,6 +43,8 @@ mod workspace;
 pub(crate) use model::needs_attention;
 pub(crate) use row::page_fill;
 pub(crate) use search::workspace_control;
+#[cfg(test)]
+pub(crate) use search::workspace_hint;
 pub(crate) use session::{session_label, signal_mark, status_icon, word_ink};
 pub(crate) use workspace::ellipsize_front;
 
