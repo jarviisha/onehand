@@ -30,13 +30,9 @@ fn test_only_files(sources: &[(String, String)]) -> Vec<String> {
                 continue;
             };
             // The item may share the attribute's line, or follow it under
-            // more attributes.
+            // doc comments and more attributes.
             let item = match rest.trim() {
-                "" => lines[i + 1..]
-                    .iter()
-                    .find(|l| !l.starts_with("#["))
-                    .copied()
-                    .unwrap_or_default(),
+                "" => item_after(&lines[i + 1..]),
                 rest => rest,
             };
             if let Some(name) = declared_module(item) {
@@ -46,6 +42,24 @@ fn test_only_files(sources: &[(String, String)]) -> Vec<String> {
         }
     }
     out
+}
+
+/// The first line of the item that `lines` (trimmed) open with, past doc
+/// comments and attributes, an attribute written over several lines
+/// included.
+fn item_after<'a>(lines: &[&'a str]) -> &'a str {
+    let mut depth = 0usize;
+    for line in lines {
+        if depth == 0 && line.starts_with("//") {
+            continue;
+        }
+        if depth == 0 && !line.starts_with("#[") {
+            return line;
+        }
+        depth = (depth + line.matches(['[', '(']).count())
+            .saturating_sub(line.matches([']', ')']).count());
+    }
+    ""
 }
 
 /// The name in a `mod NAME;` line, whatever its visibility.
@@ -64,10 +78,13 @@ fn declared_module(item: &str) -> Option<&str> {
 /// `tests/` directory, or a module its parent declares under `#[cfg(test)]`
 /// (`test_only` is [`test_only_files`]).
 ///
-/// An item under `#[cfg(test)]` (a module, a function, a `mod NAME;` line) is
-/// left out with its attributes, its end found by counting braces from its
-/// first line. A brace in a string or a char that is not matched inside the
-/// same item throws the count off.
+/// An item under `#[cfg(test)]` (a module, a function, a `mod NAME;` line, a
+/// field, a field of a struct literal) is left out with its doc comments and
+/// attributes. Its end is found by counting brackets from its first line: the
+/// line where its braces close, or, for one with no body, the `;` or `,` it
+/// ends on with every bracket closed. A bracket in a string or a char that is
+/// not matched inside the same item throws the count off, and so does a type
+/// whose `<…>` holds a `,` at the end of a line.
 fn without_tests(path: &str, source: &str, test_only: &[String]) -> Option<Vec<(usize, String)>> {
     if path.ends_with("/tests.rs")
         || path.contains("/tests/")
@@ -98,14 +115,14 @@ fn without_tests(path: &str, source: &str, test_only: &[String]) -> Option<Vec<(
         let Some((opened, depth)) = skipping.as_mut() else {
             continue;
         };
-        if item.is_empty() || (!*opened && item.starts_with("#[")) {
+        if item.is_empty() || item.starts_with("//") {
             continue;
         }
-        let opens = item.matches('{').count();
-        let closes = item.matches('}').count();
-        *opened |= opens > 0;
-        *depth = (*depth + opens).saturating_sub(closes);
-        if (*opened && *depth == 0) || (!*opened && item.ends_with(';')) {
+        *opened |= item.contains('{');
+        *depth = (*depth + item.matches(['{', '(', '[']).count())
+            .saturating_sub(item.matches(['}', ')', ']']).count());
+        let attribute = item.starts_with("#[");
+        if *depth == 0 && !attribute && (*opened || item.ends_with(';') || item.ends_with(',')) {
             skipping = None;
         }
     }
@@ -155,10 +172,11 @@ fn holds_colour_literal(line: &str) -> bool {
     })
 }
 
-/// Whether `line` holds a `px(` or `rems(` whose whole argument is a number
-/// other than zero.
+/// Whether `line` holds a `px(` or `rems(`, or a `Pixels(` or `Rems(` built
+/// as a tuple, whose whole argument is a number other than zero, suffixed or
+/// not (`4.`, `4f32`, `4.0_f32`).
 fn holds_size_number(line: &str) -> bool {
-    ["px(", "rems("].iter().any(|call| {
+    ["px(", "rems(", "Pixels(", "Rems("].iter().any(|call| {
         line.match_indices(call).any(|(at, _)| {
             if line[..at].ends_with(|c: char| c.is_alphanumeric() || c == '_') {
                 return false;
@@ -167,12 +185,33 @@ fn holds_size_number(line: &str) -> bool {
             let Some((arg, _)) = rest.split_once(')') else {
                 return false;
             };
-            arg.trim()
-                .replace('_', "")
-                .parse::<f32>()
-                .is_ok_and(|n| n != 0.)
+            let arg = arg.trim().replace('_', "");
+            let arg = arg.trim_end_matches("f32").trim_end_matches("f64");
+            arg.parse::<f32>().is_ok_and(|n| n != 0.)
         })
     })
+}
+
+/// Whether a constant's value has ended by this line: the first `;` after its
+/// `=`, so a `;` in its type (`[Rems; 3]`) does not end it. `seen_eq` carries
+/// whether the `=` has been read on an earlier line.
+fn const_ends(line: &str, seen_eq: &mut bool) -> bool {
+    let value = match *seen_eq {
+        true => line,
+        false => match line.split_once('=') {
+            Some((_, value)) => value,
+            None => return false,
+        },
+    };
+    *seen_eq = true;
+    value.contains(';')
+}
+
+/// Whether a constant's type names `Rems` or `Pixels`, alone or inside
+/// another (`Size<Pixels>`, `Edges<Rems>`, `[Rems; 3]`).
+fn names_a_size(ty: &str) -> bool {
+    ty.split(|c: char| !c.is_alphanumeric() && c != '_')
+        .any(|word| word == "Rems" || word == "Pixels")
 }
 
 /// The name of the `const` item a line opens, and what follows its colon,
@@ -210,6 +249,44 @@ fn test_code_is_left_out_of_a_scan() {
         ]
     );
     assert_eq!(without_tests("x/tests.rs", sample, &[]), None);
+
+    // A field and a field of a struct literal have no body: each ends on
+    // its own line, and what follows it is kept.
+    let fields = "struct Shell {\n\
+                  \x20   #[cfg(test)]\n\
+                  \x20   refused: Vec<&'static str>,\n\
+                  \x20   rail: Rail,\n\
+                  }\n\
+                  fn new() -> Shell {\n\
+                  \x20   Shell {\n\
+                  \x20       #[cfg(test)]\n\
+                  \x20       refused: Vec::new(),\n\
+                  \x20       rail: Rail::new(),\n\
+                  \x20   }\n\
+                  }";
+    let kept: Vec<usize> = without_tests("x/src/shell.rs", fields, &[])
+        .expect("a source file")
+        .into_iter()
+        .map(|(n, _)| n)
+        .collect();
+    assert_eq!(kept, [1, 4, 5, 6, 7, 10, 11, 12]);
+
+    // A test function behind a doc comment and an attribute written over
+    // several lines is left out whole.
+    let attributed = "#[cfg(test)]\n\
+                      /// Why it is here.\n\
+                      #[expect(\n\
+                      \x20   clippy::disallowed_methods,\n\
+                      \x20   reason = \"a reason\"\n\
+                      )]\n\
+                      fn helper() {\n\
+                      \x20   let x = 1;\n\
+                      }\n\
+                      fn kept() {}";
+    assert_eq!(
+        without_tests("x/src/a.rs", attributed, &[]),
+        Some(vec![(10, "fn kept() {}".to_string())])
+    );
     assert_eq!(without_tests("x/tests/a.rs", sample, &[]), None);
 
     let parents = [
@@ -221,6 +298,11 @@ fn test_code_is_left_out_of_a_scan() {
             "x/src/lib.rs".to_string(),
             "#[cfg(test)]\nmod guards;".to_string(),
         ),
+        (
+            "x/src/page.rs".to_string(),
+            "#[cfg(test)]\n/// The page's own rig.\n#[allow(\n    dead_code,\n)]\nmod rig;"
+                .to_string(),
+        ),
     ];
     let test_only = test_only_files(&parents);
     assert_eq!(
@@ -229,7 +311,9 @@ fn test_code_is_left_out_of_a_scan() {
             "x/src/shell/rig.rs",
             "x/src/shell/rig/",
             "x/src/guards.rs",
-            "x/src/guards/"
+            "x/src/guards/",
+            "x/src/page/rig.rs",
+            "x/src/page/rig/"
         ]
     );
     assert_eq!(without_tests("x/src/shell/rig.rs", "", &test_only), None);
@@ -296,21 +380,32 @@ fn a_colour_is_written_in_the_palette_alone() {
 /// bare `f32`.
 #[test]
 fn a_size_is_written_once_in_a_constant() {
+    assert!(holds_size_number(".w(px(4f32))"));
+    assert!(holds_size_number(".w(px(4.0_f32))"));
+    assert!(holds_size_number(".w(gpui::Rems(1.))"));
+    assert!(!holds_size_number(".w(px(0.))"));
+    assert!(!holds_size_number(".w(to_px(4.))"));
+    let mut seen_eq = false;
+    assert!(!const_ends("const STEPS: [Rems; 3] = [", &mut seen_eq));
+    assert!(const_ends("];", &mut seen_eq));
+
     let mut constants = 0;
     let mut offenders = Vec::new();
     for (path, lines) in production() {
         let mut in_const = false;
+        let mut seen_eq = false;
         for (n, line) in lines {
             let t = line.trim_start();
             if t.starts_with("//") {
                 continue;
             }
-            if !in_const && opens_const(t).is_some() {
+            if !in_const && let Some((_, rest)) = opens_const(t) {
                 in_const = true;
-                constants += usize::from(t.contains("Rems") || t.contains("Pixels"));
+                seen_eq = false;
+                constants += usize::from(names_a_size(rest.split('=').next().unwrap_or(rest)));
             }
             if in_const {
-                in_const = !t.contains(';');
+                in_const = !const_ends(t, &mut seen_eq);
                 continue;
             }
             if holds_size_number(&line) {
@@ -362,7 +457,7 @@ fn census_of(path: &str, lines: &[(usize, String)]) -> Vec<String> {
             None if opens_const(t).is_some() => item = Some(t.to_string()),
             None => continue,
         }
-        let Some(text) = item.take_if(|text| text.contains(';')) else {
+        let Some(text) = item.take_if(|text| const_ends(text, &mut false)) else {
             continue;
         };
         let shared = tokens && text.starts_with("pub const ");
@@ -372,14 +467,34 @@ fn census_of(path: &str, lines: &[(usize, String)]) -> Vec<String> {
         let Some((ty, value)) = rest.split_once('=') else {
             continue;
         };
-        let ty = ty.trim().trim_start_matches("gpui::");
-        if shared || ty == "Rems" || ty == "Pixels" {
+        if shared || names_a_size(ty) {
             let value = value.split_once(';').map_or(value, |(value, _)| value);
             let value = value.split_whitespace().collect::<Vec<_>>().join(" ");
             out.push(format!("{path}  {name} = {value}"));
         }
     }
     out
+}
+
+/// The lines to add to the list (`+ `) and to drop from it (`- `), counted
+/// rather than looked up, so a line written twice and listed once, or the
+/// reverse, shows.
+fn census_differences(found: &[String], listed: &[&str]) -> (Vec<String>, Vec<String>) {
+    let mut counts = std::collections::BTreeMap::<&str, isize>::new();
+    for line in found {
+        *counts.entry(line.as_str()).or_default() += 1;
+    }
+    for line in listed {
+        *counts.entry(line).or_default() -= 1;
+    }
+    let lines = |sign: &str, more: bool| -> Vec<String> {
+        counts
+            .iter()
+            .filter(|(_, n)| **n != 0 && (**n > 0) == more)
+            .flat_map(|(line, n)| std::iter::repeat_n(format!("{sign} {line}"), n.unsigned_abs()))
+            .collect()
+    };
+    (lines("+", true), lines("-", false))
 }
 
 /// Every size and palette value of the UI, sorted, one line each.
@@ -402,6 +517,11 @@ fn the_census_reads_a_constant_as_written() {
         "pub(crate) const C: gpui::Rems = rems(D.0 * 2.);",
         "pub(in crate::chat) const E: Rems = rems(3.);",
         "const N: usize = 3;",
+        "const MIN: gpui::Size<gpui::Pixels> = gpui::size(px(720.), px(480.));",
+        "const STEPS: [Rems; 2] = [",
+        "    rems(1.),",
+        "    rems(2.),",
+        "];",
         "const fn half() -> Rems { rems(0.5) }",
     ]
     .iter()
@@ -414,8 +534,23 @@ fn the_census_reads_a_constant_as_written() {
             "x/a.rs  A = rems(1.)",
             "x/a.rs  B = px(2.)",
             "x/a.rs  C = rems(D.0 * 2.)",
-            "x/a.rs  E = rems(3.)"
+            "x/a.rs  E = rems(3.)",
+            "x/a.rs  MIN = gpui::size(px(720.), px(480.))",
+            "x/a.rs  STEPS = [ rems(1.), rems(2.), ]"
         ]
+    );
+}
+
+#[test]
+fn the_census_counts_a_line_written_twice() {
+    let found = ["a  X = px(1.)".to_string(), "a  X = px(1.)".to_string()];
+    assert_eq!(
+        census_differences(&found, &["a  X = px(1.)"]),
+        (vec!["+ a  X = px(1.)".to_string()], vec![])
+    );
+    assert_eq!(
+        census_differences(&found[..1], &["a  X = px(1.)", "a  X = px(1.)"]),
+        (vec![], vec!["- a  X = px(1.)".to_string()])
     );
 }
 
@@ -437,16 +572,7 @@ fn the_sizes_are_the_listed_ones() {
         "found {} sizes -- this census has stopped counting",
         found.len()
     );
-    let add: Vec<String> = found
-        .iter()
-        .filter(|line| !listed.contains(&line.as_str()))
-        .map(|line| format!("+ {line}"))
-        .collect();
-    let drop: Vec<String> = listed
-        .iter()
-        .filter(|line| !found.iter().any(|f| f == *line))
-        .map(|line| format!("- {line}"))
-        .collect();
+    let (add, drop) = census_differences(&found, &listed);
     assert!(
         add.is_empty() && drop.is_empty(),
         "the sizes differ from sizes.txt.\n\
