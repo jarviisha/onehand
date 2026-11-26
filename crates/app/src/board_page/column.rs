@@ -76,7 +76,6 @@ pub(super) fn column(parts: ColumnParts, cx: &App) -> gpui::Div {
     let muted = cx.theme().muted_foreground;
     let muted_line = |text: String| div().text_xs().text_color(muted).child(text);
     let hidden = count.saturating_sub(BOARD_SHOWN);
-    let mark = format!("{}-box", key.scroll_id());
     // A column with rows to scroll keeps the wheel; one that fits hands it
     // on to the board, which moves sideways. Its own axis only, so a
     // sideways swipe over it moves the board too.
@@ -99,7 +98,7 @@ pub(super) fn column(parts: ColumnParts, cx: &App) -> gpui::Div {
         })
         .child(ruled(rows, cx));
     page_card(title, Some(count), control, cx)
-        .debug_selector(move || mark)
+        .debug_selector(|| format!("{}-box", key.scroll_id()))
         .flex_none()
         .w(COLUMN_W)
         .max_h_full()
