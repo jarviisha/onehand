@@ -117,7 +117,6 @@ fn a_long_page_title_leaves_its_actions_in_place(cx: &mut TestAppContext) {
     }
 }
 
-/// Every action's bounds, read off the head's actions by their ids.
 /// The head, and every action's bounds, read off the head's actions by
 /// their ids.
 fn each_action(
