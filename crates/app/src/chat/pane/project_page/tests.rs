@@ -177,6 +177,17 @@ fn rows_hold(
 }
 
 #[gpui::test]
+fn a_short_title_shows_in_the_narrowest_pane(cx: &mut TestAppContext) {
+    let (_, cx) = page("strain-home-title", 913_060, &titled(1, SHORT), cx);
+    width(cx, NARROWEST);
+    let title = bounds(cx, "home-title-0");
+    assert!(
+        title.size.width > Pixels::ZERO,
+        "a row's title is down to nothing at 100% in the narrowest pane: {title:?}"
+    );
+}
+
+#[gpui::test]
 fn one_history_row_keeps_its_height_and_its_trailing_slot(cx: &mut TestAppContext) {
     rows_hold("strain-home-one", 913_010, 1, DRAWN, cx);
 }

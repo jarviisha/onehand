@@ -538,6 +538,7 @@ impl ChatPane {
                         )
                         .child(
                             div()
+                                .debug_selector(move || format!("home-title-{i}"))
                                 .flex_1()
                                 .min_w_0()
                                 .truncate()
