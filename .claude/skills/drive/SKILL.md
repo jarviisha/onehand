@@ -24,6 +24,8 @@ The scripts are in `scripts/` beside this file; run them from anywhere. `DRIVE_R
      land under its `into` (`target/from-<host>/target/debug/onehand`); pass that path to `up`.
    - `<onehand>` is the binary of the running onehand, which is not on `PATH`: the `cargo` shim
      in `route-shims/` under the config directory names it on its `exec` line.
+   - A debug build carries the library's icons inside it (the workspace's dev profile sees to
+     it), so one built on another machine draws them here.
 2. **Start**: `scripts/session.sh up [BIN]`. It does five things:
    - takes the binary: a BIN given to `up`, `restart` or `palette` is kept for the commands
      after it until `down` forgets it; with none given and none kept, the repo's
