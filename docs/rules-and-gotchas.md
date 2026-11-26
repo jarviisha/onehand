@@ -86,8 +86,8 @@ The full text behind the short forms in `AGENTS.md`, with the reason for each.
 - **Drive what you changed, never the owner's app.** Opening the owner's running onehand or
   desktop could change their data or interrupt their work; the headless session has a data root
   of its own under `/tmp`, so the agent builds, runs the checks, then drives the changed view
-  there and has the pictures reviewed before it says the change is finished. The owner still
-  looks, for taste.
+  there and, where a second agent can be started, has the pictures reviewed before it says the
+  change is finished. The owner still looks, for taste.
 
 ## Guard coverage
 

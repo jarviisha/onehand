@@ -223,7 +223,7 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
 - **Drive what you changed, never the owner's app.** The agent does not open the owner's app or
   desktop, and does drive what it changed in the headless session (`/drive`,
   [.claude/skills/drive/](.claude/skills/drive/)) before it says a visible change is finished;
-  the `ui` skill says how, and who reviews the pictures.
+  the `ui` skill says how, who reviews the pictures, and which changes skip it.
 
 ## Load-bearing specifics
 
