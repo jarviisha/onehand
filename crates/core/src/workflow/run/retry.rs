@@ -66,7 +66,7 @@ impl Field {
             Self::Agent => shown(&setup.agent, "the first configured"),
             Self::Mode => shown(&setup.mode, "as the agent starts"),
             Self::CheckCommand => shown(&setup.check, "none"),
-            Self::Timeout => template.timeout.clone(),
+            Self::Timeout => template.timeout_said(),
         }
     }
 }

@@ -554,6 +554,12 @@ pub(super) fn step_panel(
                         text_input(&step.command, cx).tall().disabled(shipped),
                         cx,
                     ))
+                    .child(field(
+                        "Timeout",
+                        about("Such as 15m or 2h, or none; 15m when empty"),
+                        text_input(&step.timeout, cx).tall().disabled(shipped),
+                        cx,
+                    ))
                 })
                 .when(kind == Kind::StatusChecks, |col| {
                     col.child(field(

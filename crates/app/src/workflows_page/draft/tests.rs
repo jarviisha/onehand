@@ -402,3 +402,44 @@ fn a_limit_that_is_not_a_number_is_a_problem(cx: &mut gpui::TestAppContext) {
         );
     });
 }
+
+/// A workflow of an agent step and a command step whose timeout is
+/// `timeout`, the workflow's own `none`.
+fn timed_template(timeout: Option<&str>) -> Template {
+    let mut template = review_template(None);
+    template.timeout = "none".into();
+    template.steps.truncate(1);
+    template.steps.push(StepSpec {
+        limit: None,
+        id: "verify".into(),
+        label: "Verify".into(),
+        kind: StepKind::Command {
+            command: None,
+            on_fail: "work".into(),
+            timeout: timeout.map(str::to_string),
+        },
+    });
+    template
+}
+
+fn saved_as_is(template: &Template, cx: &mut gpui::TestAppContext) -> Template {
+    let dir = crate::shell::rig::folder("timed-step");
+    let (_, _, cx) = crate::shell::rig::shell(cx, dir, vec![crate::shell::rig::nowhere()]);
+    cx.update(|window, cx| {
+        WorkflowDraft::load(template, None, false, window, cx)
+            .to_template(cx)
+            .unwrap()
+    })
+}
+
+/// A command step's timeout, `none` included, and the workflow's `none`
+/// come back from the form as they went in; an empty field writes no key.
+#[gpui::test]
+fn a_command_timeout_round_trips(cx: &mut gpui::TestAppContext) {
+    for timeout in [Some("none"), Some("30m"), None] {
+        let template = timed_template(timeout);
+        let saved = saved_as_is(&template, cx);
+        assert_eq!(saved.steps, template.steps, "{timeout:?}");
+        assert_eq!(saved.timeout, "none");
+    }
+}

@@ -392,22 +392,7 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
 
     // The limits the run is held to, from the snapshot that will run.
     if let Some(template) = template {
-        found.push(finding(
-            About::Limits,
-            false,
-            format!(
-                "Limits: {} of work, waiting on a person not counted; {} failed {} in a \
-                 stretch of steps before it stops.",
-                template.timeout,
-                template.misses,
-                if template.misses == 1 {
-                    "turn"
-                } else {
-                    "turns"
-                }
-            ),
-            None,
-        ));
+        found.push(finding(About::Limits, false, limits_line(template), None));
     }
 
     // The place.
@@ -487,6 +472,25 @@ fn capital(text: &str) -> String {
 }
 
 mod settings;
+
+/// The limits a run of `template` is held to, as a line.
+fn limits_line(template: &Template) -> String {
+    let time = match template.timeout_limit() {
+        Some(_) => format!(
+            "{} of agent work, onehand's own steps and waiting on a person not counted",
+            template.timeout_said()
+        ),
+        None => "no time limit".to_string(),
+    };
+    let turns = match template.misses {
+        1 => "turn",
+        _ => "turns",
+    };
+    format!(
+        "Limits: {time}; {} failed {turns} in a stretch of steps before it stops.",
+        template.misses
+    )
+}
 
 #[cfg(test)]
 mod tests;

@@ -2645,3 +2645,14 @@ fn a_command_timeout_survives_a_save_and_a_read() {
         "{plain}"
     );
 }
+
+/// What a retry keeps says a timeout of `none` as no limit.
+#[test]
+fn a_retry_says_no_limit_for_a_timeout_of_none() {
+    use crate::workflow::run::Field;
+    let mut t = checkout();
+    t.timeout = "none".into();
+    assert_eq!(Field::Timeout.shown(&t, &setup(None)), "no limit");
+    t.timeout = "45m".into();
+    assert_eq!(Field::Timeout.shown(&t, &setup(None)), "45m");
+}

@@ -117,7 +117,7 @@ pub(super) fn workflow_column(
                 .child(half(
                     field(
                         "Timeout",
-                        about("Working time, such as 45m or 2h"),
+                        about("Working time, such as 45m or 2h, or none"),
                         input(&draft.timeout),
                         cx,
                     )

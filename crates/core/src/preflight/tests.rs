@@ -836,3 +836,16 @@ fn steps_naming_no_agent_check_as_before() {
     };
     assert!(found(Kind::NewRun, &facts, About::Settings).unwrap().blocks);
 }
+
+/// A workflow with no time limit says so among its limits, and one with a
+/// limit says it as written.
+#[test]
+fn the_limits_say_no_time_limit_for_none() {
+    let mut template = crate::workflow::builtin::all().remove(0);
+    template.timeout = "none".into();
+    let said = limits_line(&template);
+    assert!(said.starts_with("Limits: no time limit;"), "{said}");
+    template.timeout = "45m".into();
+    let said = limits_line(&template);
+    assert!(said.starts_with("Limits: 45m of agent work"), "{said}");
+}
