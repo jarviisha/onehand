@@ -10,8 +10,9 @@ on this machine. A project on a host has none: its issues are not kept here.
 ## What a person gets
 
 - **Binding.** *Settings ▸ Projects ▸ Board* has a *Workflow* menu: *No board* and the library's
-  workflows (*Board team* is the built-in made for a board). A workflow that works in the checkout cannot be bound, since several tasks work at
-  once and a checkout holds one; the reason is said under the menu and nothing is bound
+  workflows (*Board team* is the built-in made for a board). A workflow that works in the
+  checkout cannot be bound, since several tasks work at once and a checkout holds one; the reason
+  is said under the menu and nothing is bound
   (`board::usable`). Once bound, *Team* sets how many tasks work at once, 1 to 8, 2 at first.
   Choosing *No board* on a board whose To do is not empty asks first (*Remove the board from
   <project>?*): its To do goes, the issues stay open in no list, and tasks already started run on.
