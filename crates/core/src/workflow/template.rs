@@ -521,7 +521,7 @@ const NO_LIMIT: &str = "none";
 
 /// A timeout as written: `Some(None)` for `none`, `Some(Some(d))` for what
 /// [`parse_every`] reads, `None` when it does not read.
-pub fn parse_limit(text: &str) -> Option<Option<Duration>> {
+pub(crate) fn parse_limit(text: &str) -> Option<Option<Duration>> {
     match text.trim() {
         NO_LIMIT => Some(None),
         text => parse_every(text).map(Some),
@@ -529,7 +529,7 @@ pub fn parse_limit(text: &str) -> Option<Option<Duration>> {
 }
 
 /// A timeout as a person reads it: as written, or *no limit* for `none`.
-pub fn said_limit(text: &str) -> String {
+fn said_limit(text: &str) -> String {
     match text.trim() {
         NO_LIMIT => "no limit".to_string(),
         text => text.to_string(),

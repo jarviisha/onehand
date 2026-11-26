@@ -45,6 +45,8 @@ const DRAIN_FLOOR: Duration = Duration::from_secs(1);
 /// How long what a command printed is waited for once it has exited, when it
 /// ran with no deadline: long enough for its last output to land, bounded so
 /// a pipe something else still holds cannot keep it.
+// ponytail: output landing later than this after the exit is dropped unsaid;
+// say the cut in the result if a slow-flushing command ever needs it.
 const UNBOUNDED_DRAIN: Duration = Duration::from_secs(10);
 
 /// Run `cmd` to completion, or stop it once it has run for `limit`.

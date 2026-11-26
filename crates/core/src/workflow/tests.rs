@@ -2656,3 +2656,17 @@ fn a_retry_says_no_limit_for_a_timeout_of_none() {
     t.timeout = "45m".into();
     assert_eq!(Field::Timeout.shown(&t, &setup(None)), "45m");
 }
+
+/// A command that runs past a limit under a minute says the limit as it
+/// was written, not as whole minutes.
+#[test]
+fn a_command_past_a_short_limit_says_its_limit() {
+    let ran = facts::run_command_blocking(
+        &std::env::temp_dir(),
+        "sleep 5",
+        Some(std::time::Duration::from_secs(1)),
+        &std::sync::atomic::AtomicBool::new(false),
+    );
+    assert!(!ran.passed);
+    assert_eq!(ran.tail, "timed out after 1s");
+}

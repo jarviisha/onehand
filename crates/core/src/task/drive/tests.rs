@@ -474,6 +474,41 @@ fn the_clock_does_not_run_before_the_first_prompt() {
     assert_eq!(rig.drive.run().spent_secs, 0);
 }
 
+/// Continue at an approval hands the work to onehand first: the pin it
+/// waits on is not counted, only the agent's turn after it.
+#[test]
+fn the_clock_stays_still_from_an_approval_to_the_next_prompt() {
+    let mut rig = at_approval();
+    let before = rig.drive.run().spent_secs;
+    let at = approval_at(&rig);
+    let fx = rig.approve(at);
+    assert!(names(&fx).contains(&"Pin"), "{fx:?}");
+    rig.now += Duration::from_secs(90);
+    rig.on(Input::Pinned(Ok("c2".into())));
+    assert_eq!(rig.drive.run().spent_secs, before);
+}
+
+/// A timer that fires while the clock stands still with almost nothing
+/// left looks again a second on, not at once, however long the wait.
+#[test]
+fn a_timer_on_a_still_clock_looks_again_no_sooner_than_a_second() {
+    let mut rig = prompted();
+    let limit = rig.drive.run().template.timeout_limit().unwrap();
+    rig.now += limit - Duration::from_millis(5);
+    rig.turn_ends("The plan.");
+    rig.now += Duration::from_secs(60);
+    let fx = rig.on(Input::Elapsed(Timer::Timeout));
+    let after = fx.iter().find_map(|e| match e {
+        Effect::Arm {
+            timer: Timer::Timeout,
+            after,
+        } => Some(*after),
+        _ => None,
+    });
+    assert_eq!(finished(&fx), None, "{fx:?}");
+    assert!(after.is_some_and(|a| a >= Duration::from_secs(1)), "{fx:?}");
+}
+
 /// A command step's command carries the step's own limit: fifteen
 /// minutes when it names none.
 #[test]

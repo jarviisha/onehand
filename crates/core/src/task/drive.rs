@@ -52,6 +52,8 @@ use pin::{Answer, Held};
 pub(crate) use signals::Asked;
 pub use signals::{Aim, Effect, Input, Signal, Timer};
 
+/// The soonest a timeout timer that found time left looks again.
+const RECHECK_FLOOR: Duration = Duration::from_secs(1);
 /// A run under way, on its sessions: one for the run, and one for each
 /// step naming its agent.
 pub struct RunDrive {
@@ -428,9 +430,11 @@ impl RunDrive {
             // nothing is left.
             Input::Elapsed(Timer::Timeout) => match self.budget.left(now.at) {
                 Some(left) if left.is_zero() => self.cut(Stop::TimedOut, chat, now, &mut fx),
+                // No sooner than a second: with the clock standing still and
+                // a moment left, looking again at once would spin.
                 Some(left) => fx.push(Effect::Arm {
                     timer: Timer::Timeout,
-                    after: left,
+                    after: left.max(RECHECK_FLOOR),
                 }),
                 None => {}
             },
@@ -524,8 +528,8 @@ impl RunDrive {
     }
     /// A person's answer to the approval the run waits on: held while a mark
     /// is pinned, then judged by the engine against the visit it was drawn
-    /// from. The clock goes on only once the engine took it, so a refused
-    /// press leaves the run waiting as it was.
+    /// from. The clock goes on with the next prompt it leads to, so a
+    /// refused press leaves the run waiting as it was.
     fn answer(&mut self, answer: Answer, chat: Option<&Chat>, now: Now, fx: &mut Vec<Effect>) {
         if self.hold(false, Held::Answer(answer.clone())) {
             return;
@@ -534,9 +538,6 @@ impl RunDrive {
             Answer::Approved(at) => self.run.approved(&at, now.secs),
             Answer::Revised(at, note) => self.run.revised(&at, note, now.secs),
         };
-        if action != Action::Idle {
-            self.budget.resume(now.at);
-        }
         self.act(action, chat, now, fx);
     }
 

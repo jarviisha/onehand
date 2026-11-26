@@ -39,7 +39,7 @@ pub fn validate(template: &Template) -> Vec<Problem> {
     if template.name.trim().is_empty() {
         whole("it has no name".to_string());
     }
-    if crate::workflow::parse_limit(&template.timeout).is_none() {
+    if crate::workflow::template::parse_limit(&template.timeout).is_none() {
         whole(format!(
             "the timeout `{}` is not a duration such as 45m, 2h or 90s, or none",
             template.timeout
@@ -228,7 +228,7 @@ pub fn validate(template: &Template) -> Vec<Problem> {
             } => {
                 if let Some(timeout) = timeout
                     .as_ref()
-                    .filter(|t| crate::workflow::parse_limit(t).is_none())
+                    .filter(|t| crate::workflow::template::parse_limit(t).is_none())
                 {
                     here(format!(
                         "its timeout `{timeout}` is not a duration such as 15m or 2h, or none"
