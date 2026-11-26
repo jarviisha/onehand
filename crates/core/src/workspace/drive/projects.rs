@@ -90,7 +90,12 @@ impl WorkspaceDrive {
             fx.extend(self.opened());
             return fx;
         }
-        let idx = self.workspace.add_placed(row(None, dir, project));
+        let root = row(None, dir, project);
+        if self.workspace.clashes(&root) {
+            fx.push(Effect::Signal(Signal::Refused(Refusal::FolderTaken)));
+            return fx;
+        }
+        let idx = self.workspace.add_placed(root);
         fx.extend(self.unplaced(idx, true));
         fx.extend(self.opened());
         fx
@@ -106,6 +111,9 @@ impl WorkspaceDrive {
     #[must_use = "its effects are to be carried"]
     pub fn open_host_project(&mut self, project: &Project) -> Vec<Effect> {
         let root = row(project.host.as_ref(), project.path.clone(), Some(project));
+        if self.workspace.clashes(&root) {
+            return vec![Effect::Signal(Signal::Refused(Refusal::FolderTaken))];
+        }
         self.workspace.add_placed(root);
         self.opened()
     }
@@ -130,22 +138,28 @@ impl WorkspaceDrive {
 
     /// Keep `dir`, a folder here, as a project for work about to start in it,
     /// selected but not yet shown: added when the window does not have it.
-    /// Answers its index.
+    /// Answers its index; refused, and said, when a project on a host has
+    /// the folder.
     #[must_use = "its effects are to be carried"]
     pub fn keep_project(
         &mut self,
         dir: PathBuf,
         project: Option<&Project>,
-    ) -> (usize, Vec<Effect>) {
+    ) -> (Result<usize, Refusal>, Vec<Effect>) {
         let dir = normalize_root(dir);
         let mut fx = self.told_first(project);
         if let Some(idx) = self.local_index(&dir) {
-            return (idx, fx);
+            return (Ok(idx), fx);
         }
-        let idx = self.workspace.add_placed(row(None, dir, project));
+        let root = row(None, dir, project);
+        if self.workspace.clashes(&root) {
+            fx.push(Effect::Signal(Signal::Refused(Refusal::FolderTaken)));
+            return (Err(Refusal::FolderTaken), fx);
+        }
+        let idx = self.workspace.add_placed(root);
         fx.extend(self.unplaced(idx, true));
         fx.extend(self.kept());
-        (idx, fx)
+        (Ok(idx), fx)
     }
 
     /// [`Self::keep_project`], selecting nothing: a worktree cut for a task
@@ -157,7 +171,12 @@ impl WorkspaceDrive {
         if self.local_index(&dir).is_some() {
             return fx;
         }
-        let idx = self.workspace.add_placed_quietly(row(None, dir, project));
+        let root = row(None, dir, project);
+        if self.workspace.clashes(&root) {
+            fx.push(Effect::Signal(Signal::Refused(Refusal::FolderTaken)));
+            return fx;
+        }
+        let idx = self.workspace.add_placed_quietly(root);
         fx.extend(self.unplaced(idx, true));
         fx.extend(self.kept());
         fx

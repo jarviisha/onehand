@@ -557,6 +557,15 @@ impl Workspace {
         self.add_placed(root)
     }
 
+    /// Whether a row on another machine than `root`'s holds one of `root`'s
+    /// folders: a window files what it keeps for a project by folder, so
+    /// the two would share it.
+    pub(crate) fn clashes(&self, root: &ProjectRoot) -> bool {
+        self.roots
+            .iter()
+            .any(|r| r.host != root.host && root.folders().any(|folder| r.holds(folder)))
+    }
+
     /// Add `root`, a row built for its project, and make it active; a row of
     /// its folder already there is selected instead. Returns its index.
     pub(crate) fn add_placed(&mut self, root: ProjectRoot) -> usize {
@@ -633,6 +642,11 @@ impl Workspace {
             Some(project) => ProjectRoot::of(project),
             None => ProjectRoot::new(path.clone()),
         };
+        // A host's row on one of its folders is refused too: the two would
+        // share what the window files under it.
+        if self.clashes(&root) {
+            return None;
+        }
         root.transient = true;
         root.sessions.push(Session::new(spec, uid, path));
         root.active_session = Some(0);

@@ -346,7 +346,9 @@ the ones that exist. What workflows and tasks do not do is listed at the end of
 - **A host whose data directory was wiped can reuse a session id.** A session's copy is matched to
   the host's journal by length alone, so the new one's lines after the old copy's last seq would
   be taken for the old one's. The ids are `<seconds>-<n>`, so a collision is unlikely.
-- **A local and a host project on one path share the rail's state for that path.** Their fold, the
+- **A workspace file that already holds a local and a host project on one path still shares the
+  window's state for that path between them.** Adding the second of two such projects in a window
+  is refused (two hosts on one path too), but a file written before that keeps both. Their fold, the
   keyboard's row, the session order `Ctrl+Tab` cycles and the terminal dock's open state are kept
   by path alone, so folding one folds the other. Pins and check commands are kept per host and path. The Workbench's per-path state is shared too: removing either project
   forgets, and counts in its unsaved warning, the other's Editor buffers and Files tree, and a
