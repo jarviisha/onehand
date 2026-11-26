@@ -106,7 +106,15 @@ pub(super) const STDERR_LINE_CAP: usize = 200;
 ///
 /// Paid only on the way to a `Disconnected`, where nothing is watching for a
 /// quarter second.
-pub(super) const STDERR_GRACE: Duration = Duration::from_millis(250);
+///
+/// **Longer under test.** The tests that prove the reason is read write it a
+/// beat after closing stdout, and on a loaded machine starting that beat's
+/// `sleep` can eat what is left of a quarter second, so the child is killed
+/// before it speaks. They test the ordering, not this bound; both waits end
+/// as soon as the child exits, so the longer bound costs a passing test
+/// nothing.
+pub(super) const STDERR_GRACE: Duration =
+    Duration::from_millis(if cfg!(test) { 2000 } else { 250 });
 
 /// The write half of a [`Transport`], as every message-writing function takes
 /// it.

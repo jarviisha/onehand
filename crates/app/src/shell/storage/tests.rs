@@ -62,14 +62,22 @@ fn deleting_removes_the_folder_after_the_window_closes(cx: &mut TestAppContext) 
     cx.update(|window, cx| shell.update(cx, |shell, cx| shell.delete_workspace(window, cx)));
     // The window is gone: what is left is read from the app.
     let app = &mut cx.cx;
-    for _ in 0..50 {
-        app.run_until_parked();
-        if !storage.exists() {
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(10));
-    }
-    assert!(!storage.exists(), "{storage:?} is still there");
+    // Once parked, the window has closed and every write on the way out is
+    // queued; the removal is on the same ordered writer, so once that writer
+    // has emptied, the folder has gone or never will.
+    app.run_until_parked();
+    let writer = app.update(|cx| Shared::global(cx).writer.clone());
+    assert!(
+        writer.flush(Duration::from_secs(10)),
+        "the writes never landed"
+    );
+    let left: Vec<_> = std::fs::read_dir(&storage)
+        .map(|dir| dir.flatten().map(|e| e.file_name()).collect())
+        .unwrap_or_default();
+    assert!(
+        !storage.exists(),
+        "{storage:?} is still there, holding {left:?}"
+    );
     let listed = app.update(|cx| Shared::global(cx).recents.listed().to_vec());
     assert!(listed.iter().all(|l| l.dir != storage));
     let _ = std::fs::remove_dir_all(dir);
