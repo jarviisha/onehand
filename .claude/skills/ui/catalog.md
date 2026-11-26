@@ -82,6 +82,7 @@ Draw none of these by hand: a `div` that looks like a button, a label, a key cap
 | A page form's problems, or that it is only read, along the page's foot | `foot_bar(icon, base, lines, cx)` (the tint of `base`, the mark slotted on the first line) | `crates/app/src/page_parts.rs` |
 | A page form's problems in its body, above what they are about | `notice_box(icon, base, lines, cx)`: `foot_bar`'s tint, mark and lines in a box at a box's corner | `crates/app/src/page_parts.rs` |
 | A dialog's footer (a third action at its start) | `footer_row` | `crates/app/src/dialogs.rs` |
+| A part of a dialog's body that scrolls by itself, its thumb in the dialog's padding | `scrolled` | `crates/app/src/dialogs.rs` |
 | A run dialog's sections parted by hairlines; a preflight finding with its state's mark | `sections`, `finding_line` | `crates/app/src/dialogs.rs` |
 | A Settings sub-page's scope line | `page_head` | `crates/app/src/settings.rs` |
 | A scrollbar on a region the app scrolls itself, down or (for one that scrolls on x alone) across | `scrollbar`, `scrollbar_horizontal` (the thumb at `SCROLLBAR_THUMB` on both) | `crates/ui/src/surface.rs` |

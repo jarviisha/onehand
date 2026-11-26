@@ -64,7 +64,7 @@ and a word.
 | A list page's inset | `px_6` |
 | A tree row's inset; its fill off the dock's sides; its pitch, fill and room around the fill; its step per level | `tokens::ROW_INSET`; `tokens::ROW_GUTTER`; `tokens::TREE_ROW_H`, `TREE_ROW_FILL`, `TREE_ROW_ABOVE`/`BELOW`; `tokens::TREE_INDENT` |
 | A live grid (the terminal, Neovim) | `px_3` `py_2` |
-| Text beside the library's scrollbar | `tokens::SCROLLBAR_W` on the scrolling side, so the thumb never lies over words |
+| Anything beside a scrollbar | a lane of its own on the scrolling side, so the thumb never lies over content (words, a control, a row's fill), drawn over the region though it is: `tokens::SCROLLBAR_W`, or the box's own inset (`p_3` at least) where the scroll's frame reaches back through it to the box's edge |
 
 Smaller steps are for component internals; the largest step is for a deliberate major grouping,
 not a second page-padding convention. Use the named pattern's defaults before another legal step.

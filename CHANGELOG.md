@@ -371,6 +371,9 @@ minor bump may break any of them.
 
 ### Fixed
 
+- A scrollbar no longer lies over what it scrolls: a board column's thumb runs down the card's
+  edge beside its rows, and the dialogs that show a code block, a table or a step's answer whole
+  keep theirs in the dialog's margin.
 - A table in a zoomed conversation no longer breaks the widest words of each column onto two
   lines while it has room to spare.
 - A long answer in the badge of a settled question or permission is cut short inside its box

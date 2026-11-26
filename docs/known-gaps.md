@@ -24,6 +24,9 @@ the ones that exist. What workflows and tasks do not do is listed at the end of
   at its own size, so *Change scope* in the Plugins mode's ⋯ stands a step over the rows around
   it. Fixing it means submenus of the app's own. For the same reason a group's heading in a menu
   stands as tall as a row: the library sets that height on every row drawn as an element.
+- **A long menu's scrollbar lies over the ends of its rows.** The library lays the thumb over a
+  scrolling menu's rows itself (a session's history, the Issues page's label filters), where
+  every other scrolling region keeps a lane clear for it. Fixing it means a menu of the app's own.
 - **A refused menu row cannot say why.** The library's menu row takes no tooltip, so a row that
   refuses (*Move up* on a workflow's first step) is drawn refusing without its reason, which its
   place has to say.
