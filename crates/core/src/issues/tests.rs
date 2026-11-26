@@ -255,26 +255,33 @@ fn a_write_to_one_file_does_not_wait_on_another() {
     std::fs::create_dir_all(&dir).unwrap();
     let (slow, quick) = (dir.join("slow.json"), dir.join("quick.json"));
     let (held, holding) = std::sync::mpsc::channel();
+    let (release, released) = std::sync::mpsc::channel::<()>();
     let slow_writer = std::thread::spawn(move || {
         update_blocking(&slow, |_| {
             held.send(()).unwrap();
-            std::thread::sleep(std::time::Duration::from_millis(800));
+            // Held until the quick write has been seen to finish, or given up on.
+            let _ = released.recv();
             Ok(())
         })
         .unwrap();
     });
     holding.recv().unwrap();
 
-    let started = std::time::Instant::now();
-    update_blocking(&quick, |_| Ok(())).unwrap();
-
-    assert!(
-        started.elapsed() < std::time::Duration::from_millis(400),
-        "waited {:?}",
-        started.elapsed()
-    );
+    // The quick write runs while the slow file is still held: with one lock
+    // for both it never finishes, so it is waited for with a bound far past
+    // any write, rather than timed against one.
+    let (done, finished) = std::sync::mpsc::channel();
+    let quick_writer = std::thread::spawn(move || {
+        let _ = done.send(update_blocking(&quick, |_| Ok(())).map(|_| ()));
+    });
+    let quick_result = finished.recv_timeout(std::time::Duration::from_secs(10));
+    release.send(()).unwrap();
     slow_writer.join().unwrap();
+    quick_writer.join().unwrap();
     let _ = std::fs::remove_dir_all(&dir);
+    quick_result
+        .expect("the quick write waited on the slow one's file")
+        .unwrap();
 }
 
 #[test]
