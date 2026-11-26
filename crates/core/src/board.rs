@@ -125,9 +125,34 @@ pub fn running<'a>(
         .count()
 }
 
+/// How an Extend pressed on a task out of time goes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExtendWay {
+    /// At once: it still holds its place, or it has no board's team.
+    Now,
+    /// Once this project's board has a place for it.
+    WaitForPlace(ProjectId),
+}
+
+/// How an Extend on `task` goes: a board's task at rest (not `holds_team`)
+/// whose project still has a board (`has_board`) waits for a place; any
+/// other goes on at once.
+pub fn extend_way(
+    task: &Task,
+    has_board: &dyn Fn(&ProjectId) -> bool,
+    holds_team: bool,
+) -> ExtendWay {
+    match task.board_issue() {
+        Some((project, _)) if !holds_team && has_board(project) => {
+            ExtendWay::WaitForPlace(project.clone())
+        }
+        Some(_) | None => ExtendWay::Now,
+    }
+}
+
 /// Which of the extends `waiting` for a place on `board`'s team, oldest first,
 /// are given one while `running` hold places: as many as there is room for.
-pub fn extends_given(board: &Board, running: usize, waiting: &[String]) -> Vec<String> {
+pub(crate) fn extends_given(board: &Board, running: usize, waiting: &[String]) -> Vec<String> {
     let room = usize::from(board.team).saturating_sub(running);
     waiting.iter().take(room).cloned().collect()
 }

@@ -238,7 +238,7 @@ impl StepSpec {
             StepKind::Command { timeout, .. } => timeout
                 .as_deref()
                 .and_then(parse_limit)
-                .unwrap_or(Some(COMMAND_LIMIT)),
+                .unwrap_or_else(|| parse_every(DEFAULT_COMMAND_TIMEOUT)),
             StepKind::Agent { .. }
             | StepKind::Review { .. }
             | StepKind::Approval { .. }
@@ -334,7 +334,7 @@ pub enum StepKind {
         command: Option<String>,
         on_fail: String,
         /// How long the command may run, as a workflow's timeout is written;
-        /// [`COMMAND_LIMIT`] when it names none.
+        /// [`DEFAULT_COMMAND_TIMEOUT`] when it names none.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         timeout: Option<String>,
     },
@@ -513,8 +513,9 @@ impl GateKind {
     }
 }
 
-/// How long a command step's command may run when the step names no timeout.
-const COMMAND_LIMIT: Duration = Duration::from_secs(15 * 60);
+/// How long a command step's command may run when the step names no
+/// timeout, as a timeout is written.
+pub const DEFAULT_COMMAND_TIMEOUT: &str = "15m";
 
 /// What means no limit where a timeout is written.
 const NO_LIMIT: &str = "none";

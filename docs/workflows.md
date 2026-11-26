@@ -428,10 +428,11 @@ timer looks again when it fires rather than being re-armed at every pause. A wor
 `timeout` is `none` has no limit: no timer is armed, and only a Stop ends the run.
 
 **A run whose time runs out waits for the person**, rather than ending: its turn is cancelled, the
-transcript says *Out of time at <step> after <spent> of <timeout>. Extend to go on.*, and the run
+transcript says *Out of time at <step> after <spent> of <given>. Extend to go on.* (`<given>` the timeout,
+with what extends added once there are any), and the run
 stays in its session with its context. *Extend* adds the workflow's timeout to the run's, kept in
 its file as `extended_secs` so a run picked up again keeps it, and sends the agent *You ran out of
-time at <step>. You have <timeout> more. Carry on with the step from where you were.*; the step
+time at <step>. You have <n> more minutes. Carry on with the step from where you were.*; the step
 goes on in the same visit, judged by the same gates, its answer what the agent says from there.
 An *Extend* pressed while the cancelled turn is still ending waits for it. *Stop* ends the run
 timed out, as the timeout did before, so *Retry* is there. A run cut off by a restart while it

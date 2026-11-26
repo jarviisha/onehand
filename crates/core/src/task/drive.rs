@@ -242,7 +242,7 @@ impl RunDrive {
 
     /// Whether the run holds no place on a team: out of time and at rest,
     /// whether or not an extend waits for a place.
-    pub fn gives_place(&self) -> bool {
+    pub(crate) fn gives_place(&self) -> bool {
         self.run.awaiting_extend() && self.rested
     }
 
@@ -645,7 +645,8 @@ impl RunDrive {
             }
             Answer::Extended(at) => {
                 let by = self.run.template.timeout_limit().unwrap_or_default();
-                let action = self.run.extended(&at, by, now.secs);
+                // Not yet at rest, it still holds its step's room: it goes on there.
+                let action = self.run.extended(&at, by, self.room.is_some(), now.secs);
                 if action != Action::Idle {
                     self.after_drain = None;
                     self.rested = false;
@@ -693,7 +694,7 @@ impl RunDrive {
         let note = format!(
             "Out of time at {label} after {} of {}. Extend to go on.",
             crate::task::work::worked(self.spent_secs(now)),
-            self.run.template.timeout_said(),
+            crate::task::work::given_said(&self.run),
         );
         let ran_out = self.run.awaiting_turn();
         self.advance(chat, now, fx, move |run| run.ran_out(now.secs));

@@ -231,11 +231,23 @@ fn stand(
 /// How long a run worked, as a timeout is written: *45m*, *1h 30m*.
 /// How long `run`, out of time, worked against which timeout.
 pub fn out_of_time_said(run: &Run) -> String {
-    format!(
-        "It worked {} of its {} timeout.",
-        worked(run.spent_secs),
-        run.template.timeout_said()
-    )
+    let spent = worked(run.spent_secs);
+    match run.extended_secs {
+        0 => format!(
+            "It worked {spent} of its {} timeout.",
+            run.template.timeout_said()
+        ),
+        _ => format!("It worked {spent} of the {} it was given.", given_said(run)),
+    }
+}
+
+/// The working time `run` was given: its timeout as written, or, once
+/// extended, the timeout and its extensions together.
+pub(crate) fn given_said(run: &Run) -> String {
+    match (run.extended_secs, run.template.timeout_limit()) {
+        (0, _) | (_, None) => run.template.timeout_said(),
+        (extended, Some(limit)) => worked(limit.as_secs() + extended),
+    }
 }
 
 pub(crate) fn worked(secs: u64) -> String {

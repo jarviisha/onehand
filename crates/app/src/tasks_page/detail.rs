@@ -231,7 +231,9 @@ pub(super) fn task_detail(
     let review = last
         .and_then(UnderReview::of)
         .map(|review| review_card(task.id(), row, &review, cx));
-    let ran_out = last.and_then(|run| {
+    // Once Extend was pressed and waits for a team place, the row's line
+    // says so and there is nothing left to press here.
+    let ran_out = last.filter(|_| row.extendable).and_then(|run| {
         let at = run.out_of_time_at()?;
         Some(out_of_time_card(task.id(), row, run, at, cx))
     });

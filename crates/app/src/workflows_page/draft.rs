@@ -265,7 +265,7 @@ impl StepDraft {
             wait: input(wait, window, cx),
             timeout: cx.new(|cx| {
                 InputState::new(window, cx)
-                    .placeholder("Empty: 15m")
+                    .placeholder(format!("Empty: {}", core::DEFAULT_COMMAND_TIMEOUT))
                     .default_value(timeout.to_string())
             }),
             target: target.to_string(),

@@ -2698,10 +2698,10 @@ fn extending_carries_on_the_step_and_keeps_the_extension() {
     let mut run = at_the_plan_s_turn();
     run.ran_out(10);
     let at = run.out_of_time_at().unwrap();
-    let text = prompt_of(run.extended(&at, std::time::Duration::from_secs(2700), 20));
+    let text = prompt_of(run.extended(&at, std::time::Duration::from_secs(2700), false, 20));
     assert_eq!(
         text,
-        "You ran out of time at Plan. You have 45m more. Carry on with the step from where you were."
+        "You ran out of time at Plan. You have 45 more minutes. Carry on with the step from where you were."
     );
     assert!(run.awaiting_turn());
     assert_eq!(run.extended_secs, 2700);
@@ -2710,7 +2710,7 @@ fn extending_carries_on_the_step_and_keeps_the_extension() {
         .last()
         .is_some_and(|t| t.why == "extended by 45m"));
     assert_eq!(
-        run.extended(&at, std::time::Duration::from_secs(2700), 30),
+        run.extended(&at, std::time::Duration::from_secs(2700), false, 30),
         Action::Idle
     );
     assert_eq!(run.extended_secs, 2700);
@@ -2731,4 +2731,13 @@ fn ran_out_does_nothing_outside_a_turn() {
     let mut run = at_approval();
     assert_eq!(run.ran_out(10), Action::Idle);
     assert!(run.awaiting_approval());
+}
+
+/// What a command step with no timeout runs for is written once, in the
+/// words the editor shows.
+#[test]
+fn a_command_step_s_default_limit_is_the_one_shown() {
+    let limit = verify_timing_out(None).steps[3].command_limit();
+    assert_eq!(limit, crate::workflow::parse_every(DEFAULT_COMMAND_TIMEOUT));
+    assert_eq!(DEFAULT_COMMAND_TIMEOUT, "15m");
 }

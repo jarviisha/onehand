@@ -336,3 +336,17 @@ fn a_board_works_only_on_a_project_here() {
         "A board works on a project on this machine"
     );
 }
+
+/// A board's task out of time at rest waits for a place; one still holding
+/// its place, or of no board, or whose project has no board now, goes on.
+#[test]
+fn an_extend_waits_for_a_place_only_on_a_board_and_at_rest() {
+    let on_board = task("1", "p", 0, None);
+    let project: ProjectId = serde_json::from_str("\"p\"").unwrap();
+    assert_eq!(
+        extend_way(&on_board, &|_| true, false),
+        ExtendWay::WaitForPlace(project)
+    );
+    assert_eq!(extend_way(&on_board, &|_| true, true), ExtendWay::Now);
+    assert_eq!(extend_way(&on_board, &|_| false, false), ExtendWay::Now);
+}

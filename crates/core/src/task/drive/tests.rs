@@ -2437,3 +2437,41 @@ fn a_place_given_is_held_at_once() {
     rig.drive.take_queued_extend();
     assert!(!rig.drive.gives_place());
 }
+
+// What the review of the out-of-time work found.
+
+/// Run out a second time after an extend, the note says the time it was
+/// given, its extension counted.
+#[test]
+fn a_second_run_out_says_the_time_it_was_given() {
+    let mut rig = out_of_time();
+    let at = rig.drive.run().out_of_time_at().unwrap();
+    rig.turn_ends("");
+    rig.extend(at);
+    let limit = rig.drive.run().template.timeout_limit().unwrap();
+    rig.now += limit + Duration::from_secs(1);
+    rig.on(Input::Elapsed(Timer::Timeout));
+    assert!(
+        rig.notes()
+            .iter()
+            .any(|n| n.contains(" of 1h 30m. Extend to go on.")),
+        "{:?}",
+        rig.notes()
+    );
+}
+
+/// Extend pressed before the run rested, at a limited step: it holds the
+/// step's room still, so it goes on in it and asks for none.
+#[test]
+fn an_extend_before_rest_at_a_limited_step_keeps_its_room() {
+    let mut rig = run_out(in_limited_plan());
+    let at = rig.drive.run().out_of_time_at().unwrap();
+    rig.extend(at);
+    let fx = rig.turn_ends("");
+    assert!(!names(&fx).contains(&"LeaveRoom"), "{fx:?}");
+    assert!(
+        !fx.iter().any(|e| matches!(e, Effect::AskRoom { .. })),
+        "{fx:?}"
+    );
+    assert!(rig.submitted(), "{fx:?}");
+}
