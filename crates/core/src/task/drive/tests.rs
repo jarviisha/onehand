@@ -2373,3 +2373,67 @@ fn an_extend_at_a_limited_step_asks_room_again_then_carries_on() {
     );
     assert_eq!(rig.drive.run().visits().len(), visits);
 }
+
+/// The work the cancelled turn left ending is news the app must pass on:
+/// it is what lets the run rest.
+#[test]
+fn a_run_out_of_time_heeds_the_work_it_left_ending() {
+    use crate::acp::BackgroundReport;
+    let mut rig = in_turn();
+    rig.chat
+        .apply(AcpEvent::Background(BackgroundReport::Spawned {
+            id: "t1".into(),
+            name: "cargo test".into(),
+            kind: "shell".into(),
+        }));
+    let mut rig = run_out(rig);
+    rig.turn_ends("");
+    assert!(!rig.drive.heeds_notified(&rig.chat), "its build still runs");
+    rig.chat
+        .apply(AcpEvent::Background(BackgroundReport::Ended {
+            id: "t1".into(),
+            end: crate::acp::BackgroundEnd::Completed,
+        }));
+    rig.chat.apply(AcpEvent::Usage(crate::acp::Usage {
+        used: 1,
+        size: 10,
+        limit: None,
+        cycle_end: true,
+        marks_cycles: true,
+    }));
+    assert!(rig.drive.heeds_notified(&rig.chat));
+}
+
+/// Extend pressed before the run came to rest frees no place: its agent
+/// still works.
+#[test]
+fn an_extend_queued_before_rest_still_holds_its_place() {
+    let mut rig = out_of_time();
+    let at = rig.drive.run().out_of_time_at().unwrap();
+    rig.queue_extend(at);
+    assert!(!rig.drive.gives_place());
+}
+
+/// A second Extend while one waits for a place keeps its turn in line.
+#[test]
+fn a_second_queue_extend_keeps_the_first_ones_turn() {
+    let mut rig = out_of_time();
+    rig.turn_ends("");
+    let at = rig.drive.run().out_of_time_at().unwrap();
+    rig.queue_extend(at.clone());
+    let asked = rig.drive.queued_extend_at();
+    rig.now += Duration::from_secs(60);
+    assert!(rig.queue_extend(at).is_empty());
+    assert_eq!(rig.drive.queued_extend_at(), asked);
+}
+
+/// Given its place, the run holds it at once, before its extend is done.
+#[test]
+fn a_place_given_is_held_at_once() {
+    let mut rig = out_of_time();
+    rig.turn_ends("");
+    let at = rig.drive.run().out_of_time_at().unwrap();
+    rig.queue_extend(at);
+    rig.drive.take_queued_extend();
+    assert!(!rig.drive.gives_place());
+}

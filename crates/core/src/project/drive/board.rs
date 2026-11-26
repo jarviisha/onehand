@@ -207,6 +207,17 @@ impl ProjectsDrive {
         ))
     }
 
+    /// Which of the extends `waiting` for a place on project `id`'s team are
+    /// given one while `running` of its tasks hold places: its starts on
+    /// their way hold theirs too. None without a board.
+    pub fn extends_given(&self, id: &ProjectId, running: usize, waiting: &[String]) -> Vec<String> {
+        let Some(board) = self.projects.get(id).and_then(|p| p.board()) else {
+            return Vec::new();
+        };
+        let starting = self.starting.get(id).map_or(0, BTreeSet::len);
+        crate::board::extends_given(board, running + starting, waiting)
+    }
+
     fn edit_todo(&mut self, id: &ProjectId, edit: impl FnOnce(&mut Vec<u64>)) -> Vec<Effect> {
         self.edit_board(id, false, |board| {
             board.map(|mut b| {

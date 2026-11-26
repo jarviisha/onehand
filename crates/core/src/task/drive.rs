@@ -240,10 +240,10 @@ impl RunDrive {
             && self.answer.is_none()
     }
 
-    /// Whether the run holds no place on a team: out of time and at rest, or
-    /// waiting for one to be extended in.
+    /// Whether the run holds no place on a team: out of time and at rest,
+    /// whether or not an extend waits for a place.
     pub fn gives_place(&self) -> bool {
-        (self.run.awaiting_extend() && self.rested) || self.queued_extend.is_some()
+        self.run.awaiting_extend() && self.rested
     }
 
     /// When an extend waiting for a team place asked for it, in seconds.
@@ -253,7 +253,10 @@ impl RunDrive {
 
     /// The extend waiting for a place, now given one: what it extends.
     pub(crate) fn take_queued_extend(&mut self) -> Option<ApprovalAt> {
-        self.queued_extend.take().map(|(at, _)| at)
+        let (at, _) = self.queued_extend.take()?;
+        // The place is its own from here, before its extend is done.
+        self.rested = false;
+        Some(at)
     }
 
     /// The agent parked a card nobody has answered yet.
@@ -265,7 +268,9 @@ impl RunDrive {
     /// it: a card may have been answered, or the work the step's turn left
     /// running has ended.
     pub fn heeds_notified(&self, chat: &Chat) -> bool {
-        self.here.card || (self.after_work && !self.step_at_work(chat))
+        self.here.card
+            || (self.after_work && !self.step_at_work(chat))
+            || (self.run.awaiting_extend() && !self.rested && !self.step_at_work(chat))
     }
 
     /// Whether the agent still works on the step: background work started
@@ -335,7 +340,10 @@ impl RunDrive {
     /// has no place: it waits for one, said so. Refused unless the run ran
     /// out there.
     pub(crate) fn queue_extend(&mut self, at: ApprovalAt, now: Now) -> Vec<Effect> {
-        if self.over || self.run.out_of_time_at().as_ref() != Some(&at) {
+        if self.over
+            || self.queued_extend.is_some()
+            || self.run.out_of_time_at().as_ref() != Some(&at)
+        {
             return Vec::new();
         }
         self.queued_extend = Some((at, now.secs));
@@ -656,12 +664,11 @@ impl RunDrive {
         self.act(action, chat, now, fx);
     }
 
-    /// The run's time ran out: its turn is cancelled and it waits for a person
-    /// to extend it or stop it, in the same session.
     /// The run, out of time, came to rest: the room and the team place it
     /// held go.
     fn rest(&mut self, fx: &mut Vec<Effect>) {
-        if self.rested {
+        // Already resting, or an extend waits to go once the turn has ended.
+        if self.rested || self.after_drain.is_some() {
             return;
         }
         self.rested = true;
@@ -669,6 +676,8 @@ impl RunDrive {
         fx.push(Effect::Rested);
     }
 
+    /// The run's time ran out: its turn is cancelled and it waits for a person
+    /// to extend it or stop it, in the same session.
     fn ran_out(&mut self, chat: Option<&Chat>, now: Now, fx: &mut Vec<Effect>) {
         self.after_drain = None;
         self.rested = false;

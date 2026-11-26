@@ -125,7 +125,8 @@ fn row_of(t: &Tasks, task: &Task) -> Row {
         resumable: task.resumable(),
         stoppable: live.is_some() || t.drive.queue().queued(task.id()),
         stopping: t.stopping(task.id()),
-        extendable: live.is_some_and(|d| d.run().awaiting_extend()),
+        extendable: live.is_some_and(|d| d.run().awaiting_extend())
+            && t.extend_asked(task.id()).is_none(),
     }
 }
 

@@ -774,6 +774,11 @@ fn start_todo_counts_starts_until_they_land() {
             .is_empty(),
         "one running, one on its way and an extend waiting fill a team of 3"
     );
+    assert_eq!(
+        d.extends_given(&p.id, 1, &["a".to_string(), "b".to_string()]),
+        ["a"],
+        "a team of 3, one running and one on its way, has one place for an extend"
+    );
     d.landed(&p.id, 9);
     assert_eq!(
         d.pull(&p.id, &flow, 0, 0, None, &issues, None, &taken)

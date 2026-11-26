@@ -52,17 +52,12 @@ pub(crate) fn pull_now(project: &ProjectId, cx: &mut App) {
 /// Give the places `project`'s team has to the extends waiting for one, first
 /// asked first.
 pub(crate) fn give_places(project: &ProjectId, cx: &mut App) {
-    let Some(board) = Shared::global(cx)
-        .projects
-        .get(project)
-        .and_then(|p| p.board())
-        .cloned()
-    else {
-        return;
-    };
     let running = crate::task::board_running(project, cx);
     let waiting = crate::task::board_extends_waiting(project, cx);
-    for task in onehand_core::board::extends_given(&board, running, &waiting) {
+    let given = Shared::global(cx)
+        .projects
+        .extends_given(project, running, &waiting);
+    for task in given {
         crate::task::give_place(&task, cx);
     }
 }
@@ -152,6 +147,8 @@ fn pull_read(
     else {
         return;
     };
+    // Extends waiting for a place are first in line, and need no window.
+    give_places(project, cx);
     // ponytail: with no window holding the project nothing is pulled until
     // To do or the team changes, a board task ends or the app starts again;
     // pull when a window opens on the project if that proves too late.
@@ -161,8 +158,6 @@ fn pull_read(
     let Ok(template) = crate::control::template(&board.workflow, cx) else {
         return;
     };
-    // Extends waiting for a place are first in line.
-    give_places(project, cx);
     let running = crate::task::board_running(project, cx);
     let extends = crate::task::board_extends_waiting(project, cx).len();
     let taken = crate::task::board_taken(project, cx);

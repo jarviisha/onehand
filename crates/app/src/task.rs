@@ -253,18 +253,19 @@ pub(crate) fn review_of(id: &str, cx: &App) -> Option<UnderReview> {
 /// task asks its team for a place first, given at once when there is one;
 /// any other goes on at once.
 pub(crate) fn extend(approval: onehand_core::task::Approval, cx: &mut App) {
-    let board = task(&approval.task, cx).and_then(|task| match task.origin() {
-        Some(onehand_core::task::Origin::Board { project, .. }) => Some(project.clone()),
-        Some(onehand_core::task::Origin::Schedule { .. } | onehand_core::task::Origin::Tool)
-        | None => None,
-    });
-    let board = board.filter(|project| {
-        crate::state::Shared::global(cx)
-            .projects
-            .get(project)
-            .is_some_and(|p| p.board().is_some())
-    });
-    match board {
+    // A run not yet at rest still holds its place: it goes on in it.
+    let holds = cx
+        .try_global::<Tasks>()
+        .is_some_and(|t| t.holds_team(&approval.task));
+    let board = task(&approval.task, cx)
+        .and_then(|task| task.board_issue().map(|(project, _)| project.clone()))
+        .filter(|project| {
+            crate::state::Shared::global(cx)
+                .projects
+                .get(project)
+                .is_some_and(|p| p.board().is_some())
+        });
+    match board.filter(|_| !holds) {
         Some(project) => {
             carrier::queue_extend(approval, cx);
             crate::board::give_places(&project, cx);
@@ -310,7 +311,10 @@ pub(crate) fn shown(uid: u64, cx: &App) -> Option<Shown> {
         },
         at: run.step,
         review: UnderReview::of(run),
-        out_of_time: run.out_of_time_at(),
+        // Pressed already, it waits for a team place.
+        out_of_time: run
+            .out_of_time_at()
+            .filter(|_| driven.drive().queued_extend_at().is_none()),
         stopping: driven.stopping(),
     })
 }
