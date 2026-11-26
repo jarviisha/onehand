@@ -661,9 +661,10 @@ impl RunDrive {
     /// The run, out of time, came to rest: the room and the team place it
     /// held go.
     fn rest(&mut self, fx: &mut Vec<Effect>) {
-        if std::mem::replace(&mut self.rested, true) {
+        if self.rested {
             return;
         }
+        self.rested = true;
         self.left_room(fx);
         fx.push(Effect::Rested);
     }
