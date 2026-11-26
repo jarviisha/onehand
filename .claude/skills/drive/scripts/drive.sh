@@ -15,15 +15,24 @@ root=${DRIVE_ROOT:-/tmp/onehand-drive}
 export WAYLAND_DISPLAY; WAYLAND_DISPLAY=$(cat "$root/display")
 usage() { sed -n '2,12p' "$0"; exit 2; }
 here=$(cd "$(dirname "$0")" && pwd)
+# vpclick places a point on a 1600x1000 extent stretched over the output,
+# whatever its size: an output pixel is scaled to it, so a coordinate read
+# off a screenshot lands at any width.
+at() {
+    local w=1600 h=1000
+    if [ -f "$root/size" ]; then read -r w h <"$root/size"; fi
+    echo $((($1 * 1600 + w / 2) / w)) $((($2 * 1000 + h / 2) / h))
+}
 # Stop, with the log's tail, once the app is gone.
 alive_or_stop() { "$here/drive.sh" alive >/dev/null || { "$here/drive.sh" alive || true; exit 1; }; }
 case ${1:-} in
-    click | move) "$root/vpclick" "$2" "$3" "$1" ;;
-    scroll) "$root/vpclick" "$2" "$3" scroll "${4:-3}" ;;
+    click | move) read -r x y <<<"$(at "$2" "$3")"; "$root/vpclick" "$x" "$y" "$1" ;;
+    scroll) read -r x y <<<"$(at "$2" "$3")"; "$root/vpclick" "$x" "$y" scroll "${4:-3}" ;;
     # The pointer kept alive past a tooltip's delay, and the shot taken
     # while it rests: once it is gone nothing counts as hovered.
     hover)
-        "$root/vpclick" "$2" "$3" "${5:-move}" 2500 &
+        read -r x y <<<"$(at "$2" "$3")"
+        "$root/vpclick" "$x" "$y" "${5:-move}" 2500 &
         sleep 1.8
         grim -o HEADLESS-1 "$root/$4.png" && echo "$root/$4.png"
         wait ;;
@@ -39,6 +48,7 @@ case ${1:-} in
         (( $2 >= 720 && ${3:-1000} > 0 )) || usage
         swaymsg -s "/run/user/$(id -u)/sway-ipc.$(id -u).$(cat "$root/sway.pid").sock" \
             output HEADLESS-1 mode "$2x${3:-1000}" >/dev/null
+        echo "$2 ${3:-1000}" >"$root/size"
         sleep 1 ;;
     # One view in both palettes and at each width of $DRIVE_WIDTHS. A
     # palette starts the app again, so the view is reached anew by STEPS, a

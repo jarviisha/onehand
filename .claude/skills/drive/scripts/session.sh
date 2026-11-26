@@ -154,6 +154,7 @@ case ${1:-} in
         take_bin "${2:-}"; seed; build_pointer; start_sway
         # The wide size, whatever an earlier session left the output at.
         swaymsg -s "$(sway_sock)" output HEADLESS-1 mode 1600x1000 >/dev/null
+        echo "1600 1000" >"$root/size"
         stop app.pid; drop_keyboard; hold_keyboard; start_app ;;
     palette)
         case ${2:-} in light | dark) ;; *) usage ;; esac
