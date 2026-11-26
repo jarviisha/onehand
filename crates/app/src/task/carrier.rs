@@ -277,6 +277,20 @@ pub(crate) fn extend(approval: Approval, cx: &mut App) {
     give(&approval.task, cx, move |run, now| run.extend(at, now));
 }
 
+/// Extend pressed on a board task out of time, as `approval` names it, whose
+/// team has no place: it waits for one.
+pub(crate) fn queue_extend(approval: Approval, cx: &mut App) {
+    let at = approval.at;
+    give(&approval.task, cx, move |run, now| {
+        run.queue_extend(at, now)
+    });
+}
+
+/// Task `task`'s extend, waiting for a place, was given one: it goes on.
+pub(crate) fn give_place(task: &str, cx: &mut App) {
+    give(task, cx, |run, now| run.give_place(now));
+}
+
 /// A person sent what they read, as `approval` names it, back with `note`.
 pub(crate) fn revise(approval: Approval, note: String, cx: &mut App) {
     let at = approval.at;

@@ -21,7 +21,7 @@ mod carrier;
 pub(crate) mod facts;
 mod listing;
 mod place;
-pub(crate) use carrier::{approve, extend, revise, start, stop, verdict};
+pub(crate) use carrier::{approve, give_place, revise, start, stop, verdict};
 pub(crate) use listing::*;
 pub(crate) use onehand_core::task::tasks::Placed;
 pub(crate) use place::{not_started, start_off_screen, submit};
@@ -122,6 +122,11 @@ impl Tasks {
     /// Whether task `id` holds a place on its board's team.
     fn holds_team(&self, id: &str) -> bool {
         self.seen().holds_team(id)
+    }
+
+    /// When task `id`'s extend asked for a place, while it waits for one.
+    fn extend_asked(&self, id: &str) -> Option<u64> {
+        self.live.get(id)?.drive().queued_extend_at()
     }
 
     /// Every task and the runs under way, to read.
@@ -242,6 +247,30 @@ pub(crate) struct Shown {
 /// What task `id`'s run, under way, waits for approval on now.
 pub(crate) fn review_of(id: &str, cx: &App) -> Option<UnderReview> {
     UnderReview::of(cx.try_global::<Tasks>()?.driven(id)?.run())
+}
+
+/// Extend the run that ran out of time at what `approval` names. A board's
+/// task asks its team for a place first, given at once when there is one;
+/// any other goes on at once.
+pub(crate) fn extend(approval: onehand_core::task::Approval, cx: &mut App) {
+    let board = task(&approval.task, cx).and_then(|task| match task.origin() {
+        Some(onehand_core::task::Origin::Board { project, .. }) => Some(project.clone()),
+        Some(onehand_core::task::Origin::Schedule { .. } | onehand_core::task::Origin::Tool)
+        | None => None,
+    });
+    let board = board.filter(|project| {
+        crate::state::Shared::global(cx)
+            .projects
+            .get(project)
+            .is_some_and(|p| p.board().is_some())
+    });
+    match board {
+        Some(project) => {
+            carrier::queue_extend(approval, cx);
+            crate::board::give_places(&project, cx);
+        }
+        None => carrier::extend(approval, cx),
+    }
 }
 
 /// Extend task `id`'s run, which ran out of time, where it waits now.

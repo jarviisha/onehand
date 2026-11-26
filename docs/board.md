@@ -60,6 +60,18 @@ on this machine. A project on a host has none: its issues are not kept here.
   when the issue is pulled, started off screen as a schedule's is (`task::start_off_screen`), so
   an issue in To do is not a task and is not on the Tasks page. The Tasks page's row reads *from
   the board · <workflow>*.
+- **A task out of time gives its place back** once its agent is at rest: the turn cancelled when
+  its time ran out has ended, and the work it left (a build in the background, a subagent, what
+  the agent says once they are done) is over. Until then it still counts toward the team. At rest
+  it also lets go of a limited step's room, holds its issue, its worktree and its place, stays in
+  its step's column under *Needs attention*, and the board pulls (`RunDrive::gives_place`,
+  `TasksLink::holds_team`).
+- **Extend on a board task waits for a team place** when the team is full: the task reads *Waiting
+  for a team place* and is queued, not needing attention. Places go to waiting extends first, the
+  one asked first first, and **no To do issue starts while one waits** (`board::extends_given`,
+  `board::extends_waiting`, the reservation in `ProjectsDrive::pull`). Given a place, it asks
+  room at a limited step again, then carries on in the same session. A task whose project no
+  longer has a board extends at once.
 - **A refused pull** before its task is made (no brief, no worktree, no place) puts the issue back
   in the Backlog, with a toast naming it and the reason. It is not retried, and nothing is pulled
   in its place, so a reason every issue shares is said once.
@@ -120,6 +132,7 @@ happens when:
   a cause the tasks share (an agent gone, a broken workflow, a failing check) would most likely end
   the next the same way, one after another until To do is empty, so the board waits for a person
   instead;
+- a board task out of time comes to rest (`Effect::Rested`), or Extend is pressed on one;
 - the tasks are read at boot, and whenever the workflow library is read: at boot and on every
   reload after a workflow is saved or deleted, by a person or a tool, since a board's workflow
   may only now be on offer.
