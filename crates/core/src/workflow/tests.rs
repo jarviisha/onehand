@@ -274,7 +274,7 @@ fn an_approval_drawn_from_an_earlier_run_is_refused() {
 #[test]
 fn every_shipped_template_parses_and_validates() {
     let all = builtin::all();
-    assert_eq!(all.len(), 3);
+    assert_eq!(all.len(), 4);
     for template in &all {
         assert_eq!(validate(template), [], "{}", template.name);
     }
@@ -282,6 +282,19 @@ fn every_shipped_template_parses_and_validates() {
     assert_eq!(all[1].place, Place::Worktree);
     assert_eq!(all[2].place, Place::Worktree);
     assert_eq!(all[2].id, "builtin:issue");
+}
+
+#[test]
+fn the_board_team_workflow_reviews_one_task_at_a_time() {
+    let t = builtin::all().remove(3);
+    assert_eq!(t.id, "builtin:board");
+    assert_eq!(validate(&t), []);
+    assert_eq!(t.schema_version_needed(), 2);
+    assert_eq!(t.place, Place::Worktree);
+    let review = t.steps.iter().find(|s| s.id == "review").unwrap();
+    assert!(matches!(&review.kind, StepKind::Review { of, .. } if of == "implement"));
+    assert_eq!(review.limit, Some(1));
+    assert!(crate::board::usable(Some(&t)).is_ok());
 }
 
 #[test]
