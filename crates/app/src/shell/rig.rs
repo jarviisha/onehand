@@ -11,6 +11,8 @@ use onehand_core::config::drive::SettingsDrive;
 use onehand_core::workspace::Workspace;
 use std::path::PathBuf;
 
+pub(crate) mod strain;
+
 /// A folder of the test's own, emptied.
 pub(crate) fn folder(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("onehand-shell-{name}-{}", std::process::id()));
@@ -40,6 +42,22 @@ pub(crate) fn shell(
     Entity<crate::shell::Shell>,
     &mut VisualTestContext,
 ) {
+    shell_on(cx, store, agents, Workspace::seeded("/tmp"))
+}
+
+/// A shell on `ws`, the tasks writing into `store`, and `agents`
+/// configured. The workspace is kept in a folder of this test's own beside
+/// `store`, whatever `ws` named.
+pub(crate) fn shell_on(
+    cx: &mut TestAppContext,
+    store: PathBuf,
+    agents: Vec<AgentSpec>,
+    ws: Workspace,
+) -> (
+    gpui::AnyWindowHandle,
+    Entity<crate::shell::Shell>,
+    &mut VisualTestContext,
+) {
     cx.executor().allow_parking();
     cx.update(gpui_component::init);
     // A folder of this test's own: every rig's workspace is of `/tmp`, and
@@ -55,8 +73,8 @@ pub(crate) fn shell(
         cx.set_global(Tasks::in_dir(store));
     });
     let mut made = None;
+    let mut ws = ws;
     let window = cx.add_window(|window, cx| {
-        let mut ws = Workspace::seeded("/tmp");
         ws.storage_dir = storage.clone();
         let shell = gpui::AppContext::new(cx, |cx| crate::shell::Shell::new(ws, window, cx));
         made = Some(shell.clone());
