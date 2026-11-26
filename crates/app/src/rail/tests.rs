@@ -738,3 +738,123 @@ fn a_session_in_a_worktree_is_marked_with_its_branch() {
     );
     assert_eq!(super::model::branch_mark(&root, Path::new("/a")), None);
 }
+
+mod strain {
+    use crate::shell::rig::strain::{
+        SHORT, assert_inside, assert_one_height, bounds, long, same, selector, unbroken,
+    };
+    use crate::shell::rig::{folder, git, shell_on};
+    use gpui::{Bounds, Pixels, TestAppContext, VisualTestContext};
+    use onehand_core::config::PanelLayout;
+    use onehand_core::workspace::{ProjectRoot, Workspace};
+    use std::time::Duration;
+
+    /// A project row's parts, by the row's place.
+    struct Row {
+        row: Bounds<Pixels>,
+        name: Bounds<Pixels>,
+        tail: Bounds<Pixels>,
+        actions: Bounds<Pixels>,
+    }
+
+    fn row(i: usize, cx: &mut VisualTestContext) -> Row {
+        let part = |p: &str| selector(format!("rail-project-{p}{i}"));
+        Row {
+            row: bounds(cx, part("")),
+            name: bounds(cx, part("name-")),
+            tail: bounds(cx, part("tail-")),
+            actions: bounds(cx, part("actions-")),
+        }
+    }
+
+    /// A rail `rail_w` wide over three projects, each a repository on
+    /// `main`, named short, long and with nowhere to break, once their
+    /// branches are read.
+    fn rail(rail_w: f32, cx: &mut TestAppContext) -> &mut VisualTestContext {
+        let dir = folder(&format!("strain-rail-{rail_w}"));
+        let names = [SHORT.to_string(), long(), unbroken()];
+        let roots = names.iter().enumerate().map(|(i, name)| {
+            let path = dir.join(format!("p{i}"));
+            std::fs::create_dir_all(&path).unwrap();
+            git(&path, &["init", "-q", "-b", "main"]);
+            git(
+                &path,
+                &[
+                    "-c",
+                    "user.email=t@example.com",
+                    "-c",
+                    "user.name=T",
+                    "commit",
+                    "-q",
+                    "--allow-empty",
+                    "-m",
+                    "one",
+                ],
+            );
+            let mut root = ProjectRoot::new(std::fs::canonicalize(&path).unwrap());
+            root.label = name.clone();
+            root
+        });
+        let mut ws = Workspace::seeded("/tmp");
+        ws.roots = roots.collect();
+        ws.layout.rail_w = rail_w;
+        let (_, shell, cx) = shell_on(cx, dir.join("tasks"), Vec::new(), ws);
+        cx.update(|_, cx| shell.update(cx, |shell, cx| shell.refresh_git(cx)));
+        // The branch is read off the UI thread; the row is drawn again when it lands.
+        for _ in 0..200 {
+            cx.run_until_parked();
+            if (0..3).all(|i| row(i, cx).tail.size.width > Pixels::ZERO) {
+                return cx;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        panic!(
+            "the projects' branches were never drawn: {:?}",
+            (0..3).map(|i| row(i, cx).tail).collect::<Vec<_>>()
+        );
+    }
+
+    fn holds(cx: &mut VisualTestContext) {
+        let rem = cx.update(|window, _| window.rem_size());
+        let rail = bounds(cx, "rail");
+        let short = row(0, cx);
+        for i in 0..3 {
+            let named = row(i, cx);
+            assert!(
+                same(named.tail.size.width, short.tail.size.width),
+                "row {i}'s tail gave way to its name: {:?} against {:?}",
+                named.tail,
+                short.tail
+            );
+            assert!(
+                same(named.actions.size.width, short.actions.size.width),
+                "row {i}'s actions gave way to its name"
+            );
+            assert!(
+                named.name.right() <= named.tail.left() + Pixels::from(0.5),
+                "row {i}'s name runs into its tail: {:?} {:?}",
+                named.name,
+                named.tail
+            );
+            assert!(
+                same(named.row.size.height, crate::tokens::ROW_H.to_pixels(rem)),
+                "row {i} is {:?} tall",
+                named.row.size.height
+            );
+            assert_inside(named.row, rail, "a project row");
+            assert_inside(named.name, named.row, "a project's name");
+            assert_inside(named.tail, named.row, "a project's tail");
+        }
+        assert_one_height(&[short.row, row(1, cx).row, row(2, cx).row], "the rows");
+    }
+
+    #[gpui::test]
+    fn a_long_project_name_truncates_and_its_tail_keeps_its_width(cx: &mut TestAppContext) {
+        holds(rail(PanelLayout::RAIL_MIN, cx));
+    }
+
+    #[gpui::test]
+    fn a_project_row_stays_inside_the_rail(cx: &mut TestAppContext) {
+        holds(rail(PanelLayout::RAIL_MAX, cx));
+    }
+}

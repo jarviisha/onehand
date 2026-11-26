@@ -258,6 +258,7 @@ pub(super) fn project_row(
 
     div()
         .id(gpui::ElementId::Name(key.clone()))
+        .debug_selector(move || format!("rail-project-{root_idx}"))
         .group(key.clone())
         .h_flex()
         .items_center()
@@ -308,6 +309,7 @@ pub(super) fn project_row(
                 rest,
                 hovered,
             )
+            .debug_selector(move || format!("rail-project-name-{root_idx}"))
             .min_w(super::row::NAME_MIN_W)
             .tooltip(covered_tip(&key, move |window, cx| {
                 let hint = hint.clone();
@@ -335,6 +337,7 @@ pub(super) fn project_row(
             // minimum. A folder on a host names its host first, then its branch
             // once that is read over the host's attach.
             div()
+                .debug_selector(move || format!("rail-project-tail-{root_idx}"))
                 .h_flex()
                 .items_center()
                 .min_w_0()
@@ -449,6 +452,7 @@ pub(super) fn project_row(
         // for the keyboard on its row.
         .child(
             covering(div().id(("project-actions", root_idx)), &key)
+                .debug_selector(move || format!("rail-project-actions-{root_idx}"))
                 .h_flex()
                 .items_center()
                 .absolute()
