@@ -202,7 +202,10 @@ impl BoardPage {
         let columns = self.columns(&id, &board, tasks.steps, tasks.done, &taken, cx);
         // Sideways alone: gpui turns a plain wheel into sideways travel only
         // on a box that scrolls on x and not y, so the gaps and the heads
-        // move the board while each column moves its own rows.
+        // move the board while each column moves its own rows. The scroller
+        // is the row of columns itself: a row nested inside it is only as
+        // wide as the scroller, so the columns past its edge would overflow
+        // that row and leave the scroller nothing to scroll.
         let body = div()
             .relative()
             .flex_1()
@@ -211,19 +214,15 @@ impl BoardPage {
                 div()
                     .id("board-columns")
                     .size_full()
+                    .h_flex()
+                    .items_start()
+                    .gap_6()
                     .overflow_x_scroll()
                     .track_scroll(&self.across)
                     .px_8()
                     .py_6()
-                    .child(
-                        div()
-                            .h_flex()
-                            .h_full()
-                            .items_start()
-                            .gap_6()
-                            .text_size(crate::tokens::CHROME_TEXT)
-                            .children(columns),
-                    ),
+                    .text_size(crate::tokens::CHROME_TEXT)
+                    .children(columns),
             )
             .child(onehand_ui::scrollbar_horizontal(&self.across).id("board-columns-bar"))
             .into_any_element();
