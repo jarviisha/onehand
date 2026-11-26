@@ -781,3 +781,41 @@ fn a_press_goes_only_where_it_was_read() {
     );
     assert_eq!(Waits::of(Some(&at(1)), None), Waits::Nowhere);
 }
+
+/// A task whose run ran out of time in its first step's turn, having worked
+/// `spent` seconds.
+fn out_of_time(spent: u64) -> Task {
+    let mut task = task("1", forge_flow(), None);
+    let run = task.runs.last_mut().unwrap();
+    run.resume(0);
+    run.measured(
+        crate::workflow::Mark {
+            head: "a".into(),
+            digests: vec!["d0".into()],
+        },
+        0,
+    );
+    run.spent_secs = spent;
+    assert_eq!(run.ran_out(0), crate::workflow::Action::AwaitExtend);
+    task
+}
+
+#[test]
+fn a_run_out_of_time_stands_out_of_time_and_is_extended() {
+    let task = out_of_time(45 * 60);
+    let label = task.runs[0].template.steps[0].label.clone();
+    let work = Work::of(&task, Some(Working::Waiting), None);
+    assert_eq!(
+        work.stand,
+        Stand::OutOfTime {
+            step: label.clone(),
+            said: "It worked 45m of its 45m timeout.".into(),
+        }
+    );
+    let next = next_action(Some(&work), open());
+    assert_eq!(next.said, Some(format!("Out of time at {label}")));
+    assert_eq!(
+        acts(&next),
+        (Some(Act::Extend), vec![Act::OpenSession, Act::Edit])
+    );
+}

@@ -89,6 +89,7 @@ fn tooltip(act: Act) -> Option<&'static str> {
         Act::OpenSession
         | Act::AnswerInSession
         | Act::Review
+        | Act::Extend
         | Act::Stop
         | Act::ShowTask
         | Act::Resume
@@ -155,6 +156,7 @@ impl Pressed {
             Act::OpenSession
             | Act::AnswerInSession
             | Act::Review
+            | Act::Extend
             | Act::Stop
             | Act::ShowTask
             | Act::Resume
