@@ -3,30 +3,29 @@
 
 use super::RailState;
 use super::model::{Filter, toggle_attention};
-use super::row::labelled;
+use super::row::{MAX_LABEL, ellipsize, labelled};
 use crate::controls::Named as _;
 use crate::controls::Quiet as _;
 use crate::controls::Short as _;
 use crate::shell::Shell;
 use gpui::prelude::FluentBuilder as _;
-use gpui::{
-    Anchor, Context, InteractiveElement as _, IntoElement, ParentElement, SharedString, Styled, div,
-};
+use gpui::{Anchor, Context, InteractiveElement as _, IntoElement, ParentElement, Styled, div};
 use gpui_component::menu::DropdownMenu as _;
 use gpui_component::{ActiveTheme, Icon, IconName, Selectable as _, StyledExt, h_flex};
 use onehand_ui::ShortIcon as _;
 
 /// The workspace's name and a chevron, a quiet button and a tab stop of its
 /// own, which opens the workspace menu when pressed and on Enter. It stands at
-/// the title bar's start, where the bar's room, not a count of characters,
-/// says how much of the name shows: its ellipsis may cut any name, so its
-/// tooltip always says the name whole, before what a press does.
+/// the title bar's start. The name is cut at a character, as a menu row's is,
+/// and its ellipsis cuts it further where the bar has less room, so any name
+/// may be cut: its tooltip always says the name whole, before what a press
+/// does.
 pub(crate) fn workspace_control(
     shell: &Shell,
     cx: &mut Context<Shell>,
 ) -> impl IntoElement + use<> {
     let workspace = &shell.workspace_window().workspace;
-    let name = SharedString::from(workspace.name.clone());
+    let name = ellipsize(&workspace.name, MAX_LABEL);
     let hint = workspace_hint(&workspace.name);
     let initial: String = workspace
         .name

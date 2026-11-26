@@ -179,6 +179,22 @@ mod strain {
     }
 
     #[gpui::test]
+    fn a_long_name_is_cut_at_its_count_in_a_wide_window(cx: &mut TestAppContext) {
+        let dir = folder("strain-title-count");
+        let (_, shell, cx) = shell(cx, dir.join("tasks"), Vec::new());
+        width(cx, WIDE);
+        let counted = crate::rail::cut_at_count(&long());
+        rename(&shell, &counted, cx);
+        let at_count = bounds(cx, "title-workspace");
+        rename(&shell, &long(), cx);
+        let named = bounds(cx, "title-workspace");
+        assert!(
+            named.size.width <= at_count.size.width + SLACK,
+            "a long name runs past its cut at a character: {named:?} against {at_count:?}"
+        );
+    }
+
+    #[gpui::test]
     fn the_title_bar_controls_share_one_height(cx: &mut TestAppContext) {
         let dir = folder("strain-title-height");
         let (_, shell, cx) = shell(cx, dir.join("tasks"), Vec::new());

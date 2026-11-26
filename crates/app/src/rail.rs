@@ -634,3 +634,9 @@ impl Shell {
 
 #[cfg(test)]
 mod tests;
+
+/// A name as a menu row or the workspace control cuts it at a character.
+#[cfg(test)]
+pub(crate) fn cut_at_count(name: &str) -> gpui::SharedString {
+    row::ellipsize(name, row::MAX_LABEL)
+}
