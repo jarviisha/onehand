@@ -31,6 +31,7 @@ fn titled(id: &str, title: &str, dir: &str) -> Task {
         title: title.into(),
         body: String::new(),
         instructions: None,
+        closes: None,
     };
     Task::new(
         id.into(),
@@ -770,6 +771,7 @@ fn starting(place: crate::workflow::Place) -> crate::task::Starting {
             title: "Tidy".into(),
             body: String::new(),
             instructions: None,
+            closes: None,
         },
         origin: Origin::Tool,
         grant: Default::default(),

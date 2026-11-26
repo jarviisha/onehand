@@ -119,8 +119,9 @@ is a folder inside its repository works in the same folder of the new checkout, 
 from the project menu does) and *Work an issue* (`builtin:issue`, the same steps on a branch, then
 Push → Pull request → Status checks; what a lead's `start_issue` runs by default, see
 [control.md](control.md)) and *Board team* (`builtin:board`, made for a project's board: the same
-steps with a *Review* after Implement, which a reviewer in a session of its own, on the run's agent,
-answers with approval or a send back, one task at a time (`limit = 1`)). The person's own are in
+steps with a *Review* after Verify, which a reviewer in a session of its own, on the run's agent,
+answers with approval or a send back, one task at a time (`limit = 1`); its prompt says the check
+has just passed on the commit and is not to be run again). The person's own are in
 `<config_dir>/onehand/workflows/<slug>.toml`, made by duplicating a shipped one or from *New
 workflow* on the Workflows page. A build from before the rename kept them in `pipelines/`;
 they move here at start, behind the one-instance lock (`workflow::store::migrate_old_dir_blocking`), and the
@@ -317,7 +318,12 @@ the run's history, capped at 200.
   result. **A push carries the commit the check passed on**: `Push` is `marks.verified_at`, never
   the head, so what lands is what was checked, and a push with nothing verified fails. A retry keeps
   `verified_at`, and the pull request the last run opened, being on the same branch. *Pull request* takes the one open on the branch, or opens a draft
-  (`Brief::pull_request_text`: the brief's title, and a body saying onehand opened it); one closed
+  written from the commits the branch adds (`worktree::branch_commits_blocking`: those on no other
+  branch of a remote, oldest first) and the brief (`Brief::pull_request_text`): one commit is the
+  pull request, its subject the title and its body the body, as a squash merge keeps it; several
+  are the brief's title and a line per commit, at most `PR_COMMITS_LISTED`, the rest counted; none
+  read, the brief's title alone. A brief made from an issue kept in step with the forge names it
+  (`Brief::closes`), and the body ends *Closes <reference>* unless it says so already. One closed
   without being merged is refused, never opened again beside. The run keeps the pull request it
   opened or took up (`Run::pull_request`, its number and address), read back once it is open; one
   not read back is still found by its branch. Either failing ends the run as

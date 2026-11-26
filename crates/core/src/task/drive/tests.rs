@@ -11,6 +11,7 @@ fn brief() -> Brief {
         title: "Fix the thing".into(),
         body: "It is broken.".into(),
         instructions: None,
+        closes: None,
     }
 }
 

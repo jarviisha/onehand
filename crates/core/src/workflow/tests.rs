@@ -8,6 +8,7 @@ fn brief() -> Brief {
         title: "Fix the thing".into(),
         body: "It is broken.".into(),
         instructions: None,
+        closes: None,
     }
 }
 
@@ -2740,4 +2741,54 @@ fn a_command_step_s_default_limit_is_the_one_shown() {
     let limit = verify_timing_out(None).steps[3].command_limit();
     assert_eq!(limit, crate::workflow::parse_every(DEFAULT_COMMAND_TIMEOUT));
     assert_eq!(DEFAULT_COMMAND_TIMEOUT, "15m");
+}
+
+// The pull request a run opens.
+
+fn commit(subject: &str, body: &str) -> crate::worktree::Commit {
+    crate::worktree::Commit {
+        subject: subject.into(),
+        body: body.into(),
+    }
+}
+
+/// One commit on the branch: the pull request is that commit, title and body.
+#[test]
+fn a_one_commit_branch_opens_as_its_commit() {
+    let mut b = brief();
+    b.closes = Some("#409".into());
+    let (title, body) =
+        b.pull_request_text(&[commit("test: wait for the event", "- One.\n- Two.")]);
+    assert_eq!(title, "test: wait for the event");
+    assert_eq!(body, "- One.\n- Two.\n\nCloses #409");
+}
+
+/// Several commits: the brief's title, and a line per commit.
+#[test]
+fn a_branch_of_several_commits_lists_them() {
+    let (title, body) = brief().pull_request_text(&[commit("feat: a", "x"), commit("fix: b", "")]);
+    assert_eq!(title, "Fix the thing");
+    assert_eq!(body, "- feat: a\n- fix: b");
+}
+
+/// A body that closes its issue already is not told twice; with nothing
+/// read, the brief still names the pull request.
+#[test]
+fn closing_is_said_once_and_nothing_read_falls_back_to_the_brief() {
+    let mut b = brief();
+    b.closes = Some("#409".into());
+    let (_, body) = b.pull_request_text(&[commit("fix: x", "Done.\n\nCloses #409")]);
+    assert_eq!(body.matches("Closes #409").count(), 1);
+    let (title, body) = b.pull_request_text(&[]);
+    assert_eq!(title, "Fix the thing");
+    assert_eq!(body, "Closes #409");
+}
+
+/// A long branch lists at most so many commits and says how many more.
+#[test]
+fn a_long_branch_lists_a_bounded_number_of_commits() {
+    let many: Vec<_> = (0..25).map(|n| commit(&format!("c{n}"), "")).collect();
+    let (_, body) = brief().pull_request_text(&many);
+    assert_eq!(body.lines().count(), 21, "{body}");
+    assert!(body.ends_with("- and 5 more"), "{body}");
 }

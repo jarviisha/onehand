@@ -365,6 +365,25 @@ fn a_supervised_brief_names_an_open_issue_kept_here() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
+/// A brief from an issue kept in step with a forge names what its pull
+/// request closes there; one kept here closes nothing on a forge.
+#[test]
+fn a_supervised_brief_of_a_forge_issue_says_what_it_closes() {
+    let dir = std::env::temp_dir().join(format!("onehand-brief-forge-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let file = dir.join("issues.json");
+    let mut kept = issues_with(vec![linked(1, "Forge", "409", 1, "Fix it")]);
+    kept.sync_with(Some("Forge".into()));
+    save_blocking(&file, &kept).unwrap();
+    let forge: &'static dyn crate::connector::Connector =
+        Box::leak(Box::new(crate::connector::memory::Forge::with(Vec::new())));
+    let brief = supervised_brief_blocking(Some(file.clone()), Some(forge), 1).unwrap();
+    assert_eq!(brief.closes.as_deref(), Some("#409"));
+    let here = supervised_brief_blocking(Some(file), None, 1);
+    assert!(here.map_or(true, |b| b.closes.is_none()));
+    let _ = std::fs::remove_dir_all(dir);
+}
+
 // Merging one project's files into one.
 
 fn local(number: u64, title: &str) -> LocalIssue {

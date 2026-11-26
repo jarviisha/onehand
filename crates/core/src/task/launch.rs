@@ -247,6 +247,7 @@ mod tests {
             title: title.into(),
             body: String::new(),
             instructions: None,
+            closes: None,
         }
     }
 

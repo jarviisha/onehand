@@ -509,5 +509,6 @@ pub(crate) fn brief(
         title: title.read(cx).value().trim().to_string(),
         body: body.read(cx).value().trim().to_string(),
         instructions: (!instructions.is_empty()).then_some(instructions),
+        closes: None,
     }
 }

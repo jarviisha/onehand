@@ -69,6 +69,7 @@ pub(super) fn task(id: &str, template: Template, forge: Option<&str>) -> Task {
             title: format!("task {id}"),
             body: String::new(),
             instructions: None,
+            closes: None,
         },
         Setup {
             repo: PathBuf::from("/repo"),

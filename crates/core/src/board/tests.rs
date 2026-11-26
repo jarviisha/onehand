@@ -144,6 +144,7 @@ fn task(id: &str, project: &str, step: usize, outcome: Option<Outcome>) -> Task 
         title: id.into(),
         body: String::new(),
         instructions: None,
+        closes: None,
     };
     let setup = Setup {
         repo: PathBuf::from("/a"),

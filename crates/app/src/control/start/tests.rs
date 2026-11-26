@@ -28,6 +28,7 @@ fn brief() -> Brief {
         title: "Tidy up".into(),
         body: String::new(),
         instructions: None,
+        closes: None,
     }
 }
 

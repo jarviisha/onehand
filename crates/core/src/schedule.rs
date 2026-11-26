@@ -349,11 +349,13 @@ pub fn brief(s: &Schedule) -> Brief {
             title: s.name.clone(),
             body: prompt.clone(),
             instructions: None,
+            closes: None,
         },
         Starts::Workflow { title, body, .. } => Brief {
             title: title.clone(),
             body: body.clone(),
             instructions: None,
+            closes: None,
         },
     }
 }

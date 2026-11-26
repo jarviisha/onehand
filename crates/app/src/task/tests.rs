@@ -359,6 +359,7 @@ fn brief() -> Brief {
         title: "Say done".into(),
         body: String::new(),
         instructions: None,
+        closes: None,
     }
 }
 
