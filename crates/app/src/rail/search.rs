@@ -68,21 +68,26 @@ pub(crate) fn workspace_control(
         cx.entity().downgrade(),
     );
     h_flex()
-        .flex_none()
+        .min_w_0()
         .items_center()
         .gap_1p5()
         .children(tile)
-        .child(onehand_ui::menu_below(
-            "workspace-menu",
-            crate::controls::action("workspace-segment")
-                .debug_selector(|| "title-workspace".into())
-                .quiet(cx)
-                .short()
-                .child(label)
-                .dropdown_caret(true)
-                .named(hint),
-            menu,
-        ))
+        .child(
+            onehand_ui::menu_below(
+                "workspace-menu",
+                crate::controls::action("workspace-segment")
+                    .debug_selector(|| "title-workspace".into())
+                    .min_w_0()
+                    .quiet(cx)
+                    .short()
+                    .child(label)
+                    .dropdown_caret(true)
+                    .named(hint),
+                menu,
+            )
+            // The wrapper the bar lays out gives way with the name in it.
+            .trigger_style(gpui::StyleRefinement::default().min_w_0()),
+        )
 }
 
 /// *Sessions*, how many wait on the person, the search and the filter: a heading over

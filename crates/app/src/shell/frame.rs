@@ -172,15 +172,25 @@ impl Shell {
             Box::new(ToggleRail),
             cx,
         );
-        h_flex().flex_1().items_center().gap_1().child(
+        // Laid over its share of the bar rather than in it: the library's
+        // bar is as wide as the least its parts can be, and a start measured
+        // by the name would widen the bar past the window and move the
+        // search. Over its share, each level gives way down to the name,
+        // which its ellipsis cuts.
+        h_flex().flex_1().h_full().relative().child(
             h_flex()
                 .debug_selector(|| "title-start".into())
-                .flex_none()
+                .absolute()
+                .top_0()
+                .bottom_0()
+                .left_0()
+                .max_w_full()
+                .min_w_0()
                 .items_center()
                 .gap_1()
                 .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .on_mouse_down(gpui::MouseButton::Right, |_, _, cx| cx.stop_propagation())
-                .child(rail)
+                .child(div().flex_none().child(rail))
                 .child(crate::rail::workspace_control(self, cx)),
         )
     }

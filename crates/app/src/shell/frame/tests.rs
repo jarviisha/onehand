@@ -68,60 +68,34 @@ mod strain {
         }
     }
 
-    fn names() -> [String; 2] {
-        [long(), unbroken()]
+    /// The names the bar is drawn under: short, two of ordinary length, and
+    /// two hundred characters with and without a place to break.
+    fn names() -> [String; 5] {
+        [
+            SHORT.to_string(),
+            "Client projects".to_string(),
+            "onehand work 2026 Nov".to_string(),
+            long(),
+            unbroken(),
+        ]
     }
 
-    fn toggles_stay_put(widths: &[Pixels], cx: &mut TestAppContext) {
-        let dir = folder(&format!("strain-title-toggles-{}", widths.len()));
+    #[gpui::test]
+    fn a_long_workspace_name_leaves_the_toggles_in_place(cx: &mut TestAppContext) {
+        let dir = folder("strain-title-toggles");
         let (_, shell, cx) = shell(cx, dir.join("tasks"), Vec::new());
-        for &w in widths {
+        for w in WIDTHS {
             width(cx, w);
             rename(&shell, SHORT, cx);
             let short = bar(cx);
             for name in names() {
                 rename(&shell, &name, cx);
-                assert_eq!(bar(cx), short, "at {w:?}, named {} chars", name.len());
-            }
-        }
-    }
-
-    #[gpui::test]
-    fn a_long_workspace_name_leaves_the_toggles_in_place(cx: &mut TestAppContext) {
-        toggles_stay_put(&[WIDE], cx);
-    }
-
-    #[gpui::test]
-    #[ignore = "a name of about twenty characters pushes the toggles out of the narrowest window; the fix waits for a decision"]
-    fn a_long_workspace_name_leaves_the_toggles_in_place_in_the_narrowest_window(
-        cx: &mut TestAppContext,
-    ) {
-        toggles_stay_put(&[NARROWEST, WIDE], cx);
-    }
-
-    fn palette_stays_put(widths: &[Pixels], cx: &mut TestAppContext) {
-        let dir = folder(&format!("strain-title-palette-{}", widths.len()));
-        let (_, shell, cx) = shell(cx, dir.join("tasks"), Vec::new());
-        for &w in widths {
-            width(cx, w);
-            rename(&shell, SHORT, cx);
-            let short = bounds(cx, "palette-field");
-            for name in [SHORT.to_string(), long(), unbroken()] {
-                rename(&shell, &name, cx);
-                let field = bounds(cx, "palette-field");
-                assert_eq!(field, short, "at {w:?}, the field moved with the name");
-                let (start, toggles) = (bounds(cx, "title-start"), bounds(cx, "title-toggles"));
-                if w == WIDE {
-                    // The centre of the bar's content, inside its own insets.
-                    let centre = (start.left() + toggles.right()) / 2.;
-                    assert!(
-                        same(field.center().x, centre),
-                        "the field stands off the bar's centre {centre:?}: {field:?}"
-                    );
-                }
+                let named = bar(cx);
+                assert_eq!(named, short, "at {w:?}, named {} chars", name.len());
                 assert!(
-                    start.right() <= field.left() && field.right() <= toggles.left(),
-                    "at {w:?}: {start:?} | {field:?} | {toggles:?} overlap"
+                    named.toggles.right() <= w,
+                    "at {w:?} the toggles stand past the window: {:?}",
+                    named.toggles
                 );
             }
         }
@@ -129,13 +103,41 @@ mod strain {
 
     #[gpui::test]
     fn the_palette_stays_at_the_centre_whatever_the_name(cx: &mut TestAppContext) {
-        palette_stays_put(&[WIDE], cx);
-    }
-
-    #[gpui::test]
-    #[ignore = "a name of about fifteen characters moves the palette in the narrowest window; the fix waits for a decision"]
-    fn the_palette_stays_put_whatever_the_name_in_the_narrowest_window(cx: &mut TestAppContext) {
-        palette_stays_put(&[NARROWEST, WIDE], cx);
+        let dir = folder("strain-title-palette");
+        let (_, shell, cx) = shell(cx, dir.join("tasks"), Vec::new());
+        let rem = cx.update(|window, _| window.rem_size());
+        for w in WIDTHS {
+            width(cx, w);
+            rename(&shell, SHORT, cx);
+            let short = bounds(cx, "palette-field");
+            for name in names() {
+                rename(&shell, &name, cx);
+                let field = bounds(cx, "palette-field");
+                let at = format!("at {w:?}, named {} chars", name.len());
+                assert_eq!(field, short, "{at}: the field moved with the name");
+                let (start, toggles) = (bounds(cx, "title-start"), bounds(cx, "title-toggles"));
+                assert!(
+                    start.right() <= field.left() && field.right() <= toggles.left(),
+                    "{at}: {start:?} | {field:?} | {toggles:?} overlap"
+                );
+                if w == WIDE {
+                    assert!(
+                        same(
+                            field.size.width,
+                            crate::tokens::TITLE_SEARCH_W.to_pixels(rem)
+                        ),
+                        "{at}: the field gave up its width: {field:?}"
+                    );
+                    // The centre of the bar's content, between the insets the
+                    // library's bar keeps at its two ends.
+                    let centre = (start.left() + toggles.right()) / 2.;
+                    assert!(
+                        same(field.center().x, centre),
+                        "{at}: the field stands off the bar's centre {centre:?}: {field:?}"
+                    );
+                }
+            }
+        }
     }
 
     #[gpui::test]
