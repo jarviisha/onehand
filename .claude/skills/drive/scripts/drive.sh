@@ -7,11 +7,13 @@
 #   drive.sh key ARGS…                             wtype arguments, e.g. -k Escape
 #   drive.sh shot NAME                             screenshot to $DRIVE_ROOT/NAME.png
 #   drive.sh size W [H]                            the window's size, in output pixels (H 1000)
+#   drive.sh matrix NAME [STEPS]                   NAME-W-P.png at each width, in each palette
 #   drive.sh alive                                 is the app still running?
 set -euo pipefail
 root=${DRIVE_ROOT:-/tmp/onehand-drive}
 export WAYLAND_DISPLAY; WAYLAND_DISPLAY=$(cat "$root/display")
-usage() { sed -n '2,10p' "$0"; exit 2; }
+usage() { sed -n '2,11p' "$0"; exit 2; }
+here=$(cd "$(dirname "$0")" && pwd)
 case ${1:-} in
     click | move) "$root/vpclick" "$2" "$3" "$1" ;;
     scroll) "$root/vpclick" "$2" "$3" scroll "${4:-3}" ;;
@@ -34,6 +36,28 @@ case ${1:-} in
         swaymsg -s "/run/user/$(id -u)/sway-ipc.$(id -u).$(cat "$root/sway.pid").sock" \
             output HEADLESS-1 mode "$2x${3:-1000}" >/dev/null
         sleep 1 ;;
+    # One view in both palettes and at each width of $DRIVE_WIDTHS. A
+    # palette starts the app again, so the view is reached anew by STEPS, a
+    # bash file of `$DRIVE …` lines run at the wide size, where its
+    # coordinates were read; only then is the window narrowed.
+    matrix)
+        [ -n "${2:-}" ] || usage
+        [ -z "${3:-}" ] || [ -f "$3" ] || { echo "no steps file $3" >&2; exit 2; }
+        export DRIVE="$here/drive.sh"
+        read -ra widths <<<"${DRIVE_WIDTHS:-720 1600}"
+        for palette in light dark; do
+            "$here/session.sh" palette "$palette"
+            "$DRIVE" size 1600
+            sleep 1
+            if [ -n "${3:-}" ]; then bash "$3"; fi
+            # Widest first, so the steps' layout is the first one shot.
+            for w in $(printf '%s\n' "${widths[@]}" | sort -rn); do
+                "$DRIVE" size "$w"
+                "$DRIVE" shot "$2-$w-$palette"
+            done
+            "$DRIVE" alive >/dev/null || { "$DRIVE" alive; exit 1; }
+        done
+        "$DRIVE" size 1600 ;;
     alive) kill -0 "$(cat "$root/app.pid")" 2>/dev/null && echo alive || { echo dead; grep -v MESA "$root/app.log" | tail -20; } ;;
     *) usage ;;
 esac

@@ -18,7 +18,14 @@ The scripts are in `scripts/` beside this file; run them from anywhere. `DRIVE_R
 
 1. **Build** what is to be tested: `cargo build` (the app on the branch's code). Done when it
    builds. A `--release` binary works too; pass its path to `up`.
+   - Where `cargo build` is routed to a build host, it brings no binary back. Build through the
+     project's build host instead: `<onehand> --build <host> -- cargo build -p onehand -p
+     onehand-host`. All of the build host's artifacts are built or none come back, and they
+     land under its `into` (`target/from-<host>/target/debug/onehand`); pass that path to `up`.
+   - `<onehand>` is the binary of the running onehand, which is not on `PATH`: the `cargo` shim
+     in `route-shims/` under the config directory names it on its `exec` line.
 2. **Start**: `scripts/session.sh up [BIN]`. It does five things:
+   - keeps the binary it was given, for `restart` and `palette`, and starts at 1600x1000;
    - seeds the data root on the first run: a git project `proj` whose check command is `true`,
      and two agents, *Mock Work* and *Mock UI*;
    - builds the virtual pointer;
@@ -40,6 +47,22 @@ The scripts are in `scripts/` beside this file; run them from anywhere. `DRIVE_R
    - `key -k Escape` passes `wtype` arguments.
    - `drive.sh alive` after any action that could crash. It prints the panic and backtrace if the
      app is gone.
+   - `drive.sh size W [H]` sets the window's size in output pixels (H defaults to 1000), live.
+     The narrowest the window goes is 720 wide (`WINDOW_MIN`, `crates/app/src/shell/boot/open.rs`).
+   - `session.sh palette light|dark` draws the app light or dark. The choice is read at boot, so
+     the app starts again, its data kept and its view lost.
+   - `drive.sh matrix NAME [STEPS]` pictures one view in both palettes and at each width of
+     `$DRIVE_WIDTHS` (default `720 1600`), narrowest last: `NAME-<width>-<palette>.png`. After
+     each palette it reaches the view again by running STEPS at 1600 wide, then narrows the
+     window. STEPS is a bash file of `$DRIVE …` lines, keys before clicks, its coordinates read
+     off a 1600-wide screenshot:
+
+     ```bash
+     $DRIVE key -M ctrl -k comma -m ctrl   # Settings
+     sleep 1
+     $DRIVE click 413 242                  # its Agents section
+     sleep 1
+     ```
 
    Done when every behaviour the change touches has been seen working on a screenshot, or a
    failure has been captured with its log.
@@ -88,4 +111,6 @@ The scripts are in `scripts/` beside this file; run them from anywhere. `DRIVE_R
   in the same shell command as the one that started it, with `sleep` between.
 - **Layouts move.** A dialog grows a line (a warning, a hint) and its buttons shift down, so
   take coordinates from the latest screenshot, not from an earlier run.
+- **A palette switch loses the view.** The app starts again on it, so a view is reached anew by
+  the steps file, never assumed to survive; `matrix` does this for you.
 - `MESA-EGL: warning … failed to get driver name` in `app.log` is the pixman renderer's noise.
