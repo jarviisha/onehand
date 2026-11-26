@@ -665,6 +665,25 @@ impl RunDrive {
         self.act(action, chat, now, fx);
     }
 
+    /// A run a person stopped, or stopped out of time, stops the background
+    /// work its turns started, which would otherwise build on in its work
+    /// for nobody. Work from before the run is left alone, and so is a run
+    /// taken over, whose session a person now drives, or whose session went.
+    fn stop_left_work(&mut self, stop: Stop, chat: &Chat) {
+        let stops = match stop {
+            Stop::ByPerson | Stop::TimedOut => true,
+            Stop::TakenOver | Stop::LinkLost | Stop::Closed => false,
+        };
+        let Some(since) = self.sent_at.filter(|_| stops) else {
+            return;
+        };
+        for item in chat.background() {
+            if item.started.is_some_and(|started| started >= since) {
+                self.asked.push(Asked::StopBackground(item.id.clone()));
+            }
+        }
+    }
+
     /// The run, out of time, came to rest: the room and the team place it
     /// held go.
     fn rest(&mut self, fx: &mut Vec<Effect>) {
@@ -728,6 +747,9 @@ impl RunDrive {
     fn end(&mut self, stop: Stop, chat: Option<&Chat>, now: Now, fx: &mut Vec<Effect>) {
         if self.hold(true, Held::End(stop)) {
             return;
+        }
+        if let Some(chat) = chat {
+            self.stop_left_work(stop, chat);
         }
         match self.command {
             true => {
