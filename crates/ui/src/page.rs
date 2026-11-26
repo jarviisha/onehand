@@ -8,7 +8,8 @@
 use crate::Short as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    AnyElement, App, Div, Entity, ParentElement as _, Rems, SharedString, Styled as _, div, rems,
+    AnyElement, App, Div, Entity, InteractiveElement as _, ParentElement as _, Rems, SharedString,
+    Styled as _, div, rems,
 };
 use gpui_component::input::InputState;
 use gpui_component::{ActiveTheme as _, StyledExt as _};
@@ -26,6 +27,7 @@ pub fn page_head(
     cx: &App,
 ) -> Div {
     div()
+        .debug_selector(|| "page-head".into())
         .h_flex()
         .items_start()
         .gap_4()
@@ -41,6 +43,7 @@ pub fn page_head(
                 .min_w_0()
                 .child(
                     div()
+                        .debug_selector(|| "page-head-title".into())
                         .truncate()
                         .text_size(crate::tokens::CHROME_TEXT)
                         .font_semibold()
@@ -55,6 +58,7 @@ pub fn page_head(
         )
         .child(
             div()
+                .debug_selector(|| "page-head-actions".into())
                 .flex_none()
                 .h_flex()
                 .items_center()
@@ -104,3 +108,6 @@ pub fn page_search(state: &Entity<InputState>, cx: &App) -> Div {
         .max_w(SEARCH_MAX)
         .child(crate::search_input(state, cx).short())
 }
+
+#[cfg(test)]
+mod tests;

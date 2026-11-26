@@ -16,3 +16,7 @@ gpui-component.workspace = true
 # The resize handle and the splits it sits in, which gpui-component does not
 # re-export: the splits are drawn here, in the app's own way.
 gpui-base.workspace = true
+
+[dev-dependencies]
+# `TestAppContext` and `debug_bounds`, to draw a page's head under strain.
+gpui = { workspace = true, features = ["test-support"] }
