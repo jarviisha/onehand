@@ -81,10 +81,11 @@ fn declared_module(item: &str) -> Option<&str> {
 /// An item under `#[cfg(test)]` (a module, a function, a `mod NAME;` line, a
 /// field, a field of a struct literal) is left out with its doc comments and
 /// attributes. Its end is found by counting brackets from its first line: the
-/// line where its braces close, or, for one with no body, the `;` or `,` it
-/// ends on with every bracket closed. A bracket in a string or a char that is
-/// not matched inside the same item throws the count off, and so does a type
-/// whose `<…>` holds a `,` at the end of a line.
+/// line where its braces close, or, for one with no body, the `;` it ends on
+/// with every bracket closed, or the `,` of a field whose first line ends
+/// there. A bracket in a string or a char that is not matched inside the same
+/// item or attribute throws the count off; a test-only field written over
+/// several lines, or a last field with no trailing comma, hides what follows.
 fn without_tests(path: &str, source: &str, test_only: &[String]) -> Option<Vec<(usize, String)>> {
     if path.ends_with("/tests.rs")
         || path.contains("/tests/")
@@ -95,15 +96,14 @@ fn without_tests(path: &str, source: &str, test_only: &[String]) -> Option<Vec<(
         return None;
     }
     let mut out = Vec::new();
-    // Inside a test item: whether its body has opened, and how deep it is.
-    let mut skipping: Option<(bool, usize)> = None;
+    let mut skipping: Option<Skip> = None;
     for (i, line) in source.lines().enumerate() {
         let t = line.trim();
         let mut item = t;
         if skipping.is_none() {
             match t.strip_prefix("#[cfg(test)]") {
                 Some(rest) => {
-                    skipping = Some((false, 0));
+                    skipping = Some(Skip::default());
                     item = rest.trim();
                 }
                 None => {
@@ -112,21 +112,44 @@ fn without_tests(path: &str, source: &str, test_only: &[String]) -> Option<Vec<(
                 }
             }
         }
-        let Some((opened, depth)) = skipping.as_mut() else {
+        let Some(skip) = skipping.as_mut() else {
             continue;
         };
         if item.is_empty() || item.starts_with("//") {
             continue;
         }
-        *opened |= item.contains('{');
-        *depth = (*depth + item.matches(['{', '(', '[']).count())
+        let attribute = skip.in_attribute || item.starts_with("#[");
+        skip.depth = (skip.depth + item.matches(['{', '(', '[']).count())
             .saturating_sub(item.matches(['}', ')', ']']).count());
-        let attribute = item.starts_with("#[");
-        if *depth == 0 && !attribute && (*opened || item.ends_with(';') || item.ends_with(',')) {
+        if attribute {
+            skip.in_attribute = skip.depth > 0;
+            continue;
+        }
+        // Only an item whose own first line ends in `,` is a field written on
+        // one line; any other waits for its braces or its `;`, so a
+        // where-clause or generics over several lines do not end it.
+        let first = !skip.begun;
+        skip.begun = true;
+        skip.opened |= item.contains('{');
+        if skip.depth == 0 && (skip.opened || item.ends_with(';') || (first && item.ends_with(',')))
+        {
             skipping = None;
         }
     }
     Some(out)
+}
+
+/// Where [`without_tests`] stands inside an item under `#[cfg(test)]`.
+#[derive(Default)]
+struct Skip {
+    /// Whether the item's body has opened.
+    opened: bool,
+    /// How many brackets stand open.
+    depth: usize,
+    /// Whether the line is inside an attribute written over several lines.
+    in_attribute: bool,
+    /// Whether the item's own first line, past its attributes, has been read.
+    begun: bool,
 }
 
 /// Every UI source's production lines, as (path, lines).
@@ -174,7 +197,7 @@ fn holds_colour_literal(line: &str) -> bool {
 
 /// Whether `line` holds a `px(` or `rems(`, or a `Pixels(` or `Rems(` built
 /// as a tuple, whose whole argument is a number other than zero, suffixed or
-/// not (`4.`, `4f32`, `4.0_f32`).
+/// not (`4.`, `4f32`, `4.0_f32`), in any base (`0x10`).
 fn holds_size_number(line: &str) -> bool {
     ["px(", "rems(", "Pixels(", "Rems("].iter().any(|call| {
         line.match_indices(call).any(|(at, _)| {
@@ -187,7 +210,13 @@ fn holds_size_number(line: &str) -> bool {
             };
             let arg = arg.trim().replace('_', "");
             let arg = arg.trim_end_matches("f32").trim_end_matches("f64");
-            arg.parse::<f32>().is_ok_and(|n| n != 0.)
+            let based = [("0x", 16), ("0o", 8), ("0b", 2)]
+                .iter()
+                .find_map(|(prefix, radix)| {
+                    arg.strip_prefix(prefix)
+                        .map(|digits| u64::from_str_radix(digits, *radix).is_ok_and(|n| n != 0))
+                });
+            based.unwrap_or_else(|| arg.parse::<f32>().is_ok_and(|n| n != 0.))
         })
     })
 }
@@ -270,6 +299,33 @@ fn test_code_is_left_out_of_a_scan() {
         .map(|(n, _)| n)
         .collect();
     assert_eq!(kept, [1, 4, 5, 6, 7, 10, 11, 12]);
+
+    // A test item whose where-clause or generics run over several lines
+    // ends where its braces close: nothing in it is scanned, and the line
+    // after it is kept.
+    let generic = "#[cfg(test)]\n\
+                   fn probe<T>(x: T) -> T\n\
+                   where\n\
+                   \x20   T: Copy,\n\
+                   {\n\
+                   \x20   let _ink = \"#123456\";\n\
+                   \x20   x\n\
+                   }\n\
+                   fn kept() {}\n\
+                   #[cfg(test)]\n\
+                   impl<\n\
+                   \x20   T: Copy,\n\
+                   > Probe<T> {\n\
+                   \x20   const W: Pixels = px(4.);\n\
+                   }\n\
+                   fn also_kept() {}";
+    assert_eq!(
+        without_tests("x/src/a.rs", generic, &[]),
+        Some(vec![
+            (9, "fn kept() {}".to_string()),
+            (16, "fn also_kept() {}".to_string())
+        ])
+    );
 
     // A test function behind a doc comment and an attribute written over
     // several lines is left out whole.
@@ -383,6 +439,7 @@ fn a_size_is_written_once_in_a_constant() {
     assert!(holds_size_number(".w(px(4f32))"));
     assert!(holds_size_number(".w(px(4.0_f32))"));
     assert!(holds_size_number(".w(gpui::Rems(1.))"));
+    assert!(holds_size_number(".w(px(0x10))"));
     assert!(!holds_size_number(".w(px(0.))"));
     assert!(!holds_size_number(".w(to_px(4.))"));
     let mut seen_eq = false;
