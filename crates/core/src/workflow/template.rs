@@ -128,13 +128,18 @@ impl Template {
         })
     }
 
-    /// How long a run of `self` may work. A timeout that does not read, which
-    /// validation refuses, so only a file edited by hand carries one, gives
-    /// what a new workflow is given.
-    pub fn timeout_limit(&self) -> std::time::Duration {
-        parse_every(&self.timeout)
-            .or_else(|| parse_every(&default_timeout()))
+    /// How long a run of `self` may work, `None` for no limit. A timeout
+    /// that does not read, which validation refuses, so only a file edited by
+    /// hand carries one, gives what a new workflow is given.
+    pub fn timeout_limit(&self) -> Option<Duration> {
+        parse_limit(&self.timeout)
+            .or_else(|| parse_limit(&default_timeout()))
             .expect("the default timeout reads")
+    }
+
+    /// The timeout as a person reads it: as written, or *no limit*.
+    pub fn timeout_said(&self) -> String {
+        said_limit(&self.timeout)
     }
 
     /// Whether `self` and `other` say the same, whatever their id and version.
@@ -225,6 +230,24 @@ impl StepSpec {
         }
     }
 
+    /// How long the command of a command step may run, `None` for no limit;
+    /// a timeout that does not read, which validation refuses, gives the
+    /// default. A step of another kind runs no command: `None`.
+    pub fn command_limit(&self) -> Option<Duration> {
+        match &self.kind {
+            StepKind::Command { timeout, .. } => timeout
+                .as_deref()
+                .and_then(parse_limit)
+                .unwrap_or(Some(COMMAND_LIMIT)),
+            StepKind::Agent { .. }
+            | StepKind::Review { .. }
+            | StepKind::Approval { .. }
+            | StepKind::Push
+            | StepKind::PullRequest
+            | StepKind::StatusChecks { .. } => None,
+        }
+    }
+
     /// Whether an agent judges an earlier step's work here.
     pub fn is_review(&self) -> bool {
         matches!(self.kind, StepKind::Review { .. })
@@ -253,7 +276,9 @@ impl StepSpec {
                 }
                 parts.join(" · ")
             }
-            StepKind::Command { command, on_fail } => format!(
+            StepKind::Command {
+                command, on_fail, ..
+            } => format!(
                 "Command · {} · back to {on_fail} on failure",
                 command
                     .as_deref()
@@ -308,6 +333,10 @@ pub enum StepKind {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         command: Option<String>,
         on_fail: String,
+        /// How long the command may run, as a workflow's timeout is written;
+        /// [`COMMAND_LIMIT`] when it names none.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        timeout: Option<String>,
     },
     /// Prompt an agent to judge the work of the agent step `of`, in a
     /// session of its own. Sent back, the run goes to `on_reject`, or to
@@ -484,6 +513,29 @@ impl GateKind {
     }
 }
 
+/// How long a command step's command may run when the step names no timeout.
+const COMMAND_LIMIT: Duration = Duration::from_secs(15 * 60);
+
+/// What means no limit where a timeout is written.
+const NO_LIMIT: &str = "none";
+
+/// A timeout as written: `Some(None)` for `none`, `Some(Some(d))` for what
+/// [`parse_every`] reads, `None` when it does not read.
+pub(crate) fn parse_limit(text: &str) -> Option<Option<Duration>> {
+    match text.trim() {
+        NO_LIMIT => Some(None),
+        text => parse_every(text).map(Some),
+    }
+}
+
+/// A timeout as a person reads it: as written, or *no limit* for `none`.
+fn said_limit(text: &str) -> String {
+    match text.trim() {
+        NO_LIMIT => "no limit".to_string(),
+        text => text.to_string(),
+    }
+}
+
 /// `"30m"`, `"2h"`, `"90s"` as a duration.
 ///
 /// One number and one unit, nothing else. A zero is refused rather than read
@@ -505,6 +557,16 @@ pub fn parse_every(text: &str) -> Option<Duration> {
 #[cfg(test)]
 mod every_tests {
     use super::*;
+
+    #[test]
+    fn a_limit_is_a_duration_or_none() {
+        assert_eq!(parse_limit("none"), Some(None));
+        assert_eq!(parse_limit(" none "), Some(None));
+        assert_eq!(parse_limit("2h"), Some(Some(Duration::from_secs(7200))));
+        assert_eq!(parse_limit("None"), None);
+        assert_eq!(parse_limit("0m"), None);
+        assert_eq!(parse_limit(""), None);
+    }
 
     #[test]
     fn an_interval_is_a_number_and_a_unit() {

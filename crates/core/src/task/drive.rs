@@ -52,6 +52,8 @@ use pin::{Answer, Held};
 pub(crate) use signals::Asked;
 pub use signals::{Aim, Effect, Input, Signal, Timer};
 
+/// The soonest a timeout timer that found time left looks again.
+const RECHECK_FLOOR: Duration = Duration::from_secs(1);
 /// A run under way, on its sessions: one for the run, and one for each
 /// step naming its agent.
 pub struct RunDrive {
@@ -137,7 +139,7 @@ impl RunDrive {
         let limit = run
             .template
             .timeout_limit()
-            .saturating_sub(Duration::from_secs(run.spent_secs));
+            .map(|limit| limit.saturating_sub(Duration::from_secs(run.spent_secs)));
         let lane = Lane::at(&run);
         let mut drive = Self {
             task,
@@ -156,7 +158,7 @@ impl RunDrive {
             picks: Vec::new(),
             asked: Vec::new(),
             noted: None,
-            budget: Budget::start(limit, now.at),
+            budget: Budget::start(limit, now.at, false),
             after_work: false,
             command: false,
             forging: None,
@@ -167,10 +169,10 @@ impl RunDrive {
             sessionless: chat.is_none(),
         };
         let mut fx = Vec::new();
-        if !drive.sessionless {
+        if let Some(after) = limit.filter(|_| !drive.sessionless) {
             fx.push(Effect::Arm {
                 timer: Timer::Timeout,
-                after: limit,
+                after,
             });
         }
         drive.act(first, chat, now, &mut fx);
@@ -248,8 +250,7 @@ impl RunDrive {
 
     /// Working time spent on the run, sessions before this one included.
     pub fn spent_secs(&self, now: Now) -> u64 {
-        let used = self.budget.limit().saturating_sub(self.budget.left(now.at));
-        self.spent_before + used.as_secs()
+        self.spent_before + self.budget.spent(now.at).as_secs()
     }
 
     /// A person approved what they read at `at`. Held while a mark is
@@ -348,7 +349,7 @@ impl RunDrive {
                 {
                     self.after_work = false;
                     if self.run.awaiting_turn() && self.held.is_none() {
-                        self.after_turn(chat, &mut fx);
+                        self.after_turn(chat, now, &mut fx);
                     }
                 }
             }
@@ -427,16 +428,16 @@ impl RunDrive {
             // The run's timeout: when it has run out, look again, since time
             // spent waiting on a person did not count; end the run once
             // nothing is left.
-            Input::Elapsed(Timer::Timeout) => {
-                let left = self.budget.left(now.at);
-                match left.is_zero() {
-                    true => self.cut(Stop::TimedOut, chat, now, &mut fx),
-                    false => fx.push(Effect::Arm {
-                        timer: Timer::Timeout,
-                        after: left,
-                    }),
-                }
-            }
+            Input::Elapsed(Timer::Timeout) => match self.budget.left(now.at) {
+                Some(left) if left.is_zero() => self.cut(Stop::TimedOut, chat, now, &mut fx),
+                // No sooner than a second: with the clock standing still and
+                // a moment left, looking again at once would spin.
+                Some(left) => fx.push(Effect::Arm {
+                    timer: Timer::Timeout,
+                    after: left.max(RECHECK_FLOOR),
+                }),
+                None => {}
+            },
         }
         fx
     }
@@ -490,7 +491,7 @@ impl RunDrive {
             // What the agent left running is part of the step: a build in the
             // background, a subagent, and what it says once they are done.
             Input::TurnEnded if judge_turn && self.step_at_work(chat) => self.after_work = true,
-            Input::TurnEnded if judge_turn => self.after_turn(chat, fx),
+            Input::TurnEnded if judge_turn => self.after_turn(chat, now, fx),
             Input::TurnEnded => {}
             // A person answers the card; the clock waits for them.
             Input::AwaitingUser => {
@@ -527,8 +528,8 @@ impl RunDrive {
     }
     /// A person's answer to the approval the run waits on: held while a mark
     /// is pinned, then judged by the engine against the visit it was drawn
-    /// from. The clock goes on only once the engine took it, so a refused
-    /// press leaves the run waiting as it was.
+    /// from. The clock goes on with the next prompt it leads to, so a
+    /// refused press leaves the run waiting as it was.
     fn answer(&mut self, answer: Answer, chat: Option<&Chat>, now: Now, fx: &mut Vec<Effect>) {
         if self.hold(false, Held::Answer(answer.clone())) {
             return;
@@ -537,9 +538,6 @@ impl RunDrive {
             Answer::Approved(at) => self.run.approved(&at, now.secs),
             Answer::Revised(at, note) => self.run.revised(&at, note, now.secs),
         };
-        if action != Action::Idle {
-            self.budget.resume(now.at);
-        }
         self.act(action, chat, now, fx);
     }
 

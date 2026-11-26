@@ -199,7 +199,7 @@ that *Retry with current settings* runs with what Settings say now. A Resume blo
 notification where it was pressed, and nothing starts.
 
 **The Retry dialog says what it keeps** before it starts anything, one line each from the last
-run: the agent, the mode, the check command, the timeout and the workflow's version. A line that
+run: the agent, the mode, the check command, the timeout (*no limit* for `none`) and the workflow's version. A line that
 Settings now say otherwise for says what they say, in the warning ink, and that *Retry with
 current settings* runs it.
 

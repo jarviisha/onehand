@@ -298,7 +298,6 @@ impl RunDrive {
                 after: STATUS_CHECKS_EVERY,
             });
         }
-        self.budget.resume(now.at);
         self.advance(chat, now, fx, move |run| {
             run.status_checks_seen(seen, now.secs)
         });

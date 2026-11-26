@@ -206,6 +206,7 @@ fn to_a_pull_request() -> Template {
             StepKind::Command {
                 command: Some("true".into()),
                 on_fail: "do".into(),
+                timeout: None,
             },
         ),
         step("push", StepKind::Push),

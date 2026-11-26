@@ -65,9 +65,6 @@ pub(crate) fn holds(gate: GateKind, facts: &Facts, from: &Mark, answer: &str) ->
     }
 }
 
-/// How long a step's command may run before it counts as failed.
-const COMMAND_LIMIT: Duration = Duration::from_secs(15 * 60);
-
 /// How many lines of a command's output are kept. The end is where a
 /// build or a test run says what went wrong.
 const COMMAND_LINES: usize = 200;
@@ -116,18 +113,19 @@ impl CommandResult {
 pub fn run_command_blocking(
     dir: &Path,
     command: &str,
+    limit: Option<std::time::Duration>,
     cancel: &std::sync::atomic::AtomicBool,
 ) -> CommandResult {
     let mut cmd = std::process::Command::new("sh");
     cmd.arg("-c")
         .arg(format!("exec 2>&1\n{command}"))
         .current_dir(dir);
-    let ran = crate::process::output_until(&mut cmd, COMMAND_LIMIT, cancel);
+    let ran = crate::process::output_until(&mut cmd, limit, cancel);
     let (passed, exit, tail) = match ran {
         Err(crate::process::Failure::TimedOut(limit)) => (
             false,
             None,
-            format!("timed out after {}m", limit.as_secs() / 60),
+            format!("timed out after {}", said_duration(limit)),
         ),
         Err(why) => (false, None, format!("the command's shell {why}")),
         Ok(out) => {
@@ -148,5 +146,14 @@ pub fn run_command_blocking(
         tail,
         commit: worktree::head_blocking(dir).ok(),
         digest: worktree::work_digest_blocking(dir).ok(),
+    }
+}
+
+/// `limit` as a timeout is written: in minutes when it is whole minutes,
+/// else in seconds.
+fn said_duration(limit: Duration) -> String {
+    match limit.as_secs() {
+        secs if secs >= 60 && secs % 60 == 0 => format!("{}m", secs / 60),
+        secs => format!("{secs}s"),
     }
 }

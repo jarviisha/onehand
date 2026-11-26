@@ -12,19 +12,21 @@ use std::time::{Duration, Instant};
 /// timeout bounds: an agent that works without finishing.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Budget {
-    limit: Duration,
+    /// `None`: no limit, so nothing to run out of.
+    limit: Option<Duration>,
     spent: Duration,
     /// When the current stretch of work began; `None` while waiting.
     since: Option<Instant>,
 }
 
 impl Budget {
-    /// A budget of `limit`, running from `now`.
-    pub(crate) fn start(limit: Duration, now: Instant) -> Self {
+    /// A budget of `limit`, counting from `now` when `running`, else from
+    /// its first [`Self::resume`].
+    pub(crate) fn start(limit: Option<Duration>, now: Instant, running: bool) -> Self {
         Self {
             limit,
             spent: Duration::ZERO,
-            since: Some(now),
+            since: running.then_some(now),
         }
     }
 
@@ -40,17 +42,18 @@ impl Budget {
         self.since.get_or_insert(now);
     }
 
-    /// The whole timeout, however much of it is spent.
-    pub(crate) fn limit(&self) -> Duration {
-        self.limit
-    }
-
-    /// What is left of the limit at `now`.
-    pub(crate) fn left(&self, now: Instant) -> Duration {
+    /// What has been spent by `now`.
+    pub(crate) fn spent(&self, now: Instant) -> Duration {
         let running = self
             .since
             .map_or(Duration::ZERO, |since| now.saturating_duration_since(since));
-        self.limit.saturating_sub(self.spent + running)
+        self.spent + running
+    }
+
+    /// What is left of the limit at `now`; `None` with no limit.
+    pub(crate) fn left(&self, now: Instant) -> Option<Duration> {
+        self.limit
+            .map(|limit| limit.saturating_sub(self.spent(now)))
     }
 }
 
@@ -62,14 +65,29 @@ mod tests {
     fn waiting_on_a_person_spends_none_of_the_budget() {
         let t0 = Instant::now();
         let s = Duration::from_secs;
-        let mut budget = Budget::start(s(100), t0);
-        assert_eq!(budget.left(t0 + s(30)), s(70));
+        let mut budget = Budget::start(Some(s(100)), t0, true);
+        assert_eq!(budget.left(t0 + s(30)), Some(s(70)));
         budget.pause(t0 + s(30));
         budget.pause(t0 + s(40));
-        assert_eq!(budget.left(t0 + s(500)), s(70));
+        assert_eq!(budget.left(t0 + s(500)), Some(s(70)));
         budget.resume(t0 + s(500));
         budget.resume(t0 + s(510));
-        assert_eq!(budget.left(t0 + s(520)), s(50));
-        assert_eq!(budget.left(t0 + s(9999)), Duration::ZERO);
+        assert_eq!(budget.left(t0 + s(520)), Some(s(50)));
+        assert_eq!(budget.spent(t0 + s(520)), s(50));
+        assert_eq!(budget.left(t0 + s(9999)), Some(Duration::ZERO));
+    }
+
+    /// A budget with no limit has nothing left to run out of, and still
+    /// counts what it spent; one started waiting counts nothing until it
+    /// goes on.
+    #[test]
+    fn no_limit_never_runs_out_and_still_counts() {
+        let t0 = Instant::now();
+        let s = Duration::from_secs;
+        let mut budget = Budget::start(None, t0, false);
+        assert_eq!(budget.spent(t0 + s(60)), Duration::ZERO);
+        budget.resume(t0 + s(60));
+        assert_eq!(budget.left(t0 + s(10_000_000)), None);
+        assert_eq!(budget.spent(t0 + s(100)), s(40));
     }
 }

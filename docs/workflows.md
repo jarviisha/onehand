@@ -51,7 +51,7 @@ name = "Work in checkout"
 description = "…"
 place = "checkout"        # or "worktree"
 misses = 3                # misses allowed in a stretch of steps
-timeout = "45m"           # working time; waiting on a person does not count
+timeout = "45m"           # the agent's working time, or "none" for no limit
 
 [[steps]]
 id = "plan"
@@ -90,6 +90,7 @@ id = "verify"
 label = "Verify"
 kind = "command"          # `command = "…"`; left out, the project's check command
 on_fail = "implement"
+# timeout = "30m"         # optional: how long the command may run, "none" for no limit; 15m left out
 
 # On a worktree only, the forge steps:
 [[steps]]
@@ -243,7 +244,7 @@ number is a problem of the draft, said and not read as no limit. What waiting fo
 ### Validation
 
 `workflow::validate` is run on every keystroke of the form, before Save, and before a run starts.
-It refuses: no name, no steps, an unreadable timeout, an unsupported schema; a step id that is not
+It refuses: no name, no steps, a timeout that is neither a duration nor `none`, an unsupported schema; a step id that is not
 lowercase letters, digits, `-` and `_`, or is used twice; an empty label or prompt; a prompt
 variable that is not one; `{output.<id>}` naming anything but an earlier agent step that keeps its
 answer; `on_fail` naming anything but an earlier agent step; an approval of anything but an earlier
@@ -255,7 +256,8 @@ one no later approval or review sends back, since either would always be empty (
 step sends `{check_output}` back too); a worktree workflow with no agent step gated `committed`,
 whose branch could end with nothing on it; a forge step in a checkout workflow; a push with no
 command step before it, a pull request with no push before it, status checks with no pull request before them or an
-`on_fail` that is no earlier agent step, and a `wait` that is not a duration; on an agent step, an
+`on_fail` that is no earlier agent step, and a `wait` that is not a duration; a command step's
+`timeout` that is neither a duration nor `none`; on an agent step, an
 empty mode, an option with no id or no value, and an option `mode`, which is set as the step's mode.
 `mode` or `options` on any other kind of step is a key onehand does not read there.
 
@@ -307,6 +309,9 @@ the run's history, capped at 200.
   untracked files included, read once it ran. The commit and the fingerprint together are what a
   pass covers: the work is judged against both, so an edit after the check, committed or not, is
   never taken for checked work.
+  **It runs as long as its `timeout` says**: fifteen minutes when it names none, no limit for
+  `none`. A command past its limit is stopped, with what it started, and fails; the run's own
+  clock does not run meanwhile.
 - **The forge steps** go to the connector the run's setup names (`Setup::forge`, the one that
   serves the project when a worktree task starts). With none, each passes at once: the branch is the
   result. **A push carries the commit the check passed on**: `Push` is `marks.verified_at`, never
@@ -414,9 +419,13 @@ running, among the values it offers, are kept as the run's starting settings (`R
 once: they are saved with the run, so a Resume on a new session finds the same ones; a Retry, being
 a new run, takes them afresh. They are what the agent publishes as it comes up: an option it
 publishes only later is not among them, so a step that does not name it leaves it as the agent has
-it. The clock is the run drive's `Budget`: it pauses while a card or an approval waits on a person, or
-the pull request's status checks run, and its timer looks again when it fires rather than being
-re-armed at every pause.
+it. The clock is the run drive's `Budget`, and **it counts only the agent's work on a step**: it
+runs from a prompt handed to the session until that turn, and the agent's work it left running,
+are done, and while a card waits on a person inside the turn it stands still. Everything onehand
+does between turns (a mark pinned, the work measured, a command run, a push, a pull request, the
+status checks) and every wait on a person (an approval, room at a step) leave it standing. Its
+timer looks again when it fires rather than being re-armed at every pause. A workflow whose
+`timeout` is `none` has no limit: no timer is armed, and only a Stop ends the run.
 
 **Every visit to an agent step starts with its settings in force** (`workflow::Settings::for_step`:
 the step's own over the run's starting ones). Before the visit's first prompt, the planner

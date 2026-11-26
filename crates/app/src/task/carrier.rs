@@ -427,7 +427,11 @@ fn perform(id: &str, effects: Vec<Effect>, cx: &mut App) {
             Effect::ReadFacts { dir, from } => spawn_feed(id, cx, move || {
                 Input::TurnRead(Facts::read_blocking(&dir, &from))
             }),
-            Effect::RunCommand { dir, command } => run_command(id, dir, command, cx),
+            Effect::RunCommand {
+                dir,
+                command,
+                limit,
+            } => run_command(id, dir, command, limit, cx),
             Effect::CallOffCommand => {
                 if let Some(cancel) = read(id, cx, |d| d.command.clone()).flatten() {
                     cancel.store(true, Ordering::SeqCst);
@@ -597,7 +601,13 @@ fn save(id: &str, cx: &mut App) {
 
 /// Run the step's command in the work, then report how it went with the
 /// commit it ran on. Its flag calls it off; a quit waits for it.
-fn run_command(id: &str, dir: std::path::PathBuf, command: String, cx: &mut App) {
+fn run_command(
+    id: &str,
+    dir: std::path::PathBuf,
+    command: String,
+    limit: Option<std::time::Duration>,
+    cx: &mut App,
+) {
     let cancel = Arc::new(AtomicBool::new(false));
     if with(id, cx, |d| d.command = Some(cancel.clone())).is_none() {
         return;
@@ -608,7 +618,7 @@ fn run_command(id: &str, dir: std::path::PathBuf, command: String, cx: &mut App)
         let ran = cx
             .background_executor()
             .spawn(async move {
-                let ran = run_command_blocking(&dir, &command, &cancel);
+                let ran = run_command_blocking(&dir, &command, limit, &cancel);
                 drop(running);
                 ran
             })

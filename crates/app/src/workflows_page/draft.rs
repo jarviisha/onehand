@@ -95,6 +95,9 @@ pub struct StepDraft {
     pub command: Entity<InputState>,
     /// How long status checks are waited on.
     pub wait: Entity<InputState>,
+    /// How long a command step's command may run, as typed; empty, the
+    /// default.
+    pub timeout: Entity<InputState>,
     /// The step a command or status checks go back to, an approval
     /// approves, or a review reviews, by id.
     pub target: String,
@@ -111,6 +114,7 @@ impl StepDraft {
             cx.new(|cx| InputState::new(window, cx).default_value(text))
         };
         let mut wait = core::DEFAULT_WAIT;
+        let mut timeout = "";
         let mut reject = String::new();
         let (kind, prompt, gates, keep_answer, mode, options, command, target) = match &spec.kind {
             StepKind::Agent {
@@ -150,16 +154,23 @@ impl StepDraft {
                     of.as_str(),
                 )
             }
-            StepKind::Command { command, on_fail } => (
-                Kind::Command,
-                "",
-                Vec::new(),
-                false,
-                None,
-                BTreeMap::new(),
-                command.as_deref().unwrap_or_default(),
-                on_fail.as_str(),
-            ),
+            StepKind::Command {
+                command,
+                on_fail,
+                timeout: limit,
+            } => {
+                timeout = limit.as_deref().unwrap_or_default();
+                (
+                    Kind::Command,
+                    "",
+                    Vec::new(),
+                    false,
+                    None,
+                    BTreeMap::new(),
+                    command.as_deref().unwrap_or_default(),
+                    on_fail.as_str(),
+                )
+            }
             StepKind::Approval { of } => (
                 Kind::Approval,
                 "",
@@ -252,6 +263,11 @@ impl StepDraft {
                     .default_value(command.to_string())
             }),
             wait: input(wait, window, cx),
+            timeout: cx.new(|cx| {
+                InputState::new(window, cx)
+                    .placeholder("Empty: 15m")
+                    .default_value(timeout.to_string())
+            }),
             target: target.to_string(),
             reject,
         }
@@ -307,10 +323,14 @@ impl StepDraft {
                     options,
                     agent: self.agent.clone(),
                 },
-                Kind::Command => StepKind::Command {
-                    command: (!command.is_empty()).then_some(command),
-                    on_fail: self.target.clone(),
-                },
+                Kind::Command => {
+                    let timeout = self.timeout.read(cx).value().trim().to_string();
+                    StepKind::Command {
+                        command: (!command.is_empty()).then_some(command),
+                        on_fail: self.target.clone(),
+                        timeout: (!timeout.is_empty()).then_some(timeout),
+                    }
+                }
                 Kind::Approval => StepKind::Approval {
                     of: self.target.clone(),
                 },
@@ -503,6 +523,7 @@ impl WorkflowDraft {
                 Kind::Command => StepKind::Command {
                     command: None,
                     on_fail: String::new(),
+                    timeout: None,
                 },
                 Kind::Approval => StepKind::Approval { of: String::new() },
                 Kind::Push => StepKind::Push,

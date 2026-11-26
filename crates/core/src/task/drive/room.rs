@@ -33,13 +33,12 @@ impl RunDrive {
         });
     }
 
-    /// The run was given the room it waited for: its clock goes on, and so
-    /// does the step.
+    /// The run was given the room it waited for: the step goes on, and its
+    /// clock with the step's prompt.
     pub(super) fn room_given(&mut self, chat: Option<&Chat>, now: Now, fx: &mut Vec<Effect>) {
         if !self.run.awaiting_room() {
             return;
         }
-        self.budget.resume(now.at);
         self.room = Some(self.run.step);
         self.advance(chat, now, fx, move |run| run.room_given(now.secs));
     }

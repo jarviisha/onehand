@@ -38,6 +38,7 @@ pub(super) fn forge_flow() -> Template {
             StepKind::Command {
                 command: Some("make test".into()),
                 on_fail: "implement".into(),
+                timeout: None,
             },
         ),
         step("push", StepKind::Push),
@@ -718,7 +719,8 @@ fn a_step_says_what_it_does() {
     assert_eq!(
         StepKind::Command {
             command: None,
-            on_fail: "x".into()
+            on_fail: "x".into(),
+            timeout: None,
         }
         .does(),
         "onehand runs the check command"
@@ -726,7 +728,8 @@ fn a_step_says_what_it_does() {
     assert_eq!(
         StepKind::Command {
             command: Some("make package".into()),
-            on_fail: "x".into()
+            on_fail: "x".into(),
+            timeout: None,
         }
         .does(),
         "onehand runs make package"

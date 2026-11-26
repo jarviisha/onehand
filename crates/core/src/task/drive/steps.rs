@@ -5,7 +5,7 @@
 use super::{settings, Asked, Effect, Lane, RunDrive};
 use crate::chat::{Chat, Link};
 use crate::preflight::{found_late, mode_refused, About};
-use crate::workflow::{Action, Outcome, Pick, StepKind, Stop};
+use crate::workflow::{Action, Outcome, Pick, StepKind, StepSpec, Stop};
 use crate::Now;
 
 /// The longest answer kept from a turn. An answer the length of a book is cut
@@ -27,6 +27,12 @@ impl RunDrive {
         if !ends_run(&action) {
             self.announce_step();
         }
+        // The clock counts the agent's work on a step and nothing else: it
+        // stands still for whatever onehand does next, and goes on when a
+        // prompt is handed over.
+        if !matches!(action, Action::Prompt(_)) {
+            self.budget.pause(now.at);
+        }
         let dir = self.run.setup.dir.clone();
         match action {
             Action::Measure => fx.push(Effect::Measure { dir }),
@@ -39,10 +45,13 @@ impl RunDrive {
             Action::RunCommand(command) => {
                 self.command = true;
                 self.asked.push(Asked::Note(format!("Running: {command}")));
-                fx.push(Effect::RunCommand { dir, command });
+                fx.push(Effect::RunCommand {
+                    dir,
+                    command,
+                    limit: self.run.current().and_then(StepSpec::command_limit),
+                });
             }
             Action::AwaitApproval => {
-                self.budget.pause(now.at);
                 self.asked.push(Asked::Note(
                     "Waiting for approval: Continue or Revise… under the header".to_string(),
                 ));
@@ -61,7 +70,6 @@ impl RunDrive {
                 self.open_pull_request(fx);
             }
             Action::AwaitStatusChecks { wait, pushed } => {
-                self.budget.pause(now.at);
                 self.asked.push(Asked::Note(
                     "Waiting for the pull request's status checks".to_string(),
                 ));
@@ -84,7 +92,11 @@ impl RunDrive {
             Action::Finish(outcome) => return self.finish(None, outcome, now, fx),
             Action::RunCommand(command) if self.sessionless => {
                 self.command = true;
-                fx.push(Effect::RunCommand { dir, command });
+                fx.push(Effect::RunCommand {
+                    dir,
+                    command,
+                    limit: self.run.current().and_then(StepSpec::command_limit),
+                });
             }
             Action::Measure if self.sessionless => fx.push(Effect::Measure { dir }),
             Action::AwaitRoom => self.await_room(false, now, fx),
@@ -150,6 +162,7 @@ impl RunDrive {
         self.here.sent += 1;
         self.answer_from = chat.items.len();
         self.sent_at = Some(now.at);
+        self.budget.resume(now.at);
         self.asked.push(Asked::Prompt { text, at: fx.len() });
     }
 
@@ -197,7 +210,9 @@ impl RunDrive {
     }
 
     /// A turn the run sent ended: read the work, then let the engine judge it.
-    pub(super) fn after_turn(&mut self, chat: &Chat, fx: &mut Vec<Effect>) {
+    pub(super) fn after_turn(&mut self, chat: &Chat, now: Now, fx: &mut Vec<Effect>) {
+        // The agent is done with the step: what follows is onehand's.
+        self.budget.pause(now.at);
         let Some(from) = self.run.marks.step_from.clone() else {
             return;
         };

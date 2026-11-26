@@ -712,9 +712,12 @@ fn workflow_preview(
     }
     let head = head.then(|| {
         format!(
-            "{} · times out after {} · {} misses allowed · version {}",
+            "{} · {} · {} misses allowed · version {}",
             template.place.label(),
-            template.timeout,
+            match template.timeout_limit() {
+                Some(_) => format!("times out after {}", template.timeout_said()),
+                None => "no time limit".to_string(),
+            },
             template.misses,
             template.version
         )
