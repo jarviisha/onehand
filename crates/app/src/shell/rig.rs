@@ -276,3 +276,11 @@ pub(crate) fn kept_conversation(
     });
     std::fs::write(dir.join("meta.json"), meta.to_string()).unwrap();
 }
+
+/// `shell`'s board page.
+pub(crate) fn board_page(
+    shell: &Entity<crate::shell::Shell>,
+    cx: &mut VisualTestContext,
+) -> Entity<crate::board_page::BoardPage> {
+    cx.update(|_, cx| shell.read(cx).board_page.clone())
+}
