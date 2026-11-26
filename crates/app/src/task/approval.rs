@@ -8,14 +8,10 @@ use crate::controls::Refuses as _;
 use crate::controls::Short as _;
 use crate::controls::text_area;
 use gpui::prelude::FluentBuilder as _;
-use gpui::{
-    App, AppContext as _, InteractiveElement as _, IntoElement, ParentElement, Rems, Styled,
-    Window, div, rems,
-};
+use gpui::{App, AppContext as _, IntoElement, ParentElement, Rems, Styled, Window, div, rems};
 use gpui_component::WindowExt as _;
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::TextareaState;
-use gpui_component::scroll::ScrollableElement as _;
 use gpui_component::{ActiveTheme, StyledExt};
 use onehand_core::task::Approval;
 use onehand_core::task::work::{ANSWER_CHANGED, UnderReview, Waits};
@@ -101,15 +97,11 @@ pub(crate) fn open_review(
                                 .child(ANSWER_CHANGED),
                         )
                     })
-                    .child(
-                        div()
-                            .id("workflow-review-scroll")
-                            .max_h(REVIEW_MAX_H)
-                            .child(body)
-                            // With a bar of its own, so it still scrolls when the dialog body
-                            // around it overflows too.
-                            .overflow_y_scrollbar(),
-                    ),
+                    .child(crate::dialogs::scrolled(
+                        "workflow-review-scroll",
+                        REVIEW_MAX_H,
+                        body,
+                    )),
             )
             .footer(
                 div()

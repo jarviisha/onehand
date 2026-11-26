@@ -10,12 +10,8 @@ use super::metrics::{CODE_BLOCK_PAD, MAX_CODE_BLOCK_H};
 use crate::controls::{Quiet as _, Short as _};
 use crate::tokens::{CHROME_TEXT, CODE_TEXT, LEADING};
 use gpui::prelude::FluentBuilder as _;
-use gpui::{
-    App, ClipboardItem, InteractiveElement as _, ParentElement, Rems, SharedString, Styled, Window,
-    div, rems,
-};
+use gpui::{App, ClipboardItem, ParentElement, Rems, SharedString, Styled, Window, div, rems};
 use gpui_component::button::ButtonVariants as _;
-use gpui_component::scroll::ScrollableElement as _;
 use gpui_component::text::{TextView, TextViewStyle};
 use gpui_component::{ActiveTheme, StyledExt as _, WindowExt as _};
 
@@ -105,15 +101,11 @@ pub(super) fn open(
                 div()
                     .v_flex()
                     .gap_2()
-                    .child(
-                        div()
-                            .id("code-view-scroll")
-                            .max_h(CODE_VIEW_MAX_H)
-                            .child(body)
-                            // With a bar of its own, so it still scrolls when the dialog body
-                            // around it overflows too.
-                            .overflow_y_scrollbar(),
-                    )
+                    .child(crate::dialogs::scrolled(
+                        "code-view-scroll",
+                        CODE_VIEW_MAX_H,
+                        body,
+                    ))
                     .when_some(total, |col, total| {
                         col.child(
                             div()

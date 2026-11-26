@@ -546,6 +546,26 @@ fn form_width(window: &Window) -> gpui::Pixels {
     width_in(window, crate::tokens::DIALOG_FORM)
 }
 
+/// A part of a dialog's body that scrolls by itself, `body` up to `max_h`
+/// tall, with a bar of its own, so it still scrolls when the dialog body
+/// around it overflows too.
+///
+/// The frame reaches back through the dialog's own padding and the body gives
+/// that much back, so the thumb runs in the padding: `body` is as wide as it
+/// was, and nothing of it lies under the thumb.
+pub(crate) fn scrolled(id: &'static str, max_h: gpui::Rems, body: impl IntoElement) -> gpui::Div {
+    use gpui_component::scroll::ScrollableElement as _;
+    let lane = crate::tokens::SCROLLBAR_W;
+    div().mr(-lane).child(
+        div()
+            .id(id)
+            .max_h(max_h)
+            .pr(lane)
+            .child(body)
+            .overflow_y_scrollbar(),
+    )
+}
+
 /// `width`, or the window less a dialog's margin on each side when that is
 /// narrower: the library centres a dialog by its width and never shrinks it.
 pub(crate) fn width_in(window: &Window, width: gpui::Rems) -> gpui::Pixels {

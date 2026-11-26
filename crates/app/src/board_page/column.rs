@@ -86,6 +86,10 @@ pub(super) fn column(parts: ColumnParts, cx: &App) -> gpui::Div {
         .overflow_y_scroll()
         .restrict_scroll_to_axis()
         .track_scroll(&scroll)
+        // The card's own inset, given back to the rows: the frame below
+        // reaches through it, so the thumb runs down the card's edge in that
+        // lane and never over a row.
+        .pr_3()
         .on_scroll_wheel(move |event, window, cx| {
             let delta = event.delta.pixel_delta(window.line_height());
             if wheel_scroll.max_offset().y > gpui::px(0.) && delta.y != gpui::px(0.) {
@@ -104,6 +108,7 @@ pub(super) fn column(parts: ColumnParts, cx: &App) -> gpui::Div {
                 .relative()
                 .v_flex()
                 .min_h_0()
+                .mr(gpui::rems(-0.75))
                 .child(list)
                 .child(onehand_ui::scrollbar(&scroll).id(key.bar_id())),
         )

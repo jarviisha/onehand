@@ -210,7 +210,7 @@ All in `onehand_ui::tokens` (`crates/ui/src/tokens.rs`), which the app names
 | `ROW_INSET` | 1rem | where a tree row's content starts from a dock's edge (Files, Markdown), and a Workbench bar's words |
 | `ROW_GUTTER` | 0.5rem | how far a tree row's fill stands off the dock's side edges, inside `ROW_INSET` |
 | `TREE_INDENT` | 0.875rem | how far each level of a tree steps in |
-| `SCROLLBAR_W` | 16px | room held clear beside text the library's scrollbar scrolls (the transcript's boxes, the Markdown reader) |
+| `SCROLLBAR_W` | 16px | room held clear beside what the library's scrollbar scrolls (the transcript's boxes, the Markdown reader, a dialog's scrolling part) |
 | `lift(cx)` | | the floating shadow |
 
 Equal values kept apart on purpose, each one decision beside its one use: `CHAT_MIN` and
