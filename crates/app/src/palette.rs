@@ -283,6 +283,7 @@ pub(crate) fn palette_field(
             |input, key| input.suffix(gpui_component::kbd::Kbd::new(key)),
         );
     div()
+        .debug_selector(|| "palette-field".into())
         .v_flex()
         .min_w_0()
         .w(TITLE_SEARCH_W)
@@ -355,9 +356,13 @@ fn list(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement + use<> {
     // hangs from an empty line under the field rather than covering it.
     div().relative().w_full().child(
         gpui::deferred(
-            gpui::anchored()
-                .snap_to_window()
-                .child(div().w(TITLE_SEARCH_W).occlude().child(surface)),
+            gpui::anchored().snap_to_window().child(
+                div()
+                    .debug_selector(|| "palette-list".into())
+                    .w(TITLE_SEARCH_W)
+                    .occlude()
+                    .child(surface),
+            ),
         )
         .with_priority(1),
     )

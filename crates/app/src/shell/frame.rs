@@ -174,6 +174,7 @@ impl Shell {
         );
         h_flex().flex_1().items_center().gap_1().child(
             h_flex()
+                .debug_selector(|| "title-start".into())
                 .flex_none()
                 .items_center()
                 .gap_1()
@@ -192,6 +193,7 @@ impl Shell {
         let terminal = self.dock.read(cx).is_dock_open(DockPlacement::Bottom);
         let live = self.terminal_live;
         let toggles = h_flex()
+            .debug_selector(|| "title-toggles".into())
             .flex_none()
             .gap_1()
             .pr_2()
@@ -292,6 +294,7 @@ fn panel_toggle(
         false => cx.theme().muted_foreground,
     };
     action(id)
+        .debug_selector(move || id.into())
         .quiet(cx)
         .short_icon()
         .icon(Icon::new(icon).text_color(ink))
@@ -300,32 +303,4 @@ fn panel_toggle(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{MENUS, Toggle, toggle_order};
-    use crate::keymap::COMMANDS;
-
-    /// The toggles at the title bar's end read as the window does, left to
-    /// right: the terminal under the boxes, the Workbench on the right, and
-    /// Settings in the corner.
-    #[test]
-    fn the_title_bar_end_toggles_terminal_workbench_then_settings() {
-        assert_eq!(
-            toggle_order(),
-            [Toggle::Terminal, Toggle::Workbench, Toggle::Settings]
-        );
-    }
-
-    /// A menu item names a command the keymap holds, or the menus cannot be
-    /// built at all.
-    #[test]
-    fn every_menu_item_is_a_command() {
-        for (menu, items) in MENUS {
-            for (id, _) in items.iter().flatten() {
-                assert!(
-                    COMMANDS.iter().any(|command| command.id == *id),
-                    "{menu} names `{id}`, which the keymap does not hold"
-                );
-            }
-        }
-    }
-}
+mod tests;

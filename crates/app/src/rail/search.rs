@@ -9,7 +9,7 @@ use crate::controls::Quiet as _;
 use crate::controls::Short as _;
 use crate::shell::Shell;
 use gpui::prelude::FluentBuilder as _;
-use gpui::{Anchor, Context, IntoElement, ParentElement, Styled, div};
+use gpui::{Anchor, Context, InteractiveElement as _, IntoElement, ParentElement, Styled, div};
 use gpui_component::menu::DropdownMenu as _;
 use gpui_component::{ActiveTheme, Icon, IconName, Selectable as _, StyledExt, h_flex};
 use onehand_ui::ShortIcon as _;
@@ -75,6 +75,7 @@ pub(crate) fn workspace_control(
         .child(onehand_ui::menu_below(
             "workspace-menu",
             crate::controls::action("workspace-segment")
+                .debug_selector(|| "title-workspace".into())
                 .quiet(cx)
                 .short()
                 .child(label)

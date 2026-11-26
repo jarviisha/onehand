@@ -49,7 +49,8 @@ pub(super) fn open(launch: Launch, cx: &mut App) {
 /// The smallest the window may be dragged to: the rail's minimum beside the
 /// conversation's, and a transcript still a few turns tall. Pixels, because it
 /// is a bound measured against the screen, not something drawn inside a zoom.
-const WINDOW_MIN: gpui::Size<gpui::Pixels> = gpui::size(gpui::px(720.), gpui::px(480.));
+pub(in crate::shell) const WINDOW_MIN: gpui::Size<gpui::Pixels> =
+    gpui::size(gpui::px(720.), gpui::px(480.));
 
 /// Open a window for `workspace` and register it, writing the workspace once
 /// its window exists when `write` says to, so a write that fails is said there.
