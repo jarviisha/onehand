@@ -533,8 +533,9 @@ room and leaves the terminal as it is.
   a switch). Problems in a bar along the page's foot, none on a new form nobody has changed.
 - *Board* (a project's, from its dots menu and the link on its project page): a head (*Board*, then
   the project, its workflow and *team of N*, *Edit workflow* at its end unless the workflow is
-  gone); columns of one width side by side, scrolling sideways: *Backlog*, *To do*, a column per
-  step of the workflow, *Done*. Each draws 50 rows and says *N more not shown*. A Backlog row's `⋯`
+  gone); columns of one width side by side: *Backlog*, *To do*, a column per step of the workflow,
+  *Done*. They scroll sideways (a wheel over the gaps or the heads, or the scrollbar along the
+  foot), and each column scrolls on its own, as tall as the page at most. Each draws 50 rows and says *N more not shown*. A Backlog row's `⋯`
   offers *Move to To do*, a To do row's *Move up*, *Move down* and *Back to Backlog*, a task's *Show
   task*; a step's column head, a `⋯` with *Edit step*. An issue row also drags, its title following
   the pointer: onto a To do row it lands just before that row, onto To do elsewhere last, onto the

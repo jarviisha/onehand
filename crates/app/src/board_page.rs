@@ -1,6 +1,6 @@
 //! A project's board: its Backlog, its To do, a column per step of its
 //! workflow and what is done, side by side, scrolling sideways when they do
-//! not fit. What stands in each column is `onehand_core::board`'s to say;
+//! not fit, each column scrolling its own rows. What stands in each column is `onehand_core::board`'s to say;
 //! this draws it and carries the person's To do changes to the projects'
 //! drive. An entity of the window's, drawn by the chat pane as the Tasks
 //! page is.
@@ -12,8 +12,8 @@ use crate::state::Shared;
 use crate::task::Row;
 use gpui::{
     App, AppContext as _, BorrowAppContext as _, Context, EventEmitter, FocusHandle,
-    InteractiveElement, IntoElement, ParentElement, Rems, Render, SharedString, Stateful,
-    StatefulInteractiveElement, Styled, Subscription, Window, div, rems,
+    InteractiveElement, IntoElement, ParentElement, Rems, Render, ScrollHandle, SharedString,
+    Stateful, StatefulInteractiveElement, Styled, Subscription, Window, div, rems,
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::menu::ContextMenuExt as _;
@@ -42,6 +42,10 @@ pub(crate) struct BoardPage {
     _issues_seen: Option<Subscription>,
     /// One tab stop per row drawn, so the keyboard reaches each row's `⋯`.
     rows: HashMap<RowKey, FocusHandle>,
+    /// Where the columns stand scrolled sideways.
+    across: ScrollHandle,
+    /// Where each column's rows stand scrolled, by the column's key.
+    down: HashMap<String, ScrollHandle>,
     /// Focused when the page shows, so its keys have somewhere to land.
     focus: FocusHandle,
 }
@@ -92,6 +96,8 @@ impl BoardPage {
             issues: None,
             _issues_seen: None,
             rows: HashMap::new(),
+            across: ScrollHandle::new(),
+            down: HashMap::new(),
             focus: cx.focus_handle(),
         }
     }
@@ -105,6 +111,8 @@ impl BoardPage {
     pub(crate) fn show(&mut self, project: ProjectId, window: &mut Window, cx: &mut Context<Self>) {
         if self.project.as_ref() != Some(&project) {
             self.rows.clear();
+            self.down.clear();
+            self.across = ScrollHandle::new();
         }
         let local = (Shared::global(cx).projects.get(&project))
             .and_then(|p| onehand_core::board::local(p).ok());
@@ -138,6 +146,12 @@ impl BoardPage {
             .entry(key)
             .or_insert_with(|| cx.focus_handle().tab_stop(true))
             .clone()
+    }
+
+    /// The id of the column of `key`'s rows, and where they stand scrolled.
+    fn scroll(&mut self, key: &str) -> (SharedString, ScrollHandle) {
+        let handle = self.down.entry(key.to_string()).or_default().clone();
+        (format!("board-column-{key}").into(), handle)
     }
 
     /// The page, read per frame: a task moving already redraws every window,
@@ -186,21 +200,32 @@ impl BoardPage {
         let mut taken = tasks.taken;
         taken.extend(Shared::global(cx).projects.starting(&id));
         let columns = self.columns(&id, &board, tasks.steps, tasks.done, &taken, cx);
+        // Sideways alone: gpui turns a plain wheel into sideways travel only
+        // on a box that scrolls on x and not y, so the gaps and the heads
+        // move the board while each column moves its own rows.
         let body = div()
-            .id("board-columns")
+            .relative()
             .flex_1()
             .min_h_0()
-            .overflow_scroll()
-            .px_8()
-            .py_6()
             .child(
                 div()
-                    .h_flex()
-                    .items_start()
-                    .gap_6()
-                    .text_size(crate::tokens::CHROME_TEXT)
-                    .children(columns),
+                    .id("board-columns")
+                    .size_full()
+                    .overflow_x_scroll()
+                    .track_scroll(&self.across)
+                    .px_8()
+                    .py_6()
+                    .child(
+                        div()
+                            .h_flex()
+                            .h_full()
+                            .items_start()
+                            .gap_6()
+                            .text_size(crate::tokens::CHROME_TEXT)
+                            .children(columns),
+                    ),
             )
+            .child(onehand_ui::scrollbar_horizontal(&self.across).id("board-columns-bar"))
             .into_any_element();
         self.frame(head, body)
     }
@@ -267,17 +292,25 @@ impl BoardPage {
         // Taking an issue out of To do is the one drop the Backlog takes.
         let backlog = {
             let id = id.clone();
-            column("Backlog", count, drawn, backlog_note, None, cx)
-                .drag_over::<IssueDrag>(|style, drag, _, cx| match drag.from {
-                    Column::Todo => style.bg(cx.theme().list_hover),
-                    Column::Backlog => style,
-                })
-                .on_drop(move |drag: &IssueDrag, _, cx| {
-                    if drag.from == Column::Todo {
-                        change_todo(&id, Todo::Drop(drag.issue), cx);
-                    }
-                })
-                .into_any_element()
+            column(
+                "Backlog",
+                count,
+                drawn,
+                backlog_note,
+                None,
+                self.scroll("backlog"),
+                cx,
+            )
+            .drag_over::<IssueDrag>(|style, drag, _, cx| match drag.from {
+                Column::Todo => style.bg(cx.theme().list_hover),
+                Column::Backlog => style,
+            })
+            .on_drop(move |drag: &IssueDrag, _, cx| {
+                if drag.from == Column::Todo {
+                    change_todo(&id, Todo::Drop(drag.issue), cx);
+                }
+            })
+            .into_any_element()
         };
 
         // To do, in the order the team pulls it.
@@ -318,6 +351,7 @@ impl BoardPage {
                 drawn,
                 empty.then(|| "Nothing to do; move an issue here from the Backlog".to_string()),
                 None,
+                self.scroll("todo"),
                 cx,
             )
             .drag_over::<IssueDrag>(move |style, _, _, cx| match empty {
@@ -363,6 +397,10 @@ impl BoardPage {
             .take(BOARD_SHOWN)
             .map(|row| self.task_row(label, row, cx))
             .collect();
+        let scroll = match &step {
+            Some(step) => self.scroll(&format!("step-{step}")),
+            None => self.scroll(label),
+        };
         let more = step.map(|step| {
             let page = cx.entity().downgrade();
             let key = format!("board-step-{step}-more");
@@ -379,6 +417,7 @@ impl BoardPage {
             drawn,
             (count == 0).then(|| empty.to_string()),
             more,
+            scroll,
             cx,
         )
         .into_any_element()
@@ -569,23 +608,52 @@ fn edit_workflow(cx: &Context<BoardPage>) -> gpui::AnyElement {
 
 /// A column: a box with its name and count, `control` at its head's end,
 /// `rows` capped at [`BOARD_SHOWN`] (said under them when it bites), and
-/// `note` where there is nothing to list.
+/// `note` where there is nothing to list. As tall as its rows, up to the
+/// board's height; past it the rows scroll under `scroll`, the head and the
+/// cap's line kept in place.
 fn column(
     title: impl Into<SharedString>,
     count: usize,
     rows: Vec<gpui::AnyElement>,
     note: Option<String>,
     control: Option<gpui::AnyElement>,
+    (id, scroll): (SharedString, ScrollHandle),
     cx: &App,
 ) -> gpui::Div {
     let muted = cx.theme().muted_foreground;
     let muted_line = |text: String| div().text_xs().text_color(muted).child(text);
     let hidden = count.saturating_sub(BOARD_SHOWN);
+    // A column with rows to scroll keeps the wheel; one that fits hands it
+    // on to the board, which moves sideways. Its own axis only, so a
+    // sideways swipe over it moves the board too.
+    let held = scroll.clone();
+    let list = div()
+        .id(id.clone())
+        .min_h_0()
+        .overflow_y_scroll()
+        .restrict_scroll_to_axis()
+        .track_scroll(&scroll)
+        .on_scroll_wheel(move |event, window, cx| {
+            let delta = event.delta.pixel_delta(window.line_height());
+            if held.max_offset().y > gpui::px(0.) && delta.y != gpui::px(0.) {
+                cx.stop_propagation();
+            }
+        })
+        .child(ruled(rows, cx));
     page_card(title.into(), Some(count), control, cx)
         .flex_none()
         .w(COLUMN_W)
+        .max_h_full()
+        .min_h_0()
         .children(note.map(muted_line))
-        .child(ruled(rows, cx))
+        .child(
+            div()
+                .relative()
+                .v_flex()
+                .min_h_0()
+                .child(list)
+                .child(onehand_ui::scrollbar(&scroll).id(SharedString::from(format!("{id}-bar")))),
+        )
         .children((hidden > 0).then(|| muted_line(format!("{hidden} more not shown"))))
 }
 
