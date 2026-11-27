@@ -276,7 +276,8 @@ large or its list overfull. Each came from a fault seen in the app.
 - Checked by: tests `one_history_row_keeps_its_height_and_its_trailing_slot`,
   `every_history_row_keeps_its_height_and_its_trailing_slot`,
   `a_long_project_name_truncates_and_its_tail_keeps_its_width`,
-  `a_rows_facts_give_way_before_its_title`.
+  `a_rows_facts_give_way_before_its_title`,
+  `what_a_row_continued_gives_way_before_its_facts_and_its_title`.
 
 #### L-07 A row of actions stays on one line
 

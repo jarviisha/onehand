@@ -35,10 +35,12 @@ const BRANCH_FIELD_W: gpui::Rems = gpui::rems(16.);
 
 /// A picker of the page's composer opening its menu below: its words cut,
 /// rather than run past the card or the pane, when its row runs short, as it
-/// does in a narrow pane at a large zoom.
+/// does in a narrow pane at a large zoom, and said whole, `whole`, in its
+/// tooltip.
 pub(super) fn page_menu(
     id: impl Into<gpui::ElementId>,
     trigger: gpui_component::button::Button,
+    whole: impl Into<SharedString>,
     build: impl Fn(
         gpui_component::menu::PopupMenu,
         &mut Window,
@@ -49,6 +51,7 @@ pub(super) fn page_menu(
     let id = id.into();
     let marked = id.to_string();
     let trigger = trigger
+        .tooltip(whole)
         .debug_selector(move || marked)
         .flex_shrink_1()
         .min_w_0();
@@ -476,8 +479,11 @@ impl ChatPane {
         let invalid = (start == StartIn::NewWorktree && !branch.is_empty())
             .then(|| onehand_core::worktree::validate_branch(&branch).err())
             .flatten();
+        // Short of room, the branch field goes onto a line of its own
+        // rather than squeeze the chips beside it to nothing.
         let strip = div()
             .h_flex()
+            .flex_wrap()
             .items_center()
             .gap_2()
             .w_full()
@@ -485,6 +491,7 @@ impl ChatPane {
             .when(start == StartIn::NewWorktree, |strip| {
                 strip.child(
                     div()
+                        .debug_selector(|| "page-branch".into())
                         .w(BRANCH_FIELD_W)
                         .min_w_0()
                         .child(text_input(&self.page_branch, cx).disabled(locked)),
@@ -542,6 +549,7 @@ impl ChatPane {
                 onehand_ui::ControlSize::Short,
                 cx,
             ),
+            picked.clone(),
             move |mut menu, _, _| {
                 menu = menu.item(crate::controls::menu_label("Agent"));
                 for name in &names {
@@ -601,11 +609,12 @@ impl ChatPane {
             "page-start-in",
             onehand_ui::picker(
                 "page-start-in-trigger",
-                label,
+                label.clone(),
                 false,
                 onehand_ui::ControlSize::Short,
                 cx,
             ),
+            label,
             move |mut menu, _, _| {
                 menu = menu.item(crate::controls::menu_label("Start in"));
                 let pick = |start: StartIn| {

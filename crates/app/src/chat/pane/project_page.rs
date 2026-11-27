@@ -3,6 +3,7 @@ use super::{ChatPane, ChatPaneEvent, ProjectFacts, build_chip, rel_time};
 use crate::controls::Short as _;
 use crate::page_parts::{count_of, page_card, page_head, ruled};
 use crate::tokens::PAGE_PROSE;
+use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, Context, FocusHandle, InteractiveElement, IntoElement, ParentElement, SharedString,
     StatefulInteractiveElement, Styled, Window, div,
@@ -407,24 +408,35 @@ impl ChatPane {
 
         let root = project.path.clone();
         let checking = crate::task::checking(&root, cx);
+        let on_host = project.host.is_some() && project.mirror.is_none();
         let path = host::place(
             project.host.as_ref().filter(|_| project.mirror.is_none()),
             &project.path,
             std::env::home_dir().as_deref(),
         );
-        // On one line: the path gives way first, from its start, so the
-        // folder's own name is the last of it to go, and then what git says.
+        // On one line: the path gives way first, and then what git says. It
+        // is cut from its start, so the folder's own name is the last of it
+        // to go; one on a host from its middle, so the host's name before it
+        // stays too. Cut, it is said whole in its tooltip.
+        let whole = SharedString::from(path.clone());
         let place = div()
             .h_flex()
             .min_w_0()
             .child(facts::natural(
                 path.clone(),
                 div()
+                    .id("project-page-path")
                     .debug_selector(|| "project-page-path".into())
                     .overflow_hidden()
                     .whitespace_nowrap()
-                    .text_ellipsis_start()
+                    .map(|path| match on_host {
+                        true => path.text_ellipsis_middle(),
+                        false => path.text_ellipsis_start(),
+                    })
                     .child(path)
+                    .tooltip(onehand_ui::tip(move |window, cx| {
+                        gpui_component::tooltip::Tooltip::new(whole.clone()).build(window, cx)
+                    }))
                     .into_any_element(),
                 GIVES_FIRST,
             ))
@@ -592,39 +604,51 @@ impl ChatPane {
                         // has worked in the project, and resuming a row
                         // starts a session on the one that held it.
                         // The title is what the row is for, so what stands
-                        // beside it gives way first: the facts, cut and then
-                        // dropped, then what it continued, and only then the
-                        // title.
+                        // beside it takes only the room the title leaves:
+                        // the facts first, and what it continued the rest,
+                        // which gives way first.
                         .children(meta.continued.as_ref().map(|earlier| {
-                            div()
-                                .flex_shrink(GIVES_FIRST)
-                                .min_w_0()
-                                .max_w(gpui::relative(0.4))
-                                .truncate()
-                                .text_xs()
-                                .text_color(muted)
-                                .child(format!("Continued from {earlier}"))
+                            let said = format!("Continued from {earlier}");
+                            facts::leftover(
+                                said.clone(),
+                                "Continued from",
+                                div()
+                                    .debug_selector(move || format!("home-continued-{i}"))
+                                    .truncate()
+                                    .text_xs()
+                                    .text_color(muted)
+                                    .child(said)
+                                    .into_any_element(),
+                            )
+                            .lettered(gpui::StyleRefinement::default().text_xs().text)
                         }))
                         // The count leads: cut short it says nothing, so
                         // the line goes once the count no longer fits.
-                        .child(facts::facts(
-                            div()
-                                .debug_selector(move || format!("home-facts-{i}"))
-                                .flex_none()
-                                .whitespace_nowrap()
-                                .text_xs()
-                                .text_color(muted)
-                                .child(count_of(meta.item_count, "item"))
-                                .into_any_element(),
-                            div()
-                                .min_w_0()
-                                .truncate()
-                                .text_xs()
-                                .text_color(muted)
-                                .child(format!(" · {}", meta.agent))
-                                .into_any_element(),
-                            true,
-                        ))
+                        .child(
+                            facts::facts(
+                                div()
+                                    .debug_selector(move || format!("home-facts-{i}"))
+                                    .flex_none()
+                                    .whitespace_nowrap()
+                                    .text_xs()
+                                    .text_color(muted)
+                                    .child(count_of(meta.item_count, "item"))
+                                    .into_any_element(),
+                                div()
+                                    .debug_selector(move || format!("home-facts-rest-{i}"))
+                                    .min_w_0()
+                                    .truncate()
+                                    .text_xs()
+                                    .text_color(muted)
+                                    .child(format!(" · {}", meta.agent))
+                                    .into_any_element(),
+                                true,
+                            )
+                            .ahead(
+                                format!("{} · {}", count_of(meta.item_count, "item"), meta.agent),
+                                gpui::StyleRefinement::default().text_xs().text,
+                            ),
+                        )
                         .on_click(
                             cx.listener(move |_: &mut Self, _, _, cx| cx.emit(resumed.event())),
                         )

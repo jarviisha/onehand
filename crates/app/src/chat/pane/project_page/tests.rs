@@ -25,6 +25,18 @@ fn page<'a>(
     titles: &[String],
     cx: &'a mut TestAppContext,
 ) -> (Entity<crate::shell::Shell>, &'a mut VisualTestContext) {
+    page_with(name, seed, titles, None, cx)
+}
+
+/// [`page`], each conversation having continued the one titled `continued`
+/// when it is given.
+fn page_with<'a>(
+    name: &str,
+    seed: u64,
+    titles: &[String],
+    continued: Option<&str>,
+    cx: &'a mut TestAppContext,
+) -> (Entity<crate::shell::Shell>, &'a mut VisualTestContext) {
     let dir = folder(name);
     let home = dir.join("p");
     std::fs::create_dir_all(&home).unwrap();
@@ -37,6 +49,15 @@ fn page<'a>(
     for (i, title) in titles.iter().enumerate() {
         let sid = format!("{name}-{i}-{}", std::process::id());
         kept_conversation(&sid, &home, &project.id, Some(title));
+        if let Some(earlier) = continued {
+            let at = onehand_core::chat::conversations_dir()
+                .join(&sid)
+                .join("meta.json");
+            let mut meta: serde_json::Value =
+                serde_json::from_str(&std::fs::read_to_string(&at).unwrap()).unwrap();
+            meta["prefs"]["continued"] = earlier.into();
+            std::fs::write(&at, meta.to_string()).unwrap();
+        }
     }
     let at = home.clone();
     cx.update(|window, cx| shell.update(cx, |shell, cx| shell.open_root(at, window, cx)));
@@ -279,6 +300,12 @@ fn the_composers_controls_stay_inside_their_boxes(_: &mut TestAppContext) {
         let (shell, cx) = page(&format!("strain-home-composer-{zoom}"), seed, &[], &mut app);
         zoom_pane(&shell, steps, cx);
         width(cx, NARROWEST);
+        width(cx, WIDE);
+        assert!(
+            cx.debug_bounds("page-agent-default").is_some(),
+            "the agent's default line is not drawn in a wide pane at {zoom}%"
+        );
+        width(cx, NARROWEST);
         let (card, column, send) = (
             bounds(cx, "page-card"),
             bounds(cx, "project-page-column"),
@@ -297,6 +324,38 @@ fn the_composers_controls_stay_inside_their_boxes(_: &mut TestAppContext) {
         }
         for part in ["page-start-in", "page-cards"] {
             assert_inside(bounds(cx, part), column, &format!("{part} at {zoom}%"));
+        }
+        // A new worktree's branch field beside them, or under them when the
+        // strip is short of room: it keeps its width, or the column's
+        // whole, and squeezes neither chip.
+        let pane = cx.update(|_, cx| shell.read(cx).chat_pane().clone());
+        cx.update(|window, cx| {
+            pane.update(cx, |pane, cx| {
+                pane.set_page_start(crate::chat::pane::StartIn::NewWorktree, None, window, cx);
+            })
+        });
+        cx.run_until_parked();
+        width(cx, WIDE);
+        let wide = ["page-branch", "page-start-in", "page-cards"].map(|part| bounds(cx, part));
+        width(cx, NARROWEST);
+        let column = bounds(cx, "project-page-column");
+        let field = bounds(cx, "page-branch");
+        assert_inside(field, column, &format!("the branch field at {zoom}%"));
+        assert!(
+            field.size.width + SLACK >= wide[0].size.width.min(column.size.width),
+            "the branch field is down to {field:?} at {zoom}%"
+        );
+        for (part, wide) in ["page-start-in", "page-cards"].into_iter().zip(&wide[1..]) {
+            let at = bounds(cx, part);
+            assert_inside(
+                at,
+                column,
+                &format!("{part} beside the branch field at {zoom}%"),
+            );
+            assert!(
+                same(at.size.width, wide.size.width),
+                "{part} is squeezed to {at:?} beside the branch field at {zoom}%"
+            );
         }
         app.quit();
     }
@@ -369,5 +428,62 @@ fn rows_in_a_scrolling_box_keep_a_lane_beside_its_scrollbar(cx: &mut TestAppCont
             row.right() + onehand_ui::tokens::SCROLLBAR_W <= page.right(),
             "row {i} runs under the scrollbar: {row:?} in {page:?}"
         );
+    }
+}
+
+/// A title `n` characters long on a page of its own, having continued one
+/// titled `earlier`, drawn wide: the title's width, then the bounds of what it
+/// continued, of its facts' count and of the rest of its facts, when drawn.
+fn continued_row(n: usize, earlier: &str) -> (Pixels, [Option<Bounds<Pixels>>; 3]) {
+    let mut app = TestAppContext::single();
+    let (_, cx) = page_with(
+        &format!("strain-home-continued-{n}-{}", earlier.len()),
+        914_000 + n as u64 * 1000 + earlier.len() as u64,
+        &["a".repeat(n)],
+        Some(earlier),
+        &mut app,
+    );
+    width(cx, WIDE);
+    let got = (
+        bounds(cx, "home-title-0").size.width,
+        [
+            cx.debug_bounds("home-continued-0"),
+            cx.debug_bounds("home-facts-0"),
+            cx.debug_bounds("home-facts-rest-0"),
+        ],
+    );
+    app.quit();
+    got
+}
+
+#[gpui::test]
+fn what_a_row_continued_gives_way_before_its_facts_and_its_title(_: &mut TestAppContext) {
+    let earlier = "word ".repeat(6);
+    // Short enough that all of it stands whole: every character's advance,
+    // and the facts at their whole width.
+    let (short, [continued, _, rest]) = continued_row(10, &earlier);
+    assert!(
+        continued.is_some(),
+        "what a short row continued is not drawn"
+    );
+    let advance = short / 10.;
+    let rest_whole = rest.expect("a short row's facts are drawn").size.width;
+    let size = |at: Option<Bounds<Pixels>>| at.map_or(Pixels::ZERO, |at| at.size.width);
+    for n in (30..82).step_by(3) {
+        let (title, [continued, count, rest]) = continued_row(n, &earlier);
+        // Any shortfall at all is a character cut, so no slack here.
+        let natural = advance * n as f32;
+        let cut = title + px(0.01) < natural;
+        assert!(
+            !(cut && (continued.is_some() || count.is_some())),
+            "a {n}-character title is cut to {title:?} of {natural:?} while what it continued ({continued:?}) or its facts ({count:?}) stand"
+        );
+        if continued.is_some() {
+            assert!(
+                same(size(rest), rest_whole),
+                "what a {n}-character title continued stands while its facts are cut to {:?} of {rest_whole:?}",
+                size(rest)
+            );
+        }
     }
 }

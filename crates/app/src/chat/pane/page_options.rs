@@ -147,7 +147,14 @@ impl ChatPane {
         let trigger = SharedString::from(format!("page-group-{}-trigger", group.id));
         super::page_draft::page_menu(
             id,
-            onehand_ui::picker(trigger, label, false, onehand_ui::ControlSize::Short, cx),
+            onehand_ui::picker(
+                trigger,
+                label.clone(),
+                false,
+                onehand_ui::ControlSize::Short,
+                cx,
+            ),
+            label,
             move |mut menu, _, _| {
                 menu = menu.item(crate::controls::menu_label(group.name.clone()));
                 for (value, label) in &group.choices {
@@ -253,6 +260,7 @@ impl ChatPane {
                 onehand_ui::ControlSize::Short,
                 cx,
             ),
+            format!("Cards: {}", level.label()),
             move |mut menu, _, _| {
                 menu = menu.item(crate::controls::menu_label(heading.clone()));
                 for choice in &choices {
