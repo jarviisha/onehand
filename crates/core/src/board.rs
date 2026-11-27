@@ -135,16 +135,16 @@ pub(crate) fn pulls_next(outcome: Option<&Outcome>) -> bool {
     }
 }
 
-/// How many of `project`'s board tasks hold a place on its team: those
-/// `holds` says do. One cut off by a restart does not, nor one out of time at
-/// rest or waiting for a place.
+/// How many of the tasks `board`'s work column names hold a place on its
+/// team: those `holds` says do. One cut off by a restart does not, nor one
+/// out of time at rest or waiting for a place.
 pub fn running<'a>(
     tasks: impl Iterator<Item = &'a Task>,
-    project: &ProjectId,
+    board: &Board,
     holds: &dyn Fn(&str) -> bool,
 ) -> usize {
     tasks
-        .filter(|task| task.board_issue().is_some_and(|(of, _)| of == project))
+        .filter(|task| board.names(task.id()) == Some(model::Place::Work))
         .filter(|task| holds(task.id()))
         .count()
 }
@@ -159,17 +159,11 @@ pub enum ExtendWay {
 }
 
 /// How an Extend on `task` goes: a board's task at rest (not `holds_team`)
-/// whose project still has a board (`has_board`) waits for a place; any
-/// other goes on at once.
-pub fn extend_way(
-    task: &Task,
-    has_board: &dyn Fn(&ProjectId) -> bool,
-    holds_team: bool,
-) -> ExtendWay {
+/// that its board still holds (`on_board`) waits for a place; any other goes
+/// on at once.
+pub fn extend_way(task: &Task, on_board: bool, holds_team: bool) -> ExtendWay {
     match task.board_issue() {
-        Some((project, _)) if !holds_team && has_board(project) => {
-            ExtendWay::WaitForPlace(project.clone())
-        }
+        Some((project, _)) if !holds_team && on_board => ExtendWay::WaitForPlace(project.clone()),
         Some(_) | None => ExtendWay::Now,
     }
 }
@@ -181,15 +175,15 @@ pub(crate) fn extends_given(board: &Board, running: usize, waiting: &[String]) -
     waiting.iter().take(room).cloned().collect()
 }
 
-/// `project`'s board tasks whose extend waits for a place, by when each
-/// asked (`asked`), first first.
+/// The tasks `board`'s work column names whose extend waits for a place, by
+/// when each asked (`asked`), first first.
 pub fn extends_waiting<'a>(
     tasks: impl Iterator<Item = &'a Task>,
-    project: &ProjectId,
+    board: &Board,
     asked: &dyn Fn(&str) -> Option<u64>,
 ) -> Vec<String> {
     let mut waiting: Vec<(u64, String)> = tasks
-        .filter(|task| task.board_issue().is_some_and(|(of, _)| of == project))
+        .filter(|task| board.names(task.id()) == Some(model::Place::Work))
         .filter_map(|task| Some((asked(task.id())?, task.id().to_string())))
         .collect();
     waiting.sort();
@@ -199,7 +193,7 @@ pub fn extends_waiting<'a>(
 /// Whether `task` stands on the board, and whether in Done: one working,
 /// ended needing attention or done does; one a person stopped or took over,
 /// or let go, does not.
-fn on_board(task: &Task, working: &dyn Fn(&str) -> Option<Working>) -> Option<bool> {
+pub(crate) fn on_board(task: &Task, working: &dyn Fn(&str) -> Option<Working>) -> Option<bool> {
     let ended = match working(task.id()) {
         Some(Working::Queued | Working::Running | Working::Waiting) => None,
         None => task.outcome(),
@@ -233,19 +227,29 @@ pub fn seen(task: &Task, working: Option<Working>) -> Option<drive::Seen> {
     })
 }
 
-/// The issues `project`'s board tasks hold out of the Backlog: those of the
-/// tasks on the board. A task that left it gives its issue back.
+/// The issues `board` holds out of the Backlog: those its columns and Done
+/// name, and those of `project`'s board tasks that finished and are not let
+/// go, so an issue whose task fell off Done does not come back.
 pub fn taken<'a>(
+    board: &Board,
     tasks: impl Iterator<Item = &'a Task>,
     project: &ProjectId,
-    working: &dyn Fn(&str) -> Option<Working>,
 ) -> HashSet<u64> {
-    tasks
-        .filter_map(|task| match task.board_issue() {
-            Some((of, issue)) if of == project => on_board(task, working).map(|_| issue),
-            Some(_) | None => None,
-        })
-        .collect()
+    let named = (board.columns.iter())
+        .skip(1)
+        .flat_map(|column| column.entries.iter())
+        .chain(board.done())
+        .map(|entry| entry.issue);
+    let done = tasks.filter_map(|task| match task.board_issue() {
+        Some((of, issue)) if of == project && !task.dismissed() => match task.outcome() {
+            Some(Outcome::Done) => Some(issue),
+            Some(Outcome::Stopped(_) | Outcome::Exhausted { .. } | Outcome::Failed(_)) | None => {
+                None
+            }
+        },
+        Some(_) | None => None,
+    });
+    named.chain(done).collect()
 }
 
 /// The board's columns: a step each, then what is done.
@@ -264,15 +268,18 @@ pub struct Column<'a> {
     pub tasks: Vec<&'a Task>,
 }
 
-/// Place `tasks` in the columns of `template`'s steps by where their last
-/// run is. A task at a step the template lost gets a column after the
-/// others, labelled by the step's id. Done ones go in `done`; one a person
-/// stopped or took over, or dismissed, is in no column.
+/// Place the tasks `board`'s work column names in the columns of
+/// `template`'s steps, by where their last run is, whatever it came to; a
+/// task at a step the template lost gets a column after the others, labelled
+/// by the step's id. Done is the tasks Done names, as it orders them.
 pub fn columns<'a>(
     template: &Template,
+    board: &Board,
     tasks: impl Iterator<Item = &'a Task>,
-    working: &dyn Fn(&str) -> Option<Working>,
 ) -> Columns<'a> {
+    let by_id: std::collections::HashMap<&str, &'a Task> =
+        tasks.map(|task| (task.id(), task)).collect();
+    let of = |entry: &Entry| entry.task.as_deref().and_then(|id| by_id.get(id).copied());
     let mut steps: Vec<Column<'a>> = template
         .steps
         .iter()
@@ -282,16 +289,7 @@ pub fn columns<'a>(
             tasks: Vec::new(),
         })
         .collect();
-    let mut done = Vec::new();
-    for task in tasks {
-        match on_board(task, working) {
-            None => continue,
-            Some(true) => {
-                done.push(task);
-                continue;
-            }
-            Some(false) => {}
-        }
+    for task in board.work().iter().filter_map(of) {
         let Some(at) = task.runs.last().and_then(|run| run.current()) else {
             continue;
         };
@@ -304,7 +302,7 @@ pub fn columns<'a>(
             }),
         }
     }
-    done.sort_by_key(|task| std::cmp::Reverse(task.recency()));
+    let done = board.done().iter().filter_map(of).collect();
     Columns { steps, done }
 }
 

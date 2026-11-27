@@ -389,7 +389,7 @@ fn each_project_keeps_its_newest_finished_tasks() {
     ended.setup.repo = PathBuf::from("/a");
     all.push(ended);
     let listed: Vec<(&Task, Group)> = all.iter().map(|t| (t, t.group(None))).collect();
-    let mut gone = history::over_cap(&listed);
+    let mut gone = history::over_cap(&listed, &Default::default());
     gone.sort();
     assert_eq!(
         gone,
@@ -828,4 +828,17 @@ fn a_board_task_that_is_done_closes_its_session() {
     assert!(!ended(None), "still running");
     assert!(!ended(Some(Outcome::Failed("exit 1".into()))));
     assert!(!ended(Some(Outcome::Stopped(Stop::ByPerson))));
+}
+
+#[test]
+fn a_held_task_is_not_capped() {
+    let n = history::KEPT + 2;
+    let all: Vec<Task> = (0..n)
+        .map(|i| finished(&i.to_string(), "/a", i as u64))
+        .collect();
+    let listed: Vec<(&Task, Group)> = all.iter().map(|t| (t, t.group(None))).collect();
+    let held = std::collections::HashSet::from(["0".to_string()]);
+    let mut gone = history::over_cap(&listed, &held);
+    gone.sort();
+    assert_eq!(gone, ["1"], "the held one is passed over");
 }

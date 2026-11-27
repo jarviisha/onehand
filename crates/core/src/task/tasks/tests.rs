@@ -641,7 +641,7 @@ fn a_finished_task_past_the_history_is_let_go() {
         task.runs[0].outcome = Some(Outcome::Done);
         read.push(task);
     }
-    let fx = tasks.loaded(read);
+    let fx = tasks.loaded(read, Default::default());
     assert_eq!(fx.iter().filter(|e| name(e) == "Remove").count(), 1);
     assert!(has(&fx, |e| name(e) == "DropMarks"
         && task_of(e) == Some("1000")));
@@ -653,7 +653,7 @@ fn a_finished_task_past_the_history_is_let_go() {
 fn tasks_read_at_boot_come_before_those_added_meanwhile() {
     let mut tasks = TasksDrive::<Win>::default();
     tasks.add(check("2", "/a"));
-    tasks.loaded(vec![check("1", "/a"), check("2", "/a")]);
+    tasks.loaded(vec![check("1", "/a"), check("2", "/a")], Default::default());
     let ids: Vec<&str> = tasks.tasks().iter().map(|t| t.id.as_str()).collect();
     assert_eq!(ids, ["1", "2"]);
 }
@@ -1199,4 +1199,43 @@ fn room_reads_a_limited_steps_room_by_its_template() {
     let room = tasks.room(&repo, &template, 0).unwrap();
     assert_eq!((room.limit, room.holding, room.waiting), (2, 2, 1));
     assert_eq!(tasks.room(&repo, &template, 1), None, "not limited");
+}
+
+/// A task a board holds is not let go of by a person: it is the board's.
+#[test]
+fn dismiss_refuses_a_held_task() {
+    let mut tasks = TasksDrive::default();
+    tasks.add(titled("1", "Issue", "/a"));
+    tasks.set_held(std::collections::HashSet::from(["1".to_string()]));
+    let fx = tasks.dismiss("1", WINDOW);
+    assert!(
+        has(&fx, |e| *e
+            == Effect::Signal(Signal::DismissFailed {
+                window: WINDOW,
+                why: "It is on its board; remove it from the board first".into(),
+            })),
+        "{fx:?}"
+    );
+    assert!(!tasks.task("1").unwrap().dismissed);
+}
+
+/// The cap applied as the tasks are read passes over what the boards hold,
+/// told before the read lands.
+#[test]
+fn loaded_caps_nothing_it_was_told_is_held() {
+    let n = crate::task::history::KEPT + 1;
+    let read: Vec<Task> = (0..n)
+        .map(|i| {
+            let mut t = titled(&i.to_string(), "Issue", "/a");
+            t.runs[0].resume(0);
+            t.runs[0].stopped(Stop::ByPerson, 0);
+            for move_ in &mut t.runs[0].history {
+                move_.at = i as u64;
+            }
+            t
+        })
+        .collect();
+    let mut tasks = TasksDrive::<Win>::default();
+    let _ = tasks.loaded(read, std::collections::HashSet::from(["0".to_string()]));
+    assert!(tasks.task("0").is_some(), "held, so kept though oldest");
 }
