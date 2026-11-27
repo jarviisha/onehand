@@ -14,7 +14,8 @@ use std::rc::Rc;
 /// A row's menu, built when it opens: the one its ••• and its right-click share.
 type RowMenu = Rc<dyn Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu>;
 use gpui_component::tooltip::Tooltip;
-use gpui_component::{ActiveTheme, Disableable as _, Icon, IconName, StyledExt};
+use gpui_component::{ActiveTheme, Icon, IconName, StyledExt};
+use onehand_ui::Locked as _;
 use onehand_ui::Named as _;
 use onehand_ui::Quiet as _;
 use onehand_ui::Short as _;
@@ -39,6 +40,10 @@ impl PluginsView {
     /// opens, Space flips the switch. The switch, the update chip and the menu
     /// keep their presses to themselves, so reaching for one never opens the
     /// details as well.
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "a plugin row and its controls, made by hand, which no shared builder draws"
+    )]
     pub(super) fn installed_row(
         &self,
         i: usize,
@@ -55,7 +60,7 @@ impl PluginsView {
         // Always drawn: whether it is on here is a state, which is content.
         // While another change runs it refuses, its tooltip saying why.
         let switch = onehand_ui::toggle(("plugin-on", i), on_here)
-            .disabled(busy)
+            .locked(busy)
             .tooltip(match (busy, on_here) {
                 (true, _) => ONE_AT_A_TIME,
                 (false, true) => "On in this project — turn it off on this machine only",

@@ -17,6 +17,10 @@ use onehand_core::chat::{ChatItem, Standing, SubagentItem, SubagentState};
 
 /// The line for one subagent: its mark, its name, what it is doing or how it
 /// ended, and its steps and time at the end.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "a subagent's head that folds it, made by hand, which no shared builder draws"
+)]
 pub(super) fn subagent(
     session: &Entity<ChatSession>,
     card: &SubagentItem,

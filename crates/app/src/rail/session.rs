@@ -324,7 +324,11 @@ pub(super) fn session_row(
     });
     let tip = title.clone();
     let meta_tip = facts.clone();
-    div()
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "a rail row made by hand, which no shared builder draws"
+    )]
+    let row = div()
         .id(gpui::ElementId::Name(group.clone()))
         .group(group.clone())
         .v_flex()
@@ -349,8 +353,8 @@ pub(super) fn session_row(
         })
         .px_2()
         .rounded(cx.theme().radius)
-        .cursor_pointer()
-        .when(chosen, |d| d.bg(super::row::chosen_fill(cx)))
+        .cursor_pointer();
+    row.when(chosen, |d| d.bg(super::row::chosen_fill(cx)))
         .when(!chosen, |d| d.hover(move |d| d.bg(hover)))
         .on_click(
             cx.listener(move |shell: &mut Shell, _: &ClickEvent, window, cx| {

@@ -141,6 +141,10 @@ pub(super) fn new_session_hint(root: Option<&str>, agent: Option<&str>) -> Share
 /// stop: Enter on it starts the session as a press does, the window turning
 /// Enter on a focused row into its click. With
 /// no project only *Add project…* helps: the row refuses, and its hint says so.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "a rail row made by hand, which no shared builder draws"
+)]
 pub(super) fn new_session_row(
     shell: &Shell,
     window_state: &WorkspaceWindow,

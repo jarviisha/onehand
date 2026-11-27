@@ -294,6 +294,10 @@ pub(super) fn fold_box() -> gpui::Div {
     div().v_flex().gap_1().w_full().min_w_0()
 }
 
+#[expect(
+    clippy::disallowed_methods,
+    reason = "a fold line made by hand, which no shared builder draws"
+)]
 pub(super) fn fold_line(
     id: impl Into<gpui::ElementId>,
     open: bool,

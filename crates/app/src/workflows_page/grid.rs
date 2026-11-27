@@ -134,6 +134,10 @@ pub(super) fn head(
 /// One workflow's card, the `i`th the page shows: pressed on its body it
 /// opens the workflow; its foot holds *Run…* and its ⋯. It never takes a
 /// fill: hover raises its edge, and the keyboard's focus rings it.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "a workflow card that opens, made by hand, which no shared builder draws"
+)]
 fn card(
     handle: &Entity<WorkflowsPage>,
     i: usize,

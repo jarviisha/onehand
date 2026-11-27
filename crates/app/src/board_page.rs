@@ -552,6 +552,10 @@ impl BoardPage {
             .min_w_0()
             .child(div().truncate().child(title))
             .child(div().text_xs().text_color(ink).truncate().child(line));
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "a card's words open the task, a hand-made press no shared builder draws"
+        )]
         let text = match open {
             Some(open) => text
                 .cursor_pointer()

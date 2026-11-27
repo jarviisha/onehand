@@ -173,6 +173,10 @@ impl ActivityRow {
     }
 }
 
+#[expect(
+    clippy::disallowed_methods,
+    reason = "an activity row that opens, made by hand, which no shared builder draws"
+)]
 pub(in crate::chat::transcript) fn activity_row(
     row: ActivityRow,
     on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,

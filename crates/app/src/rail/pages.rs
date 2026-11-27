@@ -91,6 +91,10 @@ fn page_row<F: Fn(&mut Shell, &mut Window, &mut Context<Shell>) + 'static>(
     cx: &mut Context<Shell>,
     go: F,
 ) -> impl IntoElement + use<F> {
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "a rail row made by hand, which no shared builder draws"
+    )]
     let row = div()
         .id(id)
         .h_flex()

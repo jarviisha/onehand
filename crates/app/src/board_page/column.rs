@@ -13,6 +13,10 @@ use onehand_core::board::BOARD_SHOWN;
 /// one scrolls sideways rather than squeezing every title.
 const COLUMN_W: Rems = rems(17.);
 
+/// How far the scrollbar's frame reaches back through the card's own inset
+/// (`pr_3`), so its thumb runs down the card's edge and never over a row.
+const SCROLLBAR_PULL: Rems = rems(-0.75);
+
 /// Which column a scroll handle is kept for.
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub(super) enum ColumnKey {
@@ -108,7 +112,7 @@ pub(super) fn column(parts: ColumnParts, cx: &App) -> gpui::Div {
                 .relative()
                 .v_flex()
                 .min_h_0()
-                .mr(gpui::rems(-0.75))
+                .mr(SCROLLBAR_PULL)
                 .child(list)
                 .child(onehand_ui::scrollbar(&scroll).id(key.bar_id())),
         )

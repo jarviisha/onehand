@@ -30,6 +30,9 @@ pub(super) struct PageFiles {
 /// How many files a page offers `@`, as a session does.
 const PAGE_MENTION_FILES: usize = crate::chat::session::MAX_MENTION_FILES;
 
+/// How wide the new worktree's branch field stands beside its start chip.
+const BRANCH_FIELD_W: gpui::Rems = gpui::rems(16.);
+
 /// A project page's draft, kept while the person is elsewhere.
 #[derive(Default)]
 pub(super) struct PageDraft {
@@ -459,7 +462,7 @@ impl ChatPane {
             .when(start == StartIn::NewWorktree, |strip| {
                 strip.child(
                     div()
-                        .w(gpui::rems(16.))
+                        .w(BRANCH_FIELD_W)
                         .child(text_input(&self.page_branch, cx).disabled(locked)),
                 )
             });

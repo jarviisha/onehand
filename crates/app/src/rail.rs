@@ -398,6 +398,10 @@ fn more(group: Option<PathBuf>, hidden: usize, cx: &mut Context<Shell>) -> AnyEl
 
 /// The list's last two rows: the way to grow it, with a folder here or, with
 /// `on_host`, with one on a host. Set apart from the list above by the first.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the rail's add-a-project row, made by hand, which no shared builder draws"
+)]
 fn add_project(on_host: bool, cx: &mut Context<Shell>) -> AnyElement {
     let hover = row::hover_fill(cx);
     let (id, label, tip) = match on_host {

@@ -256,7 +256,11 @@ pub(super) fn project_row(
     let (fold_path, ghost) = (root.path.clone(), root.label.clone());
     let label = root.label.clone();
 
-    div()
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "a rail row made by hand, which no shared builder draws"
+    )]
+    let row = div()
         .id(gpui::ElementId::Name(key.clone()))
         .group(key.clone())
         .h_flex()
@@ -266,8 +270,8 @@ pub(super) fn project_row(
         .px_2()
         .gap_2()
         .rounded(radius)
-        .cursor_pointer()
-        .when(chosen, |d| d.bg(super::row::chosen_fill(cx)))
+        .cursor_pointer();
+    row.when(chosen, |d| d.bg(super::row::chosen_fill(cx)))
         .when(!chosen, |d| d.hover(move |d| d.bg(hover)))
         .text_color(name_ink)
         .font_medium()

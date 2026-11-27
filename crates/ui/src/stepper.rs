@@ -21,6 +21,10 @@ const RAIL_X: Rems = rems(0.6875);
 /// half the line.
 const RAIL_JOIN: Rems = rems(1.25);
 
+/// How wide the rail stands: a hairline-wide fill, since a zero-width box's
+/// edge draws nothing.
+const RAIL_W: gpui::Pixels = gpui::px(1.);
+
 /// What a step's dot says.
 #[derive(Clone, Copy)]
 pub enum StepMark {
@@ -85,8 +89,7 @@ pub fn step_line(
     cx: &App,
 ) -> AnyElement {
     let rail = cx.theme().input;
-    // A hairline-wide fill: a zero-width box's edge draws nothing.
-    let half = || div().absolute().left(RAIL_X).w(gpui::px(1.)).bg(rail);
+    let half = || div().absolute().left(RAIL_X).w(RAIL_W).bg(rail);
     div()
         .relative()
         .h_flex()

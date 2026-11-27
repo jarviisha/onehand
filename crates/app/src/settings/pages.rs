@@ -222,6 +222,10 @@ pub(super) fn connections_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
 /// on this machine reaching onehand rather than onehand reaching a service.
 /// What it may do is said beside the switch, and what it may never do, since
 /// turning it on is the moment that is decided.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "a switch's label that flips it, made by hand, which no shared builder draws"
+)]
 fn outside_section(cx: &App) -> AnyElement {
     let socket = onehand_core::instance::socket_path(&onehand_core::config::config_dir());
     section(
