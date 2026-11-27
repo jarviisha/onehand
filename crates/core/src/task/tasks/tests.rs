@@ -486,27 +486,15 @@ fn a_done_board_task_closes_every_lanes_session() {
     );
 }
 
-/// A board's task that ends says which issue of which project, whether it
-/// was done, and whether the next is pulled: only after one that left the
-/// board, done or stopped by a person, since one that failed would fail
-/// the next the same way.
+/// A board's task that ends says which issue of which project, which task
+/// and run, and how it ended: what that comes to is the board's.
 #[test]
 fn board_task_end_signals_board_ended() {
-    for (outcome, done, pull) in [
-        (Outcome::Done, true, true),
-        (Outcome::Failed("no".into()), false, false),
-        (Outcome::Stopped(Stop::ByPerson), false, true),
-        (Outcome::Stopped(Stop::TakenOver), false, true),
-        (Outcome::Stopped(Stop::TimedOut), false, false),
-        (Outcome::Stopped(Stop::LinkLost), false, false),
-        (Outcome::Stopped(Stop::Closed), false, false),
-        (
-            Outcome::Exhausted {
-                step: "Verify".into(),
-            },
-            false,
-            false,
-        ),
+    for outcome in [
+        Outcome::Done,
+        Outcome::Failed("no".into()),
+        Outcome::Stopped(Stop::ByPerson),
+        Outcome::Stopped(Stop::TimedOut),
     ] {
         let project: crate::project::ProjectId = serde_json::from_str("\"p1\"").unwrap();
         let mut tasks = TasksDrive::default();
@@ -519,7 +507,8 @@ fn board_task_end_signals_board_ended() {
         });
         ask(&mut tasks, "1", "/a");
         let mut run = tasks.task("1").unwrap().runs[0].clone();
-        run.outcome = Some(outcome);
+        let id = run.id.clone();
+        run.outcome = Some(outcome.clone());
         tasks.run_ended("1", run, usize::MAX, false, vec![7], WINDOW);
         let fx = tasks.handle(Input::Free {
             task: "1".into(),
@@ -530,18 +519,19 @@ fn board_task_end_signals_board_ended() {
                 == Effect::Signal(Signal::BoardEnded {
                     project: project.clone(),
                     issue: 7,
-                    done,
-                    pull
+                    task: "1".into(),
+                    run: Some(id.clone()),
+                    outcome: Some(outcome.clone()),
                 })),
             "{fx:?}"
         );
     }
 }
 
-/// A board's task that could not start once it was made fails, and that
-/// pulls nothing in its place: the next would fail the same way.
+/// A board's task that could not start once it was made fails, and says so
+/// to the board.
 #[test]
-fn a_board_task_that_cannot_start_pulls_nothing() {
+fn a_board_task_that_cannot_start_says_it_failed() {
     let project: crate::project::ProjectId = serde_json::from_str("\"p1\"").unwrap();
     let mut tasks = TasksDrive::default();
     tasks.add(Task {
@@ -558,8 +548,12 @@ fn a_board_task_that_cannot_start_pulls_nothing() {
             == Effect::Signal(Signal::BoardEnded {
                 project: project.clone(),
                 issue: 7,
-                done: false,
-                pull: false
+                task: "1".into(),
+                run: tasks
+                    .task("1")
+                    .and_then(|t| t.runs.last())
+                    .map(|r| r.id.clone()),
+                outcome: Some(Outcome::Failed("no agent".into())),
             })),
         "{fx:?}"
     );

@@ -5,7 +5,8 @@
 use crate::shell::rig::{folder, shell};
 use crate::state::Shared;
 use gpui::{BorrowAppContext as _, Entity, TestAppContext, VisualTestContext};
-use onehand_core::project::{Board, Project, ProjectId, Projects, ProjectsDrive};
+use onehand_core::board::Board;
+use onehand_core::project::{Project, ProjectId, Projects, ProjectsDrive};
 use onehand_core::workflow::Template;
 
 const BRANCH: &str = "builtin:branch";
@@ -95,15 +96,15 @@ fn a_duplicate_saved_for_a_board_rebinds_only_that_board(cx: &mut TestAppContext
     cx.update(|_, cx| {
         cx.update_global::<Shared, _>(|shared, _| {
             shared.projects = ProjectsDrive::new(Projects::from_iter([a, b]), dir.join("projects"));
+            shared.boards = onehand_core::board::drive::BoardDrive::new(
+                Default::default(),
+                Default::default(),
+                dir.join("projects"),
+            );
             for id in [&ia, &ib] {
-                let _ = shared.projects.set_board(
-                    id,
-                    Some(Board {
-                        workflow: BRANCH.into(),
-                        team: 3,
-                        todo: vec![4],
-                    }),
-                );
+                let _ = shared
+                    .boards
+                    .set_board(id, Some(Board::made(BRANCH.into(), 3, &[4], 0)));
             }
         })
     });
@@ -129,21 +130,19 @@ fn a_duplicate_saved_for_a_board_rebinds_only_that_board(cx: &mut TestAppContext
     });
     cx.run_until_parked();
     let board = |id: &ProjectId, cx: &mut VisualTestContext| {
-        cx.update(|_, cx| {
-            Shared::global(cx)
-                .projects
-                .get(id)
-                .and_then(|p| p.board().cloned())
-        })
+        cx.update(|_, cx| Shared::global(cx).boards.board(id).cloned())
     };
     let (copy, _) = opened(&shell, cx).expect("the copy stays open");
     assert_ne!(copy, BRANCH);
     let bound = board(&ia, cx).expect("a board");
     assert_eq!(
-        (bound.workflow.as_str(), bound.team, bound.todo),
+        (bound.workflow(), bound.team, bound.todo()),
         (copy.as_str(), 3, vec![4])
     );
-    assert_eq!(board(&ib, cx).map(|b| b.workflow), Some(BRANCH.to_string()));
+    assert_eq!(
+        board(&ib, cx).map(|b| b.workflow().to_string()),
+        Some(BRANCH.to_string())
+    );
     assert_eq!(
         notes(cx),
         first + 2,
@@ -163,7 +162,10 @@ fn a_duplicate_saved_for_a_board_rebinds_only_that_board(cx: &mut TestAppContext
         })
     });
     cx.run_until_parked();
-    assert_eq!(board(&ib, cx).map(|b| b.workflow), Some(BRANCH.to_string()));
+    assert_eq!(
+        board(&ib, cx).map(|b| b.workflow().to_string()),
+        Some(BRANCH.to_string())
+    );
     assert_eq!(notes(cx), before + 1, "only the save is said");
     let file = onehand_core::workflow::store::dir().join(format!("{copy}.toml"));
     let _ = std::fs::remove_file(file);
@@ -211,14 +213,14 @@ fn a_copy_the_board_cannot_use_is_said_and_one_for_a_gone_board_binds_none(
     cx.update(|_, cx| {
         cx.update_global::<Shared, _>(|shared, _| {
             shared.projects = ProjectsDrive::new(Projects::from_iter([a, b]), dir.join("projects"));
-            let _ = shared.projects.set_board(
-                &ia,
-                Some(Board {
-                    workflow: BRANCH.into(),
-                    team: 3,
-                    todo: Vec::new(),
-                }),
+            shared.boards = onehand_core::board::drive::BoardDrive::new(
+                Default::default(),
+                Default::default(),
+                dir.join("projects"),
             );
+            let _ = shared
+                .boards
+                .set_board(&ia, Some(Board::made(BRANCH.into(), 3, &[], 0)));
         })
     });
     let notes = |cx: &mut VisualTestContext| {
@@ -240,13 +242,6 @@ fn a_copy_the_board_cannot_use_is_said_and_one_for_a_gone_board_binds_none(
     let before = notes(cx);
     bind(&ib, cx);
     assert_eq!(notes(cx), before);
-    assert!(cx.update(|_, cx| {
-        Shared::global(cx)
-            .projects
-            .get(&ib)
-            .unwrap()
-            .board()
-            .is_none()
-    }));
+    assert!(cx.update(|_, cx| { Shared::global(cx).boards.board(&ib).is_none() }));
     let _ = std::fs::remove_dir_all(dir);
 }

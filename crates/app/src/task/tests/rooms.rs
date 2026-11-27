@@ -114,7 +114,8 @@ fn room_freed_by_any_task_makes_the_board_pull(cx: &mut TestAppContext) {
     use crate::shell::rig::{folder, shell};
     use crate::state::Shared;
     use gpui::BorrowAppContext as _;
-    use onehand_core::project::{Board, Project, ProjectId, Projects, ProjectsDrive};
+    use onehand_core::board::Board;
+    use onehand_core::project::{Project, ProjectId, Projects, ProjectsDrive};
     let dir = folder("room-freed-pull");
     cx.executor().allow_parking();
     let (_, shell, cx) = shell(cx, dir.join("tasks"), Vec::new());
@@ -130,14 +131,14 @@ fn room_freed_by_any_task_makes_the_board_pull(cx: &mut TestAppContext) {
         cx.update_global::<Shared, _>(|shared, _| {
             shared.projects =
                 ProjectsDrive::new(Projects::from_iter([project]), dir.join("projects"));
-            let _ = shared.projects.set_board(
-                &id,
-                Some(Board {
-                    workflow: "builtin:branch".into(),
-                    team: 2,
-                    todo: vec![1],
-                }),
+            shared.boards = onehand_core::board::drive::BoardDrive::new(
+                Default::default(),
+                Default::default(),
+                dir.join("projects"),
             );
+            let _ = shared
+                .boards
+                .set_board(&id, Some(Board::made("builtin:branch".into(), 2, &[1], 0)));
         })
     });
     // The shipped branch workflow, its plan one task at a time.
@@ -160,16 +161,10 @@ fn room_freed_by_any_task_makes_the_board_pull(cx: &mut TestAppContext) {
     let at = root.clone();
     cx.update(|window, cx| shell.update(cx, |shell, cx| shell.open_root(at, window, cx)));
     cx.run_until_parked();
-    cx.update(|_, cx| crate::board::pull_now(&id, cx));
+    cx.update(|_, cx| crate::board::look(&id, cx));
     cx.run_until_parked();
     let todo = |cx: &mut gpui::VisualTestContext| {
-        cx.update(|_, cx| {
-            let projects = &Shared::global(cx).projects;
-            projects
-                .get(&id)
-                .and_then(|p| p.board())
-                .map(|b| b.todo.clone())
-        })
+        cx.update(|_, cx| Shared::global(cx).boards.board(&id).map(|b| b.todo()))
     };
     assert_eq!(todo(cx), Some(vec![1]), "the plan has no room");
 

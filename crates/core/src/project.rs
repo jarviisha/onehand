@@ -51,6 +51,12 @@ impl ProjectId {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    /// The project whose folder of the store is named `name`, as the store
+    /// names each folder by its project's id.
+    pub(crate) fn of_folder(name: &str) -> ProjectId {
+        ProjectId(name.to_string())
+    }
 }
 
 impl fmt::Display for ProjectId {
@@ -128,28 +134,27 @@ pub struct Project {
     /// its cards by itself, until it is changed there.
     #[serde(default, skip_serializing_if = "is_manual")]
     pub cards: crate::chat::Cards,
-    /// The project's board: the workflow its tasks run, the team's size and
-    /// the issues waiting in To do. None while the project has no board.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub board: Option<Board>,
+    /// The board an earlier build kept here, read only to move it into a
+    /// file of its own at start. Kept on every write while it is here, so a
+    /// move that failed is tried again.
+    #[serde(rename = "board", default, skip_serializing_if = "Option::is_none")]
+    pub(crate) old_board: Option<OldBoard>,
 }
 
-/// A project's board settings and its To do, kept with the project.
+/// A board as an earlier build kept it with its project.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct Board {
+pub(crate) struct OldBoard {
     /// The id of the workflow a pulled issue's task runs.
     pub workflow: String,
     /// How many tasks work at once, 1 to 8.
-    #[serde(default = "Board::default_team")]
+    #[serde(default = "OldBoard::default_team")]
     pub team: u8,
     /// Issue numbers waiting in To do; the first is pulled first.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub todo: Vec<u64>,
 }
 
-impl Board {
-    pub const MOST_TEAM: u8 = 8;
-
+impl OldBoard {
     fn default_team() -> u8 {
         2
     }
@@ -191,13 +196,8 @@ impl Project {
             worktree_parent: None,
             worktrees: Vec::new(),
             cards: crate::chat::Cards::Manual,
-            board: None,
+            old_board: None,
         }
-    }
-
-    /// The project's board, if it has one.
-    pub fn board(&self) -> Option<&Board> {
-        self.board.as_ref()
     }
 
     /// Which of this project's folders `path` on `host` is, if any.

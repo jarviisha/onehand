@@ -96,6 +96,7 @@ impl Shell {
                     shell.update(cx, |shell, cx| shell.flush_workspace(cx));
                 }
                 crate::projects::flush(cx);
+                crate::board::flush(cx);
                 let Some(page) = page.upgrade().filter(|page| page.read(cx).dirty(cx)) else {
                     return true;
                 };
@@ -578,6 +579,11 @@ pub fn boot(cx: &mut App) {
         .chain(onehand_core::task::files::migrate_old_dir_blocking())
         // After the tasks are where they are kept, since it repoints them.
         .chain(onehand_core::workspace::migrate_storage_blocking(seed()))
+        // After the projects are where they are kept, and before anything
+        // reads or writes one: a board still in its project moves out.
+        .chain(onehand_core::board::file::migrate_blocking(
+            &onehand_core::project::file::store_dir(),
+        ))
     {
         eprintln!("onehand: {problem}");
     }
@@ -593,8 +599,13 @@ pub fn boot(cx: &mut App) {
     for problem in unread {
         eprintln!("onehand: {problem}");
     }
+    let (boards, unreadable) = onehand_core::board::file::load_all_blocking(&store);
+    for why in unreadable.values() {
+        eprintln!("onehand: a board cannot be read: {why}");
+    }
     cx.update_global::<Shared, _>(|shared, _| {
-        shared.projects = onehand_core::project::ProjectsDrive::new(projects, store);
+        shared.projects = onehand_core::project::ProjectsDrive::new(projects, store.clone());
+        shared.boards = onehand_core::board::drive::BoardDrive::new(boards, unreadable, store);
     });
     // The settings, workspace and conversation-name writes still queued at
     // quit would die with the process: waited for, as the task files are,
@@ -604,6 +615,7 @@ pub fn boot(cx: &mut App) {
         // A project change still waiting on its burst, queued now so the wait
         // below covers it.
         crate::projects::flush(cx);
+        crate::board::flush(cx);
         let writer = writer.clone();
         async move {
             if !writer.flush(crate::task::QUIT_WAIT) {

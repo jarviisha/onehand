@@ -4,11 +4,7 @@ use crate::workflow::{Brief, Setup, Template};
 use std::path::PathBuf;
 
 fn board(team: u8, todo: &[u64]) -> Board {
-    Board {
-        workflow: "builtin:branch".into(),
-        team,
-        todo: todo.to_vec(),
-    }
+    Board::made("builtin:branch".into(), team, todo, 0)
 }
 
 fn numbers(issues: Vec<&LocalIssue>) -> Vec<u64> {
@@ -350,4 +346,28 @@ fn an_extend_waits_for_a_place_only_on_a_board_and_at_rest() {
     );
     assert_eq!(extend_way(&on_board, &|_| true, true), ExtendWay::Now);
     assert_eq!(extend_way(&on_board, &|_| false, false), ExtendWay::Now);
+}
+
+/// Only an end that left the board pulls the next, done or stopped by a
+/// person; one that failed would most likely fail the next the same way.
+#[test]
+fn pulls_next_only_after_an_end_that_left_the_board() {
+    for (outcome, pull) in [
+        (Outcome::Done, true),
+        (Outcome::Failed("no".into()), false),
+        (Outcome::Stopped(Stop::ByPerson), true),
+        (Outcome::Stopped(Stop::TakenOver), true),
+        (Outcome::Stopped(Stop::TimedOut), false),
+        (Outcome::Stopped(Stop::LinkLost), false),
+        (Outcome::Stopped(Stop::Closed), false),
+        (
+            Outcome::Exhausted {
+                step: "Verify".into(),
+            },
+            false,
+        ),
+    ] {
+        assert_eq!(pulls_next(Some(&outcome)), pull, "{outcome:?}");
+    }
+    assert!(!pulls_next(None));
 }

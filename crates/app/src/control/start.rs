@@ -50,7 +50,17 @@ pub(crate) async fn start_task(
     starting: Starting,
     cx: &mut gpui::AsyncApp,
 ) -> Result<(String, Placed), String> {
-    let id = onehand_core::task::new_id();
+    start_task_as(onehand_core::task::new_id(), window, shell, starting, cx).await
+}
+
+/// [`start_task`], its task named `id`, minted by the caller.
+pub(crate) async fn start_task_as(
+    id: String,
+    window: gpui::AnyWindowHandle,
+    shell: gpui::Entity<crate::shell::Shell>,
+    starting: Starting,
+    cx: &mut gpui::AsyncApp,
+) -> Result<(String, Placed), String> {
     let told = cx.update(|cx| {
         let shell = shell.read(cx);
         let found = shell.run_preflight(

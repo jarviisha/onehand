@@ -257,17 +257,15 @@ pub(crate) fn extend(approval: onehand_core::task::Approval, cx: &mut App) {
     let holds = cx
         .try_global::<Tasks>()
         .is_some_and(|t| t.holds_team(&approval.task));
-    let projects = &crate::state::Shared::global(cx).projects;
-    let has_board = |project: &onehand_core::project::ProjectId| {
-        projects.get(project).is_some_and(|p| p.board().is_some())
-    };
+    let boards = &crate::state::Shared::global(cx).boards;
+    let has_board = |project: &onehand_core::project::ProjectId| boards.board(project).is_some();
     let way = task(&approval.task, cx).map_or(ExtendWay::Now, |task| {
         onehand_core::board::extend_way(&task, &has_board, holds)
     });
     match way {
         ExtendWay::WaitForPlace(project) => {
             carrier::queue_extend(approval, cx);
-            crate::board::give_places(&project, cx);
+            crate::board::look(&project, cx);
         }
         ExtendWay::Now => carrier::extend(approval, cx),
     }

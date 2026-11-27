@@ -4,11 +4,17 @@
 
 use crate::connector::Connector;
 use crate::issues::{Issues, LocalIssue};
-use crate::project::{Board, Project, ProjectId};
+use crate::project::{Project, ProjectId};
 use crate::task::{Task, Working};
 use crate::workflow::{Outcome, Place, Stop, Template};
 use std::collections::HashSet;
 use std::path::PathBuf;
+
+pub mod drive;
+pub mod file;
+pub mod model;
+
+pub use model::{Board, Entry, MovesOn, Starts, Work};
 
 /// How many tasks one column of the board draws; the rest are counted.
 pub const BOARD_SHOWN: usize = 50;
@@ -50,11 +56,12 @@ pub fn backlog<'a>(
     board: &Board,
     taken: &HashSet<u64>,
 ) -> Vec<&'a LocalIssue> {
+    let todo = board.todo();
     issues
         .listed()
         .into_iter()
         .filter(|issue| issues.workable(issue, forge))
-        .filter(|issue| !board.todo.contains(&issue.number()) && !taken.contains(&issue.number()))
+        .filter(|issue| !todo.contains(&issue.number()) && !taken.contains(&issue.number()))
         .collect()
 }
 
@@ -91,7 +98,7 @@ pub(crate) fn pull(
         start: Vec::new(),
         gone: Vec::new(),
     };
-    for &number in &board.todo {
+    for number in board.todo() {
         let Some(issue) = issues.get(number).filter(|issue| issue.open()) else {
             pull.gone.push(number);
             continue;
@@ -109,6 +116,23 @@ pub(crate) fn pull(
 /// closed there, by what merges its work.
 pub fn after_end(issue: &LocalIssue, synced: bool, done: bool) -> bool {
     done && !synced && issue.open()
+}
+
+/// Whether a board task that ended as `outcome` lets the board start the
+/// next of its To do: one done or that a person stopped left the board. One
+/// that ended without finishing is left for a person to look at and pulls
+/// nothing, deliberately: a cause the tasks share would most likely end the
+/// next the same way, one after another until To do is empty.
+pub(crate) fn pulls_next(outcome: Option<&Outcome>) -> bool {
+    match outcome {
+        Some(Outcome::Done | Outcome::Stopped(Stop::ByPerson | Stop::TakenOver)) => true,
+        Some(
+            Outcome::Stopped(Stop::TimedOut | Stop::LinkLost | Stop::Closed)
+            | Outcome::Exhausted { .. }
+            | Outcome::Failed(_),
+        )
+        | None => false,
+    }
 }
 
 /// How many of `project`'s board tasks hold a place on its team: those

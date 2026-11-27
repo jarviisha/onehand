@@ -260,7 +260,7 @@ pub(super) fn perform(
             // again; deferred, as the tasks may be lent while this is said.
             Effect::RoomFreed { repo } => cx.defer(move |cx| {
                 if let Some(project) = crate::projects::of(&repo, cx) {
-                    crate::board::pull_now(&project.id, cx);
+                    crate::board::look(&project.id, cx);
                 }
             }),
         }
@@ -483,9 +483,10 @@ fn say(signal: Signal<AnyWindowHandle>, cx: &mut App) {
         Signal::BoardEnded {
             project,
             issue,
-            done,
-            pull,
-        } => crate::board::ended(&project, issue, done, pull, cx),
+            task: _,
+            run: _,
+            outcome,
+        } => crate::board::ended(project, issue, outcome, cx),
         Signal::DismissFailed { window, why } => {
             toast(window, crate::toast::failed("Dismissing the task", why), cx)
         }

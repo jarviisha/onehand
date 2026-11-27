@@ -3,7 +3,7 @@
 
 use super::{Effect, Input, Signal, TasksDrive, DRAIN_LIMIT};
 use crate::task::{marks, Origin, Source, Task};
-use crate::workflow::{Failure, Outcome, Run, Stop};
+use crate::workflow::{Failure, Outcome, Run};
 use crate::Now;
 
 impl<W: Copy> TasksDrive<W> {
@@ -147,35 +147,18 @@ impl<W: Copy> TasksDrive<W> {
                     }));
                 }
                 Some(Origin::Board { project, issue }) => {
-                    let outcome = task.outcome();
                     fx.push(Effect::Signal(Signal::BoardEnded {
                         project: project.clone(),
                         issue: *issue,
-                        done: matches!(outcome, Some(Outcome::Done)),
-                        pull: pulls_next(outcome.as_ref()),
+                        task: task.id.clone(),
+                        run: task.runs.last().map(|run| run.id.clone()),
+                        outcome: task.outcome(),
                     }));
                 }
                 Some(Origin::Tool) | None => {}
             }
         }
         self.release(id, fx);
-    }
-}
-
-/// Whether a board task that ended as `outcome` lets the board start the
-/// next of its To do: one done or that a person stopped left the board. One
-/// that ended without finishing is left for a person to look at and pulls
-/// nothing, deliberately: a cause the tasks share would most likely end the
-/// next the same way, one after another until To do is empty.
-fn pulls_next(outcome: Option<&Outcome>) -> bool {
-    match outcome {
-        Some(Outcome::Done | Outcome::Stopped(Stop::ByPerson | Stop::TakenOver)) => true,
-        Some(
-            Outcome::Stopped(Stop::TimedOut | Stop::LinkLost | Stop::Closed)
-            | Outcome::Exhausted { .. }
-            | Outcome::Failed(_),
-        )
-        | None => false,
     }
 }
 

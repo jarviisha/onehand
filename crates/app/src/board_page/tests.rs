@@ -86,8 +86,9 @@ mod strain {
     };
     use crate::shell::rig::{board_page, folder, keep_projects, nowhere, shell_on, zoom_pane};
     use gpui::{Entity, Pixels, TestAppContext, VisualTestContext};
+    use onehand_core::board::Board;
     use onehand_core::config::PanelLayout;
-    use onehand_core::project::{Board, Project, ProjectId};
+    use onehand_core::project::{Project, ProjectId};
     use onehand_core::workflow::Template;
     use onehand_core::workspace::Workspace;
     use std::time::Duration;
@@ -135,12 +136,7 @@ mod strain {
         ws.layout.rail_w = PanelLayout::RAIL_MIN;
         let (handle, shell, cx) = shell_on(cx, dir.join("tasks"), vec![nowhere()], ws);
         cx.update(|_, cx| crate::workflow::offer(vec![team()], cx));
-        let mut project = Project::new(ProjectId::mint(seed), None, home);
-        project.board = Some(Board {
-            workflow: team().id,
-            team: 2,
-            todo: Vec::new(),
-        });
+        let project = Project::new(ProjectId::mint(seed), None, home);
         let file = onehand_core::project::file::issues_file(&project.id);
         std::fs::create_dir_all(file.parent().unwrap()).unwrap();
         let issues = serde_json::json!({
@@ -150,6 +146,14 @@ mod strain {
         std::fs::write(&file, issues.to_string()).unwrap();
         keep_projects(handle, &shell, vec![project.clone()], cx);
         let id = project.id.clone();
+        cx.update(|_, cx| {
+            use gpui::BorrowAppContext as _;
+            let board = Board::made(team().id, 2, &[], 0);
+            let fx = cx.update_global::<crate::state::Shared, _>(|shared, _| {
+                shared.boards.set_board(&id, Some(board))
+            });
+            crate::board::carry(fx, cx);
+        });
         cx.update(|window, cx| shell.update(cx, |shell, cx| shell.show_board(id, window, cx)));
         for _ in 0..300 {
             cx.run_until_parked();

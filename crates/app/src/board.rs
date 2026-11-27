@@ -1,95 +1,244 @@
-//! The board's carrier: a project's To do started in order as its team has
-//! room, and the issue a board task finished closed. Which issues to start,
-//! drop or close is `onehand_core::board`'s to say; this reads the issues
-//! off the UI thread and carries out the answer.
+//! The boards' carrier: what `onehand_core::board::drive::BoardDrive`
+//! decides, carried out. It writes the board files, times the team's track,
+//! reads a board's issues off the UI thread with what the tasks and the
+//! library say beside them, starts the tasks the drive picked, and closes the
+//! issues it names; which and when are the drive's.
 
 use crate::state::Shared;
 use crate::task::Placed;
 use gpui::{App, BorrowAppContext as _};
 use gpui_component::WindowExt as _;
 use onehand_core::board;
+use onehand_core::board::drive::{BoardWrite, Effect, Facts, Input, Signal};
 use onehand_core::connector::Connector;
 use onehand_core::issues::Issues;
 use onehand_core::issues::drive::Change;
 use onehand_core::project::ProjectId;
 use onehand_core::task::{Grant, Origin, Starting};
+use onehand_core::workflow::Template;
 use std::path::{Path, PathBuf};
 
-/// Look at every board's To do, once the tasks and the workflows are read.
-pub(crate) fn pull_all(cx: &mut App) {
-    let boards: Vec<ProjectId> = Shared::global(cx)
-        .projects
-        .iter()
-        .filter(|project| project.board().is_some())
-        .map(|project| project.id.clone())
-        .collect();
-    for project in &boards {
-        pull_now(project, cx);
+/// Hand `input` to the boards' drive and carry out what it answers.
+fn handle(input: Input, cx: &mut App) {
+    let now = onehand_core::Now::read();
+    let fx = cx.update_global::<Shared, _>(|shared, _| shared.boards.handle(input, now));
+    carry(fx, cx);
+}
+
+/// Carry out the boards' effects, in order, each once.
+pub(crate) fn carry(fx: Vec<Effect>, cx: &mut App) {
+    for effect in fx {
+        match effect {
+            Effect::Write(write) => {
+                let BoardWrite {
+                    id,
+                    pending,
+                    board,
+                    dir,
+                } = *write;
+                let written = Shared::global(cx).writer.write(move || {
+                    board::file::save_blocking(&dir, board.as_ref()).map_err(|why| why.to_string())
+                });
+                cx.spawn(async move |cx| {
+                    let result = written.await;
+                    cx.update(|cx| {
+                        handle(
+                            Input::Written {
+                                id,
+                                pending,
+                                result,
+                            },
+                            cx,
+                        )
+                    });
+                })
+                .detach();
+            }
+            Effect::Arm { token, after } => {
+                cx.spawn(async move |cx| {
+                    cx.background_executor().timer(after).await;
+                    cx.update(|cx| handle(Input::Elapsed { token }, cx));
+                })
+                .detach();
+            }
+            Effect::Changed(id) => {
+                crate::projects::for_each_holding(&id, cx, |_, window, _| window.refresh());
+            }
+            Effect::Signal(Signal::SaveFailed { id, why }) => {
+                let name = (Shared::global(cx).projects.get(&id))
+                    .map_or_else(String::new, |project| project.name.clone());
+                let what = format!("Saving the board of {name}");
+                crate::projects::for_each_holding(&id, cx, move |_, window, cx| {
+                    window.push_notification(crate::toast::failed(&what, why.clone()), cx);
+                });
+            }
+            Effect::Signal(Signal::NotStarted { id, issue, why }) => {
+                let note = crate::toast::warning(format!(
+                    "Could not start #{issue} from the board: {why}"
+                ));
+                if let Some((window, _)) = holding(&id, cx) {
+                    let _ = window.update(cx, |_, window, cx| window.push_notification(note, cx));
+                }
+            }
+            Effect::ReadIssues { id } => read_issues(id, cx),
+            Effect::GivePlace { task } => crate::task::give_place(&task, cx),
+            Effect::Start {
+                id,
+                issue,
+                task,
+                template,
+            } => start(id, issue, task, template, cx),
+            Effect::CloseIssue { id, issue } => {
+                if let Some((root, file)) = local(&id, cx) {
+                    close_issue(&root, file, issue, cx);
+                }
+            }
+        }
     }
 }
 
-/// Start as many of `project`'s To do as its team has room for, first
-/// first, and drop from To do what is closed or gone.
-pub(crate) fn pull_now(project: &ProjectId, cx: &mut App) {
-    // Extends waiting for a place are first in line, and need neither the
-    // issues read nor a window.
-    give_places(project, cx);
-    let Some((root, file)) = local(project, cx) else {
-        return;
+/// Look at `project`'s board: what it starts and gives is the drive's.
+pub(crate) fn look(project: &ProjectId, cx: &mut App) {
+    let fx = cx.update_global::<Shared, _>(|shared, _| shared.boards.look(project));
+    carry(fx, cx);
+}
+
+/// Look at every board, once the tasks and the workflows are read.
+pub(crate) fn pull_all(cx: &mut App) {
+    let boards: Vec<ProjectId> = Shared::global(cx).boards.ids().cloned().collect();
+    for project in &boards {
+        look(project, cx);
+    }
+}
+
+/// Write every board change still waiting on its burst, now.
+pub(crate) fn flush(cx: &mut App) {
+    let fx = cx.update_global::<Shared, _>(|shared, _| shared.boards.flush());
+    carry(fx, cx);
+}
+
+/// A board task of `project` on `issue` ended as `outcome`.
+pub(crate) fn ended(
+    project: ProjectId,
+    issue: u64,
+    outcome: Option<onehand_core::workflow::Outcome>,
+    cx: &mut App,
+) {
+    handle(
+        Input::Ended {
+            id: project,
+            issue,
+            outcome,
+        },
+        cx,
+    );
+}
+
+/// Read `id`'s issues off the UI thread, then what the tasks and the library
+/// say of its board as the read lands, and report both.
+fn read_issues(id: ProjectId, cx: &mut App) {
+    let Some((root, file)) = local(&id, cx) else {
+        let facts = Box::new(facts(&id, None, cx));
+        let read = Err("the project is not on this machine".to_string());
+        return handle(Input::IssuesRead { id, read, facts }, cx);
     };
-    let project = project.clone();
     cx.spawn(async move |cx| {
         let at = root.clone();
         let read = cx
             .background_executor()
             .spawn(async move { read_blocking(&file, &at) })
             .await;
-        // Unread, To do stays as it is until the next look.
-        if let Ok((kept, forge)) = read {
-            cx.update(|cx| pull_read(&project, &root, &kept, forge, cx));
-        }
+        cx.update(|cx| {
+            let facts = Box::new(facts(&id, Some(&root), cx));
+            handle(Input::IssuesRead { id, read, facts }, cx);
+        });
     })
     .detach();
 }
 
-/// Give the places `project`'s team has to the extends waiting for one, first
-/// asked first.
-pub(crate) fn give_places(project: &ProjectId, cx: &mut App) {
-    let running = crate::task::board_running(project, cx);
-    let waiting = crate::task::board_extends_waiting(project, cx);
-    let given = Shared::global(cx)
-        .projects
-        .extends_given(project, running, &waiting);
-    for task in given {
-        crate::task::give_place(&task, cx);
+/// What the tasks and the library say of `id`'s board, at `root`.
+fn facts(id: &ProjectId, root: Option<&Path>, cx: &App) -> Facts {
+    let template = (Shared::global(cx).boards.board(id))
+        .ok_or_else(|| "no board".to_string())
+        .and_then(|board| crate::control::template(board.workflow(), cx));
+    let first = match (root, &template) {
+        (Some(root), Ok(template)) => crate::task::room_at(root, template, 0, cx),
+        (None, _) | (_, Err(_)) => None,
+    };
+    let window = root.is_some_and(|root| !crate::windows::holding_root(root, cx).is_empty());
+    Facts {
+        template,
+        running: crate::task::board_running(id, cx),
+        extends_waiting: crate::task::board_extends_waiting(id, cx),
+        first,
+        taken: crate::task::board_taken(id, cx),
+        window,
+        ids: (0..board::model::MOST_TEAM)
+            .map(|_| onehand_core::task::new_id())
+            .collect(),
     }
 }
 
-/// A board task of `project` on `issue` ended, `done` or not: a finished
-/// one closes an issue the project's own tracker keeps, and, when core says
-/// to `pull`, the team's room goes to the next.
-pub(crate) fn ended(project: &ProjectId, issue: u64, done: bool, pull: bool, cx: &mut App) {
-    if done && let Some((root, file)) = local(project, cx) {
-        cx.spawn(async move |cx| {
-            let (at, read) = (root.clone(), file.clone());
-            let close = cx
+/// Start task `task` of `template` on `issue` of `project` in a window
+/// holding the project, and report where it landed.
+fn start(project: ProjectId, issue: u64, task: String, template: Template, cx: &mut App) {
+    let Some((window, shell)) = holding(&project, cx) else {
+        let landed = Input::Landed {
+            id: project,
+            issue,
+            task,
+            kept: false,
+            result: Err("no window holds the project".to_string()),
+        };
+        return handle(landed, cx);
+    };
+    let root = (Shared::global(cx).projects.get(&project)).map(|p| p.path.clone());
+    cx.spawn(async move |cx| {
+        let id = task.clone();
+        let started = async {
+            let root = root.ok_or("the project is gone")?;
+            let file = Some(onehand_core::project::file::issues_file(&project));
+            let at = root.clone();
+            let brief = cx
                 .background_executor()
                 .spawn(async move {
-                    let (kept, forge) = read_blocking(&read, &at)?;
-                    let synced = forge.is_some_and(|forge| kept.in_step_with(forge.name()));
-                    let issue = kept.get(issue).ok_or("no such issue")?;
-                    Ok::<_, String>(board::after_end(issue, synced, done))
+                    let forge = serving(&at);
+                    onehand_core::issues::supervised_brief_blocking(file, forge, issue)
                 })
-                .await;
-            if close == Ok(true) {
-                cx.update(|cx| close_issue(&root, file, issue, cx));
+                .await?;
+            let starting = Starting {
+                project: root,
+                template,
+                brief,
+                origin: Origin::Board {
+                    project: project.clone(),
+                    issue,
+                },
+                grant: Grant::default(),
+                agent: None,
+                mode: None,
+            };
+            let (_, placed) =
+                crate::control::start_task_as(id.clone(), window, shell, starting, cx).await?;
+            match placed {
+                Placed::Started | Placed::Queued(_) => Ok(()),
+                Placed::Refused(why) => Err(why),
             }
-        })
-        .detach();
-    }
-    if pull {
-        pull_now(project, cx);
-    }
+        }
+        .await;
+        cx.update(|cx| {
+            let kept = crate::task::task(&id, cx).is_some();
+            let landed = Input::Landed {
+                id: project,
+                issue,
+                task: id,
+                kept,
+                result: started,
+            };
+            handle(landed, cx);
+        });
+    })
+    .detach();
 }
 
 fn close_issue(root: &Path, file: PathBuf, number: u64, cx: &mut App) {
@@ -116,9 +265,26 @@ fn close_issue(root: &Path, file: PathBuf, number: u64, cx: &mut App) {
     );
 }
 
+/// The first window holding `project`, and its shell.
+fn holding(
+    project: &ProjectId,
+    cx: &App,
+) -> Option<(gpui::AnyWindowHandle, gpui::Entity<crate::shell::Shell>)> {
+    let (root, _) = local(project, cx)?;
+    crate::windows::holding_root(&root, cx).into_iter().next()
+}
+
 /// Where project `project`'s board works and where it keeps its issues.
 fn local(project: &ProjectId, cx: &App) -> Option<(PathBuf, PathBuf)> {
     board::local(Shared::global(cx).projects.get(project)?).ok()
+}
+
+/// The forge serving `root`, if any.
+fn serving(root: &Path) -> Option<&'static dyn Connector> {
+    let all = crate::features::connectors();
+    onehand_core::connector::serving(all, root)
+        .ok()
+        .map(|at| all[at])
 }
 
 /// The issues in `file`, and the forge serving `root` if any. Blocking.
@@ -127,110 +293,8 @@ fn read_blocking(
     root: &Path,
 ) -> Result<(Issues, Option<&'static dyn Connector>), String> {
     let kept = onehand_core::issues::load_blocking(file)?;
-    let all = crate::features::connectors();
-    let forge = onehand_core::connector::serving(all, root)
-        .ok()
-        .map(|at| all[at]);
-    Ok((kept, forge))
+    Ok((kept, serving(root)))
 }
 
-/// The pull of `project` at `root`, over the issues as they were just read.
-fn pull_read(
-    project: &ProjectId,
-    root: &Path,
-    kept: &Issues,
-    forge: Option<&'static dyn Connector>,
-    cx: &mut App,
-) {
-    let Some(board) = Shared::global(cx)
-        .projects
-        .get(project)
-        .and_then(|p| p.board())
-        .cloned()
-    else {
-        return;
-    };
-    // Places freed while the issues were read go to waiting extends first.
-    give_places(project, cx);
-    // ponytail: with no window holding the project nothing is pulled until
-    // To do or the team changes, a board task ends or the app starts again;
-    // pull when a window opens on the project if that proves too late.
-    let Some((window, shell)) = crate::windows::holding_root(root, cx).into_iter().next() else {
-        return;
-    };
-    let Ok(template) = crate::control::template(&board.workflow, cx) else {
-        return;
-    };
-    let running = crate::task::board_running(project, cx);
-    let extends = crate::task::board_extends_waiting(project, cx).len();
-    let taken = crate::task::board_taken(project, cx);
-    let first = crate::task::room_at(root, &template, 0, cx);
-    let Some(pull) = Shared::global(cx).projects.pull(
-        project, &template, running, extends, first, kept, forge, &taken,
-    ) else {
-        return;
-    };
-    let fx = cx.update_global::<Shared, _>(|shared, _| {
-        let mut fx = shared.projects.take_todo(project, &pull.gone);
-        fx.extend(shared.projects.start_todo(project, &pull.start));
-        fx
-    });
-    crate::projects::carry(fx, cx);
-    for issue in pull.start {
-        let project = project.clone();
-        let (root, template, shell) = (root.to_path_buf(), template.clone(), shell.clone());
-        cx.spawn(async move |cx| {
-            let mut made = None;
-            let started = async {
-                let file = Some(onehand_core::project::file::issues_file(&project));
-                let brief = cx
-                    .background_executor()
-                    .spawn(async move {
-                        onehand_core::issues::supervised_brief_blocking(file, forge, issue)
-                    })
-                    .await?;
-                let starting = Starting {
-                    project: root,
-                    template,
-                    brief,
-                    origin: Origin::Board {
-                        project: project.clone(),
-                        issue,
-                    },
-                    grant: Grant::default(),
-                    agent: None,
-                    mode: None,
-                };
-                let (id, placed) = crate::control::start_task(window, shell, starting, cx).await?;
-                made = Some(id);
-                match placed {
-                    Placed::Started | Placed::Queued(_) => Ok(()),
-                    Placed::Refused(why) => Err(why),
-                }
-            }
-            .await;
-            cx.update(|cx| {
-                cx.update_global::<Shared, _>(|shared, _| shared.projects.landed(&project, issue));
-                match started {
-                    // Its task now counts itself, and any place left over
-                    // from counting it twice meanwhile is filled.
-                    Ok(()) => pull_now(&project, cx),
-                    // Refused once its task was kept: the task holds the
-                    // issue, and its own start already said why.
-                    Err(_) if made.is_some_and(|id| crate::task::task(&id, cx).is_some()) => {}
-                    // Out of To do with no task on it, the issue is back in
-                    // the Backlog. Nothing is pulled in its place, so a
-                    // reason every issue shares is said once, not per issue.
-                    Err(why) => {
-                        let note = crate::toast::warning(format!(
-                            "Could not start #{issue} from the board: {why}"
-                        ));
-                        let _ =
-                            window.update(cx, |_, window, cx| window.push_notification(note, cx));
-                    }
-                }
-            });
-        })
-        .detach();
-    }
-}
+#[cfg(test)]
+mod tests;
