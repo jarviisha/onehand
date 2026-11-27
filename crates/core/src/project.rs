@@ -51,6 +51,12 @@ impl ProjectId {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    /// The project whose folder of the store is named `name`, as the store
+    /// names each folder by its project's id.
+    pub(crate) fn of_folder(name: &str) -> ProjectId {
+        ProjectId(name.to_string())
+    }
 }
 
 impl fmt::Display for ProjectId {

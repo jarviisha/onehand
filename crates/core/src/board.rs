@@ -10,6 +10,9 @@ use crate::workflow::{Outcome, Place, Stop, Template};
 use std::collections::HashSet;
 use std::path::PathBuf;
 
+pub mod file;
+pub mod model;
+
 /// How many tasks one column of the board draws; the rest are counted.
 pub const BOARD_SHOWN: usize = 50;
 
