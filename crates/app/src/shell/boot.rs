@@ -514,6 +514,7 @@ impl Shell {
             offload_draft: None,
             build_host_draft: None,
             route_draft: None,
+            column_draft: None,
             route_suggestions: HashMap::new(),
             offload_locks: HashMap::new(),
             dialog_return: None,

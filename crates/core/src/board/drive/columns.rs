@@ -71,10 +71,10 @@ impl BoardDrive {
         column_id: &str,
     ) -> Result<Vec<Effect>, String> {
         self.change(id, |board| match board.column(column_id) {
-            Some(column) if !column.entries.is_empty() => Err(format!(
-                "Move its {} issues out first",
-                column.entries.len()
-            )),
+            Some(column) if !column.entries.is_empty() => Err(match column.entries.len() {
+                1 => "Move its issue out first".to_string(),
+                n => format!("Move its {n} issues out first"),
+            }),
             Some(_) => Ok(board.without_column(column_id)),
             None => Err(format!("No column {column_id}")),
         })

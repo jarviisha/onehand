@@ -122,6 +122,11 @@ pub(crate) fn look(project: &ProjectId, cx: &mut App) {
     carry(fx, cx);
 }
 
+/// A new column's id: one no other column has.
+pub(crate) fn column_id() -> String {
+    format!("col-{}", onehand_core::task::new_id())
+}
+
 /// Look at every board, once the tasks and the workflows are read.
 pub(crate) fn pull_all(cx: &mut App) {
     let boards: Vec<ProjectId> = Shared::global(cx).boards.ids().cloned().collect();
