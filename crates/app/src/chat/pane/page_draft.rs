@@ -431,11 +431,27 @@ impl ChatPane {
         let refuses = self.page_refuses(cx);
         let locked = self.page_locked(root);
         let name = self.page_agent(root, cx).unwrap_or_default();
+        // While nothing is known of the agent, its row holds the agent's
+        // name and the muted "Agent's default": on one line that wraps, its
+        // second line out of sight, so the words go whole where they do not
+        // fit rather than as a stray ellipsis. Its chips, once known, are
+        // controls and are cut instead.
+        let known = crate::state::Shared::global(cx)
+            .settings
+            .facts_of(&name)
+            .is_some();
         let agent = div()
+            .debug_selector(|| "page-agent-row".into())
             .h_flex()
             .items_center()
             .gap_2()
             .min_w_0()
+            .when(!known, |row| {
+                row.h(crate::tokens::CONTROL_H)
+                    .flex_wrap()
+                    .gap_y_0()
+                    .overflow_hidden()
+            })
             .child(self.agent_chip(root, cx))
             .children(self.page_options(root, &name, cx))
             .into_any_element();

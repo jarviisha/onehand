@@ -450,10 +450,10 @@ room and leaves the terminal as it is.
   draft. An agent that never comes up leaves no session: the page says why under the card, the
   words kept, a host's or an offloaded project's session as one here, over the host's attach. Then, in one column at every width, the box *Past
   conversations* with its count, its rows the overview's (age, title, then items and agent at the
-  edge, led by *Continued from <title>* for one that continued another; as the row narrows
-  *Continued from* gives way first, cut and then dropped once those words no longer fit, then the
-  items and agent, cut and then dropped once *N items* no longer fits, and only then the title,
-  which says itself whole in its tooltip; then a `⋯` on hover
+  edge, led by *Continued from <title>* for one that continued another; the items and agent are
+  shown whole or not at all, dropped where the row cannot leave the title its least width (about
+  twenty characters); the title is cut on an ellipsis in whatever room it has and says itself
+  whole in its tooltip; then a `⋯` on hover
   holding *Resume*, on a page whose sessions run here *Continue in a new session…*, and
   *Delete…*, the same on a right-click), capped, its wait and empty lines inside it:
   every one of the project, in whichever of its folders it ran, and one that ran in a folder it

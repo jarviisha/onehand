@@ -15,7 +15,6 @@ use onehand_core::chat::ConvMeta;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-pub(super) mod facts;
 mod host;
 mod no_agent;
 pub(super) use host::focus_rows as host_rows;
@@ -39,6 +38,12 @@ const HOME_ROWS: usize = 8;
 /// its width, so a factor this large makes it give way all but whole before
 /// the other starts to.
 const GIVES_FIRST: f32 = 1e3;
+
+/// The least a past conversation's title keeps before its facts beside it
+/// are dropped: about twenty characters, room for a short title whole or
+/// enough of a long one's start to tell it from its neighbours. Narrower
+/// than this, the facts go and the title has the row.
+const TITLE_LEAST: gpui::Rems = gpui::rems(10.);
 
 /// The project the pane is standing in while no conversation is showing.
 ///
@@ -422,11 +427,12 @@ impl ChatPane {
         let place = div()
             .h_flex()
             .min_w_0()
-            .child(facts::natural(
-                path.clone(),
+            .child(
                 div()
                     .id("project-page-path")
                     .debug_selector(|| "project-page-path".into())
+                    .flex_shrink(GIVES_FIRST)
+                    .min_w_0()
                     .overflow_hidden()
                     .whitespace_nowrap()
                     .map(|path| match on_host {
@@ -436,21 +442,14 @@ impl ChatPane {
                     .child(path)
                     .tooltip(onehand_ui::tip(move |window, cx| {
                         gpui_component::tooltip::Tooltip::new(whole.clone()).build(window, cx)
-                    }))
-                    .into_any_element(),
-                GIVES_FIRST,
-            ))
+                    })),
+            )
             .children(self.git.as_ref().map(|git| {
-                let git = format!(" · {git}");
-                facts::natural(
-                    git.clone(),
-                    div()
-                        .debug_selector(|| "project-page-git".into())
-                        .truncate()
-                        .child(git)
-                        .into_any_element(),
-                    1.,
-                )
+                div()
+                    .debug_selector(|| "project-page-git".into())
+                    .min_w_0()
+                    .truncate()
+                    .child(format!(" · {git}"))
             }));
         // The project as the store has it, for its worktrees: none for a
         // folder of no project, or one on a host, which has none. An
@@ -566,6 +565,9 @@ impl ChatPane {
                         .gap_2()
                         .w_full()
                         .rounded_none()
+                        // Held to one line's height: what its facts' line
+                        // wraps away stays out of sight below it.
+                        .h(onehand_ui::tokens::ROW_H)
                         .group(group.clone())
                         .track_focus(focus)
                         .border_1()
@@ -580,76 +582,85 @@ impl ChatPane {
                                 .text_color(crate::theme::meta_ink(cx))
                                 .child(rel_time(now, meta.updated)),
                         )
-                        .child(facts::natural(
-                            meta.title.clone(),
-                            div()
-                                .id(("home-title", i))
-                                .debug_selector(move || format!("home-title-{i}"))
-                                .truncate()
-                                .child(meta.title.clone())
-                                // Said whole, since the row cuts it first at
-                                // a narrow width.
-                                .tooltip({
-                                    let whole = SharedString::from(meta.title.clone());
-                                    onehand_ui::tip(move |window, cx| {
-                                        gpui_component::tooltip::Tooltip::new(whole.clone())
-                                            .build(window, cx)
-                                    })
-                                })
-                                .into_any_element(),
-                            1.,
-                        ))
-                        // The agent *is* named here, unlike in a session's
-                        // own picker: this list crosses every agent that
-                        // has worked in the project, and resuming a row
-                        // starts a session on the one that held it.
-                        // The title is what the row is for, so what stands
-                        // beside it takes only the room the title leaves,
-                        // and gives way first: what it continued and the
-                        // facts in the order `facts::FACTS_KEEP_ROOM_FIRST`
-                        // sets, the facts keeping theirs first.
-                        .children(meta.continued.as_ref().map(|earlier| {
-                            let said = format!("Continued from {earlier}");
-                            facts::leftover(
-                                said.clone(),
-                                "Continued from",
-                                div()
-                                    .debug_selector(move || format!("home-continued-{i}"))
-                                    .truncate()
-                                    .text_xs()
-                                    .text_color(muted)
-                                    .child(said)
-                                    .into_any_element(),
-                            )
-                            .lettered(gpui::StyleRefinement::default().text_xs().text)
-                        }))
-                        // The count leads: cut short it says nothing, so
-                        // the line goes once the count no longer fits.
+                        // The title, with what it continued, and the facts on
+                        // one line that wraps, its second line out of sight:
+                        // the facts never shrink, so where they and the
+                        // title's least width do not both fit they go to that
+                        // line, whole, and the title takes the room.
                         .child(
-                            facts::facts(
-                                div()
-                                    .debug_selector(move || format!("home-facts-{i}"))
-                                    .flex_none()
-                                    .whitespace_nowrap()
-                                    .text_xs()
-                                    .text_color(muted)
-                                    .child(count_of(meta.item_count, "item"))
-                                    .into_any_element(),
-                                div()
-                                    .debug_selector(move || format!("home-facts-rest-{i}"))
-                                    .min_w_0()
-                                    .truncate()
-                                    .text_xs()
-                                    .text_color(muted)
-                                    .child(format!(" · {}", meta.agent))
-                                    .into_any_element(),
-                                true,
-                            )
-                            .ahead(
-                                count_of(meta.item_count, "item"),
-                                format!(" · {}", meta.agent),
-                                gpui::StyleRefinement::default().text_xs().text,
-                            ),
+                            div()
+                                .debug_selector(move || format!("home-middle-{i}"))
+                                .flex_1()
+                                .min_w_0()
+                                .h_full()
+                                .flex()
+                                .flex_row()
+                                .flex_wrap()
+                                .gap_x_2()
+                                .overflow_hidden()
+                                .child(
+                                    div()
+                                        .debug_selector(move || format!("home-title-{i}"))
+                                        .h_full()
+                                        .flex()
+                                        .items_center()
+                                        .gap_2()
+                                        .flex_basis(TITLE_LEAST)
+                                        .flex_grow(1.)
+                                        .min_w_0()
+                                        .child(
+                                            div()
+                                                .id(("home-title", i))
+                                                .flex_1()
+                                                .min_w_0()
+                                                .truncate()
+                                                .child(meta.title.clone())
+                                                // Said whole, since the row
+                                                // cuts it at a narrow width.
+                                                .tooltip({
+                                                    let whole =
+                                                        SharedString::from(meta.title.clone());
+                                                    onehand_ui::tip(move |window, cx| {
+                                                        gpui_component::tooltip::Tooltip::new(
+                                                            whole.clone(),
+                                                        )
+                                                        .build(window, cx)
+                                                    })
+                                                }),
+                                        )
+                                        // What it continued beside the
+                                        // title, as wide as its words up to
+                                        // two fifths of the room.
+                                        .children(meta.continued.as_ref().map(|earlier| {
+                                            div()
+                                                .flex_shrink_1()
+                                                .min_w_0()
+                                                .max_w(gpui::relative(0.4))
+                                                .truncate()
+                                                .text_xs()
+                                                .text_color(muted)
+                                                .child(format!("Continued from {earlier}"))
+                                        })),
+                                )
+                                // The agent *is* named here, unlike in a
+                                // session's own picker: this list crosses
+                                // every agent that has worked in the project,
+                                // and resuming a row starts a session on the
+                                // one that held it.
+                                .child(
+                                    div().h_full().flex_none().flex().items_center().child(
+                                        div()
+                                            .debug_selector(move || format!("home-facts-{i}"))
+                                            .whitespace_nowrap()
+                                            .text_xs()
+                                            .text_color(muted)
+                                            .child(format!(
+                                                "{} · {}",
+                                                count_of(meta.item_count, "item"),
+                                                meta.agent
+                                            )),
+                                    ),
+                                ),
                         )
                         .on_click(
                             cx.listener(move |_: &mut Self, _, _, cx| cx.emit(resumed.event())),

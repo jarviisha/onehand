@@ -39,22 +39,17 @@ impl ChatPane {
             .facts_of(agent)
             .cloned()
         else {
-            // In the room the agent's own name leaves, and gone when that
-            // cannot hold it whole.
+            // Never cut: the agent's row drops it whole where it does not
+            // fit beside the agent's own name.
             return vec![
-                super::project_page::facts::facts(
-                    div()
-                        .debug_selector(|| "page-agent-default".into())
-                        .flex_none()
-                        .whitespace_nowrap()
-                        .text_xs()
-                        .text_color(cx.theme().muted_foreground)
-                        .child("Agent's default")
-                        .into_any_element(),
-                    div().into_any_element(),
-                    false,
-                )
-                .into_any_element(),
+                div()
+                    .debug_selector(|| "page-agent-default".into())
+                    .flex_none()
+                    .whitespace_nowrap()
+                    .text_xs()
+                    .text_color(cx.theme().muted_foreground)
+                    .child("Agent's default")
+                    .into_any_element(),
             ];
         };
         let picks = self.page_picks(root);

@@ -202,66 +202,107 @@ fn medium() -> String {
     "word ".repeat(8).trim_end().to_string()
 }
 
+/// The widths a row is drawn at, narrowest last.
+const ROW_WIDTHS: [Pixels; 4] = [WIDE, px(1100.), px(900.), NARROWEST];
+
 /// Each zoom the page is drawn at, its titles short, medium, long and
-/// unbroken, on a page of its own: `check` is given the title and its page.
-fn each_page(name: &str, seed: u64, check: impl Fn(&str, &str, &mut VisualTestContext)) {
+/// unbroken, each with and without what it continued, on a page of its own:
+/// `check` is given the zoom's factor and its page.
+fn each_page(name: &str, seed: u64, check: impl Fn(&str, f32, &mut VisualTestContext)) {
     let mut seed = seed;
     for &(zoom, steps, _) in DRAWN {
+        let factor = zoom.parse::<f32>().unwrap() / 100.;
         for title in [SHORT.to_string(), medium(), long(), unbroken()] {
-            seed += 1;
-            let mut app = TestAppContext::single();
-            let (shell, cx) = page(
-                &format!("{name}-{seed}"),
-                seed,
-                std::slice::from_ref(&title),
-                &mut app,
-            );
-            zoom_pane(&shell, steps, cx);
-            check(zoom, &title, cx);
-            app.quit();
+            for continued in [None, Some(medium())] {
+                seed += 1;
+                let mut app = TestAppContext::single();
+                let (shell, cx) = page_with(
+                    &format!("{name}-{seed}"),
+                    seed,
+                    std::slice::from_ref(&title),
+                    continued.as_deref(),
+                    &mut app,
+                );
+                zoom_pane(&shell, steps, cx);
+                check(zoom, factor, cx);
+                app.quit();
+            }
         }
     }
 }
 
+/// Whether a row's facts at `facts` show in its middle at `middle`: on its
+/// first line, not on the one out of sight.
+fn shown(facts: Bounds<Pixels>, middle: Bounds<Pixels>) -> bool {
+    facts.top() + SLACK < middle.bottom()
+}
+
 #[gpui::test]
-fn a_rows_facts_give_way_before_its_title(_: &mut TestAppContext) {
-    each_page("strain-home-give", 913_060, |zoom, title, cx| {
+fn a_rows_facts_stand_whole_or_not_at_all(_: &mut TestAppContext) {
+    each_page("strain-home-facts", 913_100, |zoom, factor, cx| {
+        let (least, line) = cx.update(|window, _| {
+            let rem = window.rem_size() * factor;
+            (
+                super::TITLE_LEAST.to_pixels(rem),
+                onehand_ui::tokens::ROW_H.to_pixels(rem),
+            )
+        });
         width(cx, WIDE);
-        let whole = bounds(cx, "home-title-0").size.width;
-        if title == SHORT {
-            assert!(
-                cx.debug_bounds("home-facts-0").is_some(),
-                "a short title's facts are not drawn in a wide pane at {zoom}%"
-            );
-        }
-        width(cx, NARROWEST);
-        let (row, named, more) = (
-            bounds(cx, "home-row-0"),
-            bounds(cx, "home-title-0"),
-            bounds(cx, "home-more-0"),
-        );
-        let cut = named.size.width + SLACK < whole;
-        let facts = cx.debug_bounds("home-facts-0");
+        let whole = bounds(cx, "home-facts-0").size.width;
         assert!(
-            !(cut && facts.is_some()),
-            "at {zoom}% in the narrowest pane the title is cut to {named:?} from {whole:?} while its facts stand at {facts:?}"
+            shown(bounds(cx, "home-facts-0"), bounds(cx, "home-middle-0")),
+            "a row's facts are not shown in a wide pane at {zoom}%"
         );
-        if let Some(facts) = facts {
-            assert_inside(facts, row, "a row's facts");
-            assert!(
-                facts.left() >= named.right(),
-                "the facts run over the title"
+        for w in ROW_WIDTHS {
+            width(cx, w);
+            let (row, middle, named, facts, more) = (
+                bounds(cx, "home-row-0"),
+                bounds(cx, "home-middle-0"),
+                bounds(cx, "home-title-0"),
+                bounds(cx, "home-facts-0"),
+                bounds(cx, "home-more-0"),
             );
-        }
-        assert!(
-            named.right() <= more.left() + SLACK,
-            "the title runs under the row's ⋯ at {zoom}%"
-        );
-        if title == SHORT {
+            assert_inside(more, row, &format!("the row's ⋯ at {w:?}, {zoom}%"));
+            // One line high, whatever it wrapped out of sight.
             assert!(
-                !cut,
-                "a short title is cut at {zoom}% in the narrowest pane: {named:?} from {whole:?}"
+                same(row.size.height, line),
+                "a row stands {:?} high, not one line's {line:?}, at {w:?}, {zoom}%",
+                row.size.height
             );
+            assert!(
+                named.size.width + SLACK >= least.min(middle.size.width),
+                "the title is down to {named:?} under its least {least:?} at {w:?}, {zoom}%"
+            );
+            if shown(facts, middle) {
+                assert_inside(facts, middle, &format!("a row's facts at {w:?}, {zoom}%"));
+                assert!(
+                    same(facts.size.width, whole),
+                    "a row's facts are drawn at {facts:?}, narrower than their words' {whole:?}, at {w:?}, {zoom}%"
+                );
+                assert!(
+                    same(facts.right(), middle.right()),
+                    "a row's facts leave its end at {w:?}, {zoom}%"
+                );
+                assert!(
+                    facts.left() >= named.right(),
+                    "the facts run over the title"
+                );
+                assert!(
+                    (facts.center().y - named.center().y).abs() <= px(1.),
+                    "a row's facts stand off its title's line at {w:?}, {zoom}%"
+                );
+            } else {
+                assert!(
+                    facts.top() + SLACK >= middle.bottom(),
+                    "a row's facts are partly in sight at {w:?}, {zoom}%: {facts:?} in {middle:?}"
+                );
+            }
+            if w == NARROWEST {
+                assert!(
+                    !shown(facts, middle),
+                    "a row's facts are shown in the narrowest pane at {zoom}%"
+                );
+            }
         }
     });
 }
@@ -302,8 +343,8 @@ fn the_composers_controls_stay_inside_their_boxes(_: &mut TestAppContext) {
         width(cx, NARROWEST);
         width(cx, WIDE);
         assert!(
-            cx.debug_bounds("page-agent-default").is_some(),
-            "the agent's default line is not drawn in a wide pane at {zoom}%"
+            bounds(cx, "page-agent-default").top() + SLACK < bounds(cx, "page-agent-row").bottom(),
+            "the agent's default line is not shown in a wide pane at {zoom}%"
         );
         width(cx, NARROWEST);
         let (card, column, send) = (
@@ -311,11 +352,24 @@ fn the_composers_controls_stay_inside_their_boxes(_: &mut TestAppContext) {
             bounds(cx, "project-page-column"),
             bounds(cx, "page-send"),
         );
-        // The agent's default line is dropped once it cannot be said whole.
-        let parts = std::iter::once(("page-agent", Some(bounds(cx, "page-agent"))))
-            .chain([("page-agent-default", cx.debug_bounds("page-agent-default"))]);
+        // The agent's default line goes whole, out of sight, once it does
+        // not fit beside the agent's name, and the row keeps its height.
+        let line = bounds(cx, "page-agent-row");
+        let agent = bounds(cx, "page-agent");
+        assert!(
+            same(line.size.height, agent.size.height),
+            "the agent's row grows to {line:?} beside its picker's {agent:?} at {zoom}%"
+        );
+        let parts = std::iter::once(("page-agent", bounds(cx, "page-agent")))
+            .chain([("page-agent-default", bounds(cx, "page-agent-default"))]);
         for (part, at) in parts {
-            let Some(at) = at else { continue };
+            if at.top() + SLACK >= line.bottom() {
+                continue;
+            }
+            assert!(
+                at.right() <= line.right() + SLACK,
+                "{part} is cut at {zoom}%: {at:?} in {line:?}"
+            );
             assert_inside(at, card, &format!("{part} at {zoom}%"));
             assert!(
                 at.right() <= send.left() + SLACK,
@@ -433,62 +487,5 @@ fn rows_in_a_scrolling_box_keep_a_lane_beside_its_scrollbar(cx: &mut TestAppCont
             row.right() + onehand_ui::tokens::SCROLLBAR_W <= page.right(),
             "row {i} runs under the scrollbar: {row:?} in {page:?}"
         );
-    }
-}
-
-/// A title `n` characters long on a page of its own, having continued one
-/// titled `earlier`, drawn wide: the title's width, then the bounds of what it
-/// continued, of its facts' count and of the rest of its facts, when drawn.
-fn continued_row(n: usize, earlier: &str) -> (Pixels, [Option<Bounds<Pixels>>; 3]) {
-    let mut app = TestAppContext::single();
-    let (_, cx) = page_with(
-        &format!("strain-home-continued-{n}-{}", earlier.len()),
-        914_000 + n as u64 * 1000 + earlier.len() as u64,
-        &["a".repeat(n)],
-        Some(earlier),
-        &mut app,
-    );
-    width(cx, WIDE);
-    let got = (
-        bounds(cx, "home-title-0").size.width,
-        [
-            cx.debug_bounds("home-continued-0"),
-            cx.debug_bounds("home-facts-0"),
-            cx.debug_bounds("home-facts-rest-0"),
-        ],
-    );
-    app.quit();
-    got
-}
-
-#[gpui::test]
-fn what_a_row_continued_gives_way_before_its_facts_and_its_title(_: &mut TestAppContext) {
-    let earlier = "word ".repeat(6);
-    // Short enough that all of it stands whole: every character's advance,
-    // and the facts at their whole width.
-    let (short, [continued, _, rest]) = continued_row(10, &earlier);
-    assert!(
-        continued.is_some(),
-        "what a short row continued is not drawn"
-    );
-    let advance = short / 10.;
-    let rest_whole = rest.expect("a short row's facts are drawn").size.width;
-    let size = |at: Option<Bounds<Pixels>>| at.map_or(Pixels::ZERO, |at| at.size.width);
-    for n in (30..82).step_by(3) {
-        let (title, [continued, count, rest]) = continued_row(n, &earlier);
-        // Any shortfall at all is a character cut, so no slack here.
-        let natural = advance * n as f32;
-        let cut = title + px(0.01) < natural;
-        assert!(
-            !(cut && (continued.is_some() || count.is_some())),
-            "a {n}-character title is cut to {title:?} of {natural:?} while what it continued ({continued:?}) or its facts ({count:?}) stand"
-        );
-        if continued.is_some() {
-            assert!(
-                same(size(rest), rest_whole),
-                "what a {n}-character title continued stands while its facts are cut to {:?} of {rest_whole:?}",
-                size(rest)
-            );
-        }
     }
 }
