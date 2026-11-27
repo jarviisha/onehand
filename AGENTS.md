@@ -170,8 +170,9 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
   Match our own event enums exhaustively, without wildcard arms or partial `if let` handling.
   Each guard was added after the same mistake appeared in several places. Remove one only
   after a probe shows a lint covers it, or when the rule it holds is dropped. `clippy.toml`
-  and the guards hold where a colour, a size, a button and the pointer are written; the rest
-  of the UI's visual rules are reviewed by hand.
+  and the guards hold where a colour, a size, a button and the pointer are written; each
+  other UI rule names what holds it: a test, a picture a second agent reads, or review
+  (`DESIGN.md`, *How a rule reads*).
 
 ## GPUI model
 

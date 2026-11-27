@@ -14,8 +14,8 @@ reads*); this skill is how to apply them. Read the rules the change touches, not
 | A principle, the window's frame, the transcript | [DESIGN.md](../../../DESIGN.md) *Principles*, *Layout*, *Transcript* |
 | A colour, an ink, type, space, a corner, a line | DESIGN.md `T-01` to `T-27`; the token in [tokens.md](tokens.md) |
 | A control, its variant, its size, an icon | DESIGN.md `C-01` to `C-15`; [UI patterns](../../../docs/ui-patterns.md) *Control sizes*, `C-16` to `C-21`; the builder in [catalog.md](catalog.md) |
-| A page, a panel, a list, a form, a dialog | UI patterns `K-01` to `K-08`, then its pattern's rules; the screen to build from in catalog.md *Patterns* |
-| Anything that lays parts out in a row, a bar or a list | UI patterns *Under strain*, `L-01` to `L-12` |
+| A page, a panel, a list, a form, a dialog | UI patterns `K-01` to `K-08`, then its pattern's rules among `K-09` to `K-32`; the screen to build from in catalog.md *Patterns* |
+| Anything that lays parts out in a row, a bar or a list | UI patterns *Strips*, `K-09`, and *Under strain*, `L-01` to `L-12` |
 | Waiting, empty, failing, refusing, a toast, a removal | UI patterns `S-01` to `S-13` |
 | A key, focus, a word | UI patterns `W-01` to `W-10`; the wiring in catalog.md *Keys and focus* |
 
@@ -45,10 +45,15 @@ not read.
    wraps as its neighbours do; content of several lines grows rather than shrinking its font.
    A view that holds a name of unknown length, a trailing slot, a row of actions or a list in a
    box that scrolls takes a strain test beside its peers': it draws the view at the narrowest
-   and a wide size, with short and long words, and reads its parts' bounds
-   (`crates/app/src/shell/rig/strain.rs`; the parts are marked with `debug_selector`).
+   and a wide size, with short, long and unbroken words, at 100% and 150% where its region
+   zooms, and with none, one and one past the cap where it lists, and reads its parts' bounds
+   (`crates/app/src/shell/rig/strain.rs`; the parts are marked with `debug_selector`). A view
+   in a feature crate, out of that rig's reach, reads the bounds in gpui's test window itself,
+   as `crates/ui/src/page/tests.rs` does.
 5. **Draw every state** (*States*) at the size its role takes, in one geometry across states, and
    check the way between them (loading to content, empty to content), not only where it lands.
+   A transition (a page left and shown again, a way back, a dock hiding) keeps the state its
+   rule keeps (`K-17`, `K-18`, `K-27`).
    Fix a size a component gets wrong in its shared wrapper, never at the call site.
 6. **Take each token by its role**: an ink by its role and the surface under it, a gap by the
    relationship, a column page's width from `PAGE_*`, a strip's height from `BAR_H`, a row's
@@ -134,7 +139,8 @@ window cannot hold the conversation beside the narrowest useful Workbench (at 72
 Workbench takes the whole area under a way back to the conversation: a dock's own narrowest
 width beside the conversation goes under what the reviewer could not see.
 Picture the states the change touches (a long name, an empty list, a hover) with more steps
-files. Read each picture yourself first.
+files, and where a rule is checked at a zoom, the steps press the zoom keys before the shot.
+Read each picture yourself first.
 
 **The reviewer is fresh**: an agent with no part in the change, started for this alone. A
 subagent, or a second session where the host has no subagents (in Claude Code, for example, the
@@ -152,6 +158,8 @@ The diff, pasted whole: the output of
 The pictures, each with its width, palette and state: <path> (<width>, <light|dark>, <state>) …
 The rules the change touches, by id; read each in DESIGN.md or docs/ui-patterns.md before
 answering: <T-23, L-04, …>
+Every view also answers to DESIGN.md's Principles 2 (a signal only where something needs the
+person), 5 (nothing said twice) and 6 (every list bounded, saying so): answer those three too.
 Answer one line per rule: holds; broken (which picture and where on it, the file and line in
 the diff); or cannot see (why: a hover not pictured, a zoom, text the view did not hold).
 Then "What I could not see": the states and widths no picture shows.

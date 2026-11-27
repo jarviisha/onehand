@@ -214,10 +214,10 @@ for.
 | `ROW_GUTTER` | how far a tree row's fill stands off the dock's side edges, inside `ROW_INSET` |
 | `TREE_INDENT` | how far each level of a tree steps in |
 | `SCROLLBAR_W` | room held clear beside what the library's scrollbar scrolls (the transcript's boxes, the Markdown reader, a dialog's scrolling part) |
-| `lift(cx)` | | the floating shadow |
+| `lift(cx)` | the floating shadow |
 
 Equal values kept apart on purpose, each one decision beside its one use: `CHAT_MIN` and
-`NARROW_PANEL` (30rem); `CONTENT_COLUMN` and `COMPOSER_COLUMN` (44rem).
+`NARROW_PANEL`; `CONTENT_COLUMN` and `COMPOSER_COLUMN`.
 
 ## Adding a token
 
