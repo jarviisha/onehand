@@ -22,7 +22,8 @@ How the repository is held together:
   binding at the level written, as DESIGN.md is.
 - [docs/ui-patterns.md](docs/ui-patterns.md): the patterns every screen repeats (pages, boxes,
   lists, forms, dialogs) and how they behave (waiting, empty, failing, confirming, keys, words).
-- **Every UI change** follows the `ui` skill and answers its checklist before it is finished.
+- **Every UI change** follows the `ui` skill; a visible one is pictured and reviewed as the
+  skill says before it is finished.
   Read [.claude/skills/ui/](.claude/skills/ui/) when your host does not load skills.
   Contract-only work follows the skill's contract path; it does not imply a UI migration.
 - [docs/drives.md](docs/drives.md): drives and carriers, the standard for where behaviour lives;
@@ -74,12 +75,11 @@ Availability or installation does not authorize a skill's side effects.
 
 | Tool or workflow | Fit for this repository |
 |---|---|
-| `ui` | Any visible change (tokens, controls, layout, states, keys and words) and, before it is finished, the checklist and the checks. |
+| `ui` | Any visible change (tokens, controls, layout, states, keys and words) and, before it is finished, the checks, the pictures and the review. |
 | `drive` | Before a visible change is called finished, to picture the view it changed; or when the owner asks to test in the app. It runs onehand in a headless sway session of its own and drives it end to end. Unrelated to a *drive*, the glossary's term. |
 | Matt Pocock review, debugging, domain modeling | Use for the requested concern; keep the existing glossary and document ownership. Tracker/triage workflows publish to this repository's GitHub issues: a spec gets `ready-for-agent`. A proposal under `docs/proposals/` keeps its own table of which step has a spec. |
 | Matt Pocock `setup-pre-commit`, TypeScript setup | Do not apply npm/Husky/Prettier or TypeScript defaults to this Rust workspace. Use the Makefile and Cargo checks. |
 | `ponytail` | Simplify within the requested behaviour. Preserve the module seams, guards, rendering bounds and deliberate exceptions; fewer files is not a reason to bypass them. |
-| `ui-ux-pro-max` | General UX guidance only; it has no GPUI stack. Adapt recommendations to `DESIGN.md`, not a generated palette or a second design-system document. |
 | Commit/push/PR commands | Use only for the Git operations requested. Run relevant checks before invoking a command-only workflow; it is not a validation step. |
 
 ## Commands
