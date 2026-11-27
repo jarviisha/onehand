@@ -163,3 +163,12 @@ fn holds_names_any_column() {
     assert!(board.holds("t"));
     assert_eq!(board.at(6).map(|(at, _)| at), Some(2));
 }
+
+#[test]
+fn a_name_used_twice_is_refused() {
+    let mut board = four();
+    board.columns[3].name = " Review ".into();
+    assert!(board
+        .shape()
+        .is_err_and(|why| why.contains("Two columns are called")));
+}

@@ -15,7 +15,12 @@ impl Board {
             return Err("it has no columns".into());
         }
         let mut ids = HashSet::new();
+        let mut names = HashSet::new();
         for column in &self.columns {
+            let name = column.name.trim().to_lowercase();
+            if !name.is_empty() && !names.insert(name) {
+                return Err(format!("Two columns are called {}", column.name.trim()));
+            }
             if column.id.trim().is_empty() || !ids.insert(column.id.as_str()) {
                 return Err(format!(
                     "a column's id, `{}`, is empty or used twice",
