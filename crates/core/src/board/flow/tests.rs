@@ -68,7 +68,11 @@ fn the_migrated_shape_pulls_as_before() {
     let got = look(&board, &issues(&[4, 9, 11], &[]), None, room(2), &yes, 5);
     assert_eq!(said(&got.starts), ["new 4 at 1", "new 9 at 1"]);
     assert_eq!(got.board.todo(), [11]);
-    let work: Vec<u64> = got.board.columns[1].entries.iter().map(|e| e.issue).collect();
+    let work: Vec<u64> = got.board.columns[1]
+        .entries
+        .iter()
+        .map(|e| e.issue)
+        .collect();
     assert_eq!(work, [4, 9]);
 }
 
@@ -76,7 +80,9 @@ fn the_migrated_shape_pulls_as_before() {
 fn a_done_entry_moves_on_by_itself_and_its_next_run_starts() {
     let mut board = Board::made("a".into(), 2, &[], 1);
     board.columns[1].entries.push(task(4, "t", true));
-    board.columns.push(column("ship", flow("b"), MovesOn::ByItself));
+    board
+        .columns
+        .push(column("ship", flow("b"), MovesOn::ByItself));
     let got = look(&board, &issues(&[4], &[]), None, room(2), &yes, 5);
     assert_eq!(said(&got.starts), ["next 4 of t at 2"]);
     assert!(got.board.columns[1].entries.is_empty());
@@ -96,7 +102,11 @@ fn a_ready_entry_waits_when_the_next_column_is_full() {
     });
     board.columns.push(review);
     let got = look(&board, &issues(&[4, 8], &[]), None, room(2), &yes, 5);
-    assert_eq!(got.board.columns[1].entries.len(), 1, "it waits where it is");
+    assert_eq!(
+        got.board.columns[1].entries.len(),
+        1,
+        "it waits where it is"
+    );
 }
 
 #[test]
@@ -107,13 +117,19 @@ fn a_move_and_a_start_share_the_team() {
         ..Entry::default()
     });
     let got = look(&board, &issues(&[4, 7], &[]), None, room(1), &yes, 5);
-    assert_eq!(said(&got.starts), ["new 4 at 1"], "the move takes the one place");
+    assert_eq!(
+        said(&got.starts),
+        ["new 4 at 1"],
+        "the move takes the one place"
+    );
 }
 
 #[test]
 fn the_first_steps_room_is_per_workflow() {
     let mut board = Board::made("a".into(), 4, &[4, 5], 1);
-    board.columns.push(column("ship", flow("b"), MovesOn::ByItself));
+    board
+        .columns
+        .push(column("ship", flow("b"), MovesOn::ByItself));
     board.columns[2].entries.push(Entry {
         issue: 6,
         task: Some("t".into()),
@@ -155,7 +171,11 @@ fn a_closed_issue_without_a_task_is_dropped_anywhere() {
     board.columns[1].entries.push(task(6, "t", false));
     let got = look(&board, &issues(&[], &[4, 5, 6]), None, room(0), &yes, 5);
     assert!(got.board.todo().is_empty());
-    let left: Vec<u64> = got.board.columns[1].entries.iter().map(|e| e.issue).collect();
+    let left: Vec<u64> = got.board.columns[1]
+        .entries
+        .iter()
+        .map(|e| e.issue)
+        .collect();
     assert_eq!(left, [6], "one a task works stays");
 }
 

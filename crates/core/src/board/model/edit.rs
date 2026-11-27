@@ -17,7 +17,10 @@ impl Board {
         let mut ids = HashSet::new();
         for column in &self.columns {
             if column.id.trim().is_empty() || !ids.insert(column.id.as_str()) {
-                return Err(format!("a column's id, `{}`, is empty or used twice", column.id));
+                return Err(format!(
+                    "a column's id, `{}`, is empty or used twice",
+                    column.id
+                ));
             }
             if column.name.trim().is_empty() {
                 return Err(format!("column `{}` has no name", column.id));
@@ -26,13 +29,19 @@ impl Board {
                 return Err(format!("column `{}` holds none", column.id));
             }
             let runs = matches_workflow(&column.work);
-            let sound = |e: &Entry| (runs || (e.run.is_none() && !e.done)) && (e.task.is_some() || e.run.is_none());
+            let sound = |e: &Entry| {
+                (runs || (e.run.is_none() && !e.done)) && (e.task.is_some() || e.run.is_none())
+            };
             if !column.entries.iter().all(sound) {
                 return Err(format!("column `{}` holds an entry it cannot", column.id));
             }
         }
         let mut issues = HashSet::new();
-        let all = self.columns.iter().flat_map(|c| c.entries.iter()).chain(&self.done);
+        let all = self
+            .columns
+            .iter()
+            .flat_map(|c| c.entries.iter())
+            .chain(&self.done);
         for entry in all {
             if !issues.insert(entry.issue) {
                 return Err(format!("issue {} is on the board twice", entry.issue));

@@ -46,7 +46,8 @@ fn held(fx: &[Effect]) -> Option<HashSet<String>> {
         | Effect::Signal(_)
         | Effect::ReadIssues { .. }
         | Effect::GivePlace { .. }
-        | Effect::Start { .. } | Effect::NextRun { .. }
+        | Effect::Start { .. }
+        | Effect::NextRun { .. }
         | Effect::CloseIssue { .. } => None,
     })
 }
@@ -120,7 +121,11 @@ fn an_entry_naming_a_lost_task_is_kept() {
 fn an_entry_whose_start_is_on_its_way_is_kept() {
     let mut d = drive(&[4], false);
     d.starting.entry(id()).or_default().insert(4);
-    let board = d.board(&id()).unwrap().placed(4, 1, None, 2).begun(4, "t", "t");
+    let board = d
+        .board(&id())
+        .unwrap()
+        .placed(4, 1, None, 2)
+        .begun(4, "t", "t");
     d.boards.boards.insert(id(), board);
     let _ = read(&mut d, Vec::new());
     assert_eq!(d.board(&id()).unwrap().work().len(), 1);

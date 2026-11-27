@@ -60,7 +60,9 @@ fn a_person_columns_entry_with_a_run_is_refused() {
         .push(entry(6, Some("t"), Some("t"), false));
     assert!(board.shape().is_err());
     let mut done = four();
-    done.columns[2].entries.push(entry(6, Some("t"), None, true));
+    done.columns[2]
+        .entries
+        .push(entry(6, Some("t"), None, true));
     assert!(done.shape().is_err());
 }
 
@@ -88,15 +90,21 @@ fn placed_moves_an_entry_and_clears_its_columns_state() {
         .push(entry(5, Some("t"), Some("r"), true));
     let board = board.placed(5, 2, None, 50);
     assert!(board.columns[1].entries.is_empty());
-    assert_eq!(board.columns[2].entries, [Entry {
-        since: 50,
-        ..entry(5, Some("t"), None, false)
-    }]);
+    assert_eq!(
+        board.columns[2].entries,
+        [Entry {
+            since: 50,
+            ..entry(5, Some("t"), None, false)
+        }]
+    );
     let new = board.placed(7, 3, None, 60);
-    assert_eq!(new.columns[3].entries, [Entry {
-        since: 60,
-        ..entry(7, None, None, false)
-    }]);
+    assert_eq!(
+        new.columns[3].entries,
+        [Entry {
+            since: 60,
+            ..entry(7, None, None, false)
+        }]
+    );
 }
 
 #[test]
@@ -149,7 +157,9 @@ fn column_edits_keep_entries() {
 #[test]
 fn holds_names_any_column() {
     let mut board = four();
-    board.columns[2].entries.push(entry(6, Some("t"), None, false));
+    board.columns[2]
+        .entries
+        .push(entry(6, Some("t"), None, false));
     assert!(board.holds("t"));
     assert_eq!(board.at(6).map(|(at, _)| at), Some(2));
 }

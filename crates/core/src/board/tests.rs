@@ -11,16 +11,6 @@ fn numbers(issues: Vec<&LocalIssue>) -> Vec<u64> {
     issues.iter().map(|i| i.number()).collect()
 }
 
-fn none() -> HashSet<u64> {
-    HashSet::new()
-}
-
-
-
-
-
-
-
 fn issues(json: &str) -> Issues {
     serde_json::from_str(json).unwrap()
 }

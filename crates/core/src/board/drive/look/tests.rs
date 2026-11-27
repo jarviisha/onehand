@@ -123,7 +123,9 @@ fn said(fx: &[Effect]) -> Vec<String> {
             Effect::ReadIssues { .. } => "read".into(),
             Effect::GivePlace { task } => format!("give {task}"),
             Effect::Start { issue, task, .. } => format!("start {issue} as {task}"),
-            Effect::NextRun { issue, task, run, .. } => format!("next {issue} of {task} as {run}"),
+            Effect::NextRun {
+                issue, task, run, ..
+            } => format!("next {issue} of {task} as {run}"),
             Effect::CloseIssue { issue, .. } => format!("close {issue}"),
             Effect::Held { .. } => "held".into(),
         })
@@ -212,10 +214,12 @@ fn an_unreadable_read_only_gives_places() {
 fn a_board_that_cannot_run_its_workflow_starts_nothing() {
     let mut d = drive(2, &[4]);
     let mut f = facts(0);
-    f.templates.insert("builtin:branch".into(), Ok(flow(Place::Checkout)));
+    f.templates
+        .insert("builtin:branch".into(), Ok(flow(Place::Checkout)));
     assert!(read(&mut d, issues(&[4], &[]), f).is_empty());
     let mut f = facts(0);
-    f.templates.insert("builtin:branch".into(), Err("gone".into()));
+    f.templates
+        .insert("builtin:branch".into(), Err("gone".into()));
     assert!(read(&mut d, issues(&[4], &[]), f).is_empty());
 }
 
@@ -245,11 +249,14 @@ fn a_start_on_its_way_counts_toward_the_team() {
 fn the_first_steps_room_narrows_a_pull() {
     let mut d = drive(3, &[2, 7]);
     let mut f = facts(0);
-    f.first.insert("builtin:branch".into(), Some(Room {
-        limit: 3,
-        holding: 1,
-        waiting: 1,
-    }));
+    f.first.insert(
+        "builtin:branch".into(),
+        Some(Room {
+            limit: 3,
+            holding: 1,
+            waiting: 1,
+        }),
+    );
     let fx = read(&mut d, issues(&[2, 7], &[]), f);
     assert_eq!(
         said(&land(&mut d, fx)),
@@ -377,7 +384,11 @@ fn a_done_end_moves_the_entry_to_done_and_closes_once() {
     assert!(said(&fx).contains(&"read".to_string()), "{:?}", said(&fx));
     assert!(d.board(&id()).unwrap().work()[0].done, "done in its column");
     let fx = read(&mut d, issues(&[4], &[]), facts(0));
-    assert!(said(&fx).contains(&"close 4".to_string()), "{:?}", said(&fx));
+    assert!(
+        said(&fx).contains(&"close 4".to_string()),
+        "{:?}",
+        said(&fx)
+    );
     let _ = land(&mut d, fx);
     let board = d.board(&id()).unwrap();
     assert!(board.work().is_empty());
@@ -398,7 +409,11 @@ fn done_and_moved(d: &mut BoardDrive, open: &[u64], closed: &[u64]) -> Vec<Effec
 fn a_closed_issue_is_not_closed_again() {
     let mut d = started(4);
     let fx = done_and_moved(&mut d, &[], &[4]);
-    assert!(said(&fx).iter().all(|e| !e.starts_with("close")), "{:?}", said(&fx));
+    assert!(
+        said(&fx).iter().all(|e| !e.starts_with("close")),
+        "{:?}",
+        said(&fx)
+    );
 }
 
 #[test]
@@ -538,7 +553,9 @@ fn two_columns(d: &mut BoardDrive) {
         entries: Vec::new(),
     };
     board.columns[1].moves_on = crate::board::MovesOn::ByItself;
-    board.columns.push(column("review", crate::board::Work::Person));
+    board
+        .columns
+        .push(column("review", crate::board::Work::Person));
     board.columns[2].moves_on = crate::board::MovesOn::ByPerson;
     board.columns.push(column(
         "ship",
@@ -555,13 +572,19 @@ fn next_run_is_asked_for_a_task_entering_a_workflow_column() {
     let mut d = started(4);
     two_columns(&mut d);
     let _ = done_and_moved(&mut d, &[4], &[]);
-    assert_eq!(d.board(&id()).unwrap().at(4).map(|(at, _)| at), Some(2), "in review");
+    assert_eq!(
+        d.board(&id()).unwrap().at(4).map(|(at, _)| at),
+        Some(2),
+        "in review"
+    );
     let fx = d.place(&id(), 4, Some("ship"), None, false, now()).unwrap();
     let _ = land(&mut d, fx);
     let fx = read(&mut d, issues(&[4], &[]), facts(0));
     let rest = land(&mut d, fx);
     assert!(
-        said(&rest).iter().any(|e| e.starts_with("next 4 of id0 as id")),
+        said(&rest)
+            .iter()
+            .any(|e| e.starts_with("next 4 of id0 as id")),
         "{:?}",
         said(&rest)
     );
@@ -571,7 +594,9 @@ fn next_run_is_asked_for_a_task_entering_a_workflow_column() {
 fn an_end_in_a_column_the_task_left_changes_nothing() {
     let mut d = started(4);
     two_columns(&mut d);
-    let fx = d.place(&id(), 4, Some("review"), None, false, now()).unwrap();
+    let fx = d
+        .place(&id(), 4, Some("review"), None, false, now())
+        .unwrap();
     let _ = land(&mut d, fx);
     assert!(ended(&mut d, 4, "id0", Outcome::Done).is_empty());
     assert!(!d.board(&id()).unwrap().columns[2].entries[0].done);
@@ -584,5 +609,7 @@ fn a_lost_start_is_kept_and_not_started_again() {
     assert_eq!(d.board(&id()).unwrap().work().len(), 1, "kept");
     let fx = read(&mut d, issues(&[4], &[]), facts(0));
     let rest = land(&mut d, fx);
-    assert!(said(&rest).iter().all(|e| !e.starts_with("start") && !e.starts_with("next")));
+    assert!(said(&rest)
+        .iter()
+        .all(|e| !e.starts_with("start") && !e.starts_with("next")));
 }

@@ -75,7 +75,10 @@ fn shape_refuses_what_an_earlier_version_did_not_know() {
     assert!(flow.shape().is_err());
     let mut done = old();
     done.done.push(done.columns[0].entries[0].clone());
-    assert!(done.shape().is_err(), "an issue on the board twice, and done with no task");
+    assert!(
+        done.shape().is_err(),
+        "an issue on the board twice, and done with no task"
+    );
     let mut newer = made();
     newer.schema_version = SCHEMA_VERSION + 1;
     assert!(newer.shape().is_err());
@@ -141,8 +144,6 @@ fn upgraded_moves_to_do_issues_that_tasks_hold_and_caps_done() {
     assert_eq!(board.done()[0].issue, 100, "newest first, as handed");
     assert_eq!(board.schema_version, SCHEMA_VERSION);
 }
-
-
 
 #[test]
 fn removed_leaves_no_trace() {

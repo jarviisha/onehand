@@ -1274,7 +1274,14 @@ fn next_run_starts_at_the_first_step_carrying_nothing() {
     let mut tasks = TasksDrive::default();
     tasks.add(worked("1"));
     let fx = tasks
-        .next_run("1", "r2".into(), next_template(), current(), "Ship".into(), WINDOW)
+        .next_run(
+            "1",
+            "r2".into(),
+            next_template(),
+            current(),
+            "Ship".into(),
+            WINDOW,
+        )
         .unwrap();
     assert!(named(&fx, "Save"), "{fx:?}");
     let task = tasks.task("1").unwrap();
@@ -1289,7 +1296,14 @@ fn next_run_starts_at_the_first_step_carrying_nothing() {
 fn next_run_keeps_the_place_and_takes_current_settings() {
     let mut tasks = TasksDrive::default();
     tasks.add(worked("1"));
-    let _ = tasks.next_run("1", "r2".into(), next_template(), current(), "Ship".into(), WINDOW);
+    let _ = tasks.next_run(
+        "1",
+        "r2".into(),
+        next_template(),
+        current(),
+        "Ship".into(),
+        WINDOW,
+    );
     let setup = &tasks.task("1").unwrap().runs().last().unwrap().setup;
     assert_eq!(setup.dir, PathBuf::from("/wt"));
     assert_eq!(setup.repo, PathBuf::from("/repo"));
@@ -1306,12 +1320,26 @@ fn next_run_is_refused_on_a_removed_worktree_and_at_work() {
     gone.worktree_removed = true;
     tasks.add(gone);
     assert!(tasks
-        .next_run("1", "r2".into(), next_template(), current(), "Ship".into(), WINDOW)
+        .next_run(
+            "1",
+            "r2".into(),
+            next_template(),
+            current(),
+            "Ship".into(),
+            WINDOW
+        )
         .is_err_and(|why| why.contains("worktree")));
     tasks.add(worked("2"));
     ask(&mut tasks, "2", "/wt2");
     assert!(tasks
-        .next_run("2", "r2".into(), next_template(), current(), "Ship".into(), WINDOW)
+        .next_run(
+            "2",
+            "r2".into(),
+            next_template(),
+            current(),
+            "Ship".into(),
+            WINDOW
+        )
         .is_err());
 }
 
@@ -1319,6 +1347,13 @@ fn next_run_is_refused_on_a_removed_worktree_and_at_work() {
 fn next_run_is_driven_off_screen() {
     let mut tasks = TasksDrive::default();
     tasks.add(worked("1"));
-    let _ = tasks.next_run("1", "r2".into(), next_template(), current(), "Ship".into(), WINDOW);
+    let _ = tasks.next_run(
+        "1",
+        "r2".into(),
+        next_template(),
+        current(),
+        "Ship".into(),
+        WINDOW,
+    );
     assert!(tasks.take_off_screen("1"));
 }

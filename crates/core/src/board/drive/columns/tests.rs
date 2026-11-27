@@ -96,9 +96,12 @@ fn add_column_refuses_what_valid_refuses() {
     assert!(d
         .add_column(&id(), column("x", Work::Person), 1, &refuse)
         .is_err_and(|why| why.contains("not on offer")));
-    assert!(d.add_column(&id(), column("x", Work::Person), 1, &ok).is_ok());
+    assert!(d
+        .add_column(&id(), column("x", Work::Person), 1, &ok)
+        .is_ok());
     assert!(
-        d.add_column(&id(), column("x", Work::Person), 1, &ok).is_err(),
+        d.add_column(&id(), column("x", Work::Person), 1, &ok)
+            .is_err(),
         "an id used twice"
     );
     assert_eq!(d.board(&id()).unwrap().columns[1].id, "x");
@@ -135,7 +138,10 @@ fn turning_a_column_to_a_person_one_refuses_while_it_works() {
         .is_err());
     assert!(d.edit_column(&id(), "work", person, &idle, &ok).is_ok());
     let entry = &d.board(&id()).unwrap().columns[1].entries[0];
-    assert!(entry.run.is_none() && entry.task.is_some(), "its run forgotten, its task kept");
+    assert!(
+        entry.run.is_none() && entry.task.is_some(),
+        "its run forgotten, its task kept"
+    );
 }
 
 #[test]
@@ -153,7 +159,9 @@ fn place_refuses_a_full_column_and_a_task_at_work() {
     assert!(d
         .place(&id(), 4, None, None, true, now())
         .is_err_and(|why| why.contains("Stop")));
-    assert!(d.place(&id(), 5, Some("todo"), Some(4), false, now()).is_ok());
+    assert!(d
+        .place(&id(), 5, Some("todo"), Some(4), false, now())
+        .is_ok());
     assert_eq!(d.board(&id()).unwrap().todo(), [5, 4]);
 }
 
@@ -197,7 +205,9 @@ fn start_on_a_press_goes_ahead_past_a_full_team() {
     let rest = land(&mut d, fx);
     assert_eq!(starts(&rest), 1);
     assert_eq!(
-        d.board(&id()).unwrap().columns[1].entries[0].task.as_deref(),
+        d.board(&id()).unwrap().columns[1].entries[0]
+            .task
+            .as_deref(),
         Some("n")
     );
 }

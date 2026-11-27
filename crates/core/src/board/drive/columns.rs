@@ -84,7 +84,9 @@ impl BoardDrive {
     /// down.
     #[must_use = "its effects are to be carried"]
     pub fn move_column(&mut self, id: &ProjectId, column_id: &str, toward: Toward) -> Vec<Effect> {
-        self.edit(id, false, |board| board.map(|b| b.column_moved(column_id, toward)))
+        self.edit(id, false, |board| {
+            board.map(|b| b.column_moved(column_id, toward))
+        })
     }
 
     /// Put `issue` of project `id`'s board in column `to`, just before

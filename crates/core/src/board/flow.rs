@@ -53,7 +53,8 @@ pub(crate) fn look(
 ) -> Decided {
     let mut room = room;
     let open = |issue: u64| issues.get(issue).is_some_and(|i| i.open());
-    let workable = |issue: u64| (issues.get(issue)).is_some_and(|i| i.open() && issues.workable(i, forge));
+    let workable =
+        |issue: u64| (issues.get(issue)).is_some_and(|i| i.open() && issues.workable(i, forge));
     let mut board = board.clone();
     for column in &mut board.columns {
         column.entries.retain(|e| e.task.is_some() || open(e.issue));
@@ -78,7 +79,10 @@ pub(crate) fn look(
                 closing.push(entry.issue);
                 continue;
             };
-            if next.limit.is_some_and(|limit| next.entries.len() >= limit as usize) {
+            if next
+                .limit
+                .is_some_and(|limit| next.entries.len() >= limit as usize)
+            {
                 break;
             }
             if let Some(workflow) = starting(next) {

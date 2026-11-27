@@ -330,8 +330,6 @@ impl Board {
         board
     }
 
-
-
     /// The board with `issue` in no column and not in Done.
     pub(crate) fn removed(&self, issue: u64) -> Board {
         let mut board = self.clone();

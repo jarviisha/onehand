@@ -68,7 +68,12 @@ impl BoardDrive {
         let Ok((issues, forge)) = read else {
             return fx;
         };
-        let mut closing: Vec<u64> = self.closing.remove(id).unwrap_or_default().into_iter().collect();
+        let mut closing: Vec<u64> = self
+            .closing
+            .remove(id)
+            .unwrap_or_default()
+            .into_iter()
+            .collect();
         // A board that has not taken its tasks up yet does not know what
         // works on it, and taking them up would write over what it started.
         let looks = self.boards.board(id).is_some_and(|b| !b.adopts()) && facts.window;
@@ -105,8 +110,10 @@ impl BoardDrive {
         let Some(board) = self.boards.board(id) else {
             return Vec::new();
         };
-        let usable =
-            |workflow: &str| (facts.templates.get(workflow)).is_some_and(|t| t.as_ref().is_ok_and(|t| usable(Some(t)).is_ok()));
+        let usable = |workflow: &str| {
+            (facts.templates.get(workflow))
+                .is_some_and(|t| t.as_ref().is_ok_and(|t| usable(Some(t)).is_ok()))
+        };
         // An extend waiting for a place is first in line: the look gets only
         // what is left after it.
         let held = facts.running + starting + facts.extends_waiting.len();
@@ -118,7 +125,12 @@ impl BoardDrive {
             // the room ledger still hold, so the cost is a task that waits;
             // count a landed task until its run first asks if that bites.
             first: (facts.first.iter())
-                .map(|(w, room)| (w.clone(), room.map(|r| (r.limit, r.holding + r.waiting + starting))))
+                .map(|(w, room)| {
+                    (
+                        w.clone(),
+                        room.map(|r| (r.limit, r.holding + r.waiting + starting)),
+                    )
+                })
                 .collect(),
         };
         let decided = flow::look(board, issues, forge, room, &usable, now.secs);
@@ -140,7 +152,9 @@ impl BoardDrive {
             let Some(column) = begun.columns.get(column).cloned() else {
                 continue;
             };
-            let Some(template) = workflow_of(&column).and_then(|w| facts.templates.get(w)?.clone().ok()) else {
+            let Some(template) =
+                workflow_of(&column).and_then(|w| facts.templates.get(w)?.clone().ok())
+            else {
                 continue;
             };
             let effect = match start {
@@ -235,7 +249,8 @@ impl BoardDrive {
     ) -> Vec<Effect> {
         let ours = self.boards.board(id).is_some_and(|b| {
             (b.columns.iter()).any(|c| {
-                workflow_of(c).is_some() && c.entries.iter().any(|e| e.task.as_deref() == Some(task))
+                workflow_of(c).is_some()
+                    && c.entries.iter().any(|e| e.task.as_deref() == Some(task))
             })
         });
         if !ours {
