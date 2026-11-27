@@ -331,6 +331,10 @@ pub struct Run {
     /// it there.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub column: Option<String>,
+    /// What the task's run before it last answered, handed to it on the
+    /// board as `{handover}`; none on a first run.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub handover: Option<String>,
     #[serde(skip)]
     awaiting: Await,
     /// An extend's prompt, held while the run waits for room at the step it
@@ -340,6 +344,40 @@ pub struct Run {
 }
 
 impl Run {
+    /// What its task's detail calls it, as its `n`th run: by the board's
+    /// column it ran in, when it ran in one.
+    pub fn label(&self, n: usize) -> String {
+        match &self.column {
+            Some(column) => format!("Run {n} · {column}"),
+            None => format!("Run {n}"),
+        }
+    }
+
+    /// What it hands on to its task's next run: the answer its last visit
+    /// to an agent step that keeps its answer kept; else, for a retry that
+    /// made no such visit, the last answer it carried over, in its steps'
+    /// order; else what it was handed itself.
+    pub(crate) fn last_answer(&self) -> Option<&str> {
+        let keeps = |id: &str| {
+            self.template
+                .steps
+                .iter()
+                .find(|s| s.id == id)
+                .is_some_and(|step| keeps_answer(&step.kind))
+        };
+        let visited = self.visits.iter().rev().find_map(|visit| {
+            keeps(&visit.step)
+                .then_some(visit.output.as_deref())
+                .flatten()
+        });
+        let carried = || {
+            (self.template.steps.iter().rev())
+                .filter(|step| keeps_answer(&step.kind))
+                .find_map(|step| self.outputs.get(&step.id).map(String::as_str))
+        };
+        visited.or_else(carried).or(self.handover.as_deref())
+    }
+
     /// A run of `template` on `brief`, not started: [`Run::resume`] starts
     /// it, so a run that waited for its place and one picked up again take
     /// the same way in.
@@ -366,6 +404,7 @@ impl Run {
             failure: None,
             pull_request: None,
             column: None,
+            handover: None,
             awaiting: Await::Nothing,
             extend_text: None,
         }
@@ -809,5 +848,18 @@ impl Run {
         if self.history.len() > HISTORY_MAX {
             self.history.remove(0);
         }
+    }
+}
+
+/// Whether a step of `kind` keeps its answer: an agent step saying so.
+fn keeps_answer(kind: &StepKind) -> bool {
+    match kind {
+        StepKind::Agent { keep_answer, .. } => *keep_answer,
+        StepKind::Review { .. }
+        | StepKind::Command { .. }
+        | StepKind::Approval { .. }
+        | StepKind::Push
+        | StepKind::PullRequest
+        | StepKind::StatusChecks { .. } => false,
     }
 }

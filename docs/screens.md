@@ -400,7 +400,7 @@ room and leaves the terminal as it is.
   *Open the agent settings* (secondary), which opens Settings on Agents.
 - A project's page, reached by its row or with no session open, shows, from the top: a head (the project's name, its path and git line
   under it on one line, the path cut from its start (a host's from its middle, so the host's name
-  stays) before the git line is cut, the path whole in its tooltip, then at the end the *Builds* chip and *Run check* (spinning while a check runs)); then *What are we building?*,
+  stays) before the git line is cut, the path whole in its tooltip, then at the end the *Builds* chip, the board link on a project with a board (*Board · N running · M to do · K waiting for you*, each part left out at zero, so *Board* alone or *Board · 2 to do*; its tooltip *Show the project's board*) and *Run check* (spinning while a check runs)); then *What are we building?*,
   semibold and centred, over the page's composer: an edged card as the session's, its field, then
   `+` (a menu: *Attach files…*, the native picker; *Mention a file* and *Run a slash command*,
   which type `@` and `/` from code), the agent chip (*Agent*, each configured agent, the one picked ticked; the first while none is
@@ -577,19 +577,22 @@ room and leaves the terminal as it is.
   of one width side by side: *Backlog*, the board's own columns in their order, *Done*. They scroll
   sideways (a wheel over the gaps or the heads, or the scrollbar along the foot), and each column
   scrolls on its own, as tall as the page at most. Each draws 50 rows and says *N more not shown*.
-  A column's head is its name, then `· n of <limit>` when it holds a limit and *· its workflow is
-  gone* when it runs one no longer on offer, with a `⋯` holding *Edit column…* and, on a workflow
-  column, *Edit workflow*. A row is an issue's (its title over `#N · <age>` in a person's column, or
+  A column's head is its name, then how many it holds, muted (*n of <limit>* when it holds a
+  limit), with a `⋯` holding *Edit column…* and, on a workflow column whose workflow is on offer,
+  *Edit workflow*. A workflow gone, or one a board cannot run, is said by the column's rows, or, in
+  an empty column, by its note in the warning ink in place of *Nothing here*. A row is an issue's (its title over `#N · <age>` in a person's column, or
   over what it waits on in a workflow column: *Waiting for Start*, *Waiting for a team place*,
-  *Starting*, *Done here*, *Waiting for room in <column>*, *Did not start* in the warning ink), or a
+  *Starting*, *Done here*, *Waiting for room in <column>*, *Did not start* in the warning ink, or
+  why its column cannot start it, *Its workflow, <id>, is gone*, in the warning ink), or a
   task's once a task works it (its title over the Tasks page's words for it, opening it when
   pressed). A row waiting on a person draws its one act as a button beside its `⋯`: *Start*, *Move to
   <column>*, *Move to Done*. Its `⋯` and right-click offer, in order, *Show task* and the Tasks page's
   acts but *Dismiss* (with a task), that act, *Move to <next>*, *Move back to <previous>*, *Move to
   Done*, *Move to <column>* for each other, *Move up*, *Move down*, then *Back to Backlog*, or *Remove
   from board* with a task, in the danger ink; while its task works the moves are listed refusing,
-  and one into a full column refuses. A Backlog row's `⋯` offers *Move to <first column>*. Every row
-  drags, its title following the pointer, but one whose task works: onto a row it lands just before
+  and one into a full column refuses. A Backlog row's `⋯` offers *Move to <first column>*, a Done
+  row's only *Back to Backlog* or *Remove from board*. Every row
+  drags, its title following the pointer, but one whose task works and those of Done: onto a row it lands just before
   that row, onto a column elsewhere last, onto the Backlog off the board, onto Done into Done; what
   it lands on fills (a column only when it has no rows), and a refused drop says why in a
   notification. Empty columns say so (*Nothing here*, *Nothing done yet*); a board on a host says
@@ -601,8 +604,11 @@ room and leaves the terminal as it is.
   over workflow, step or outcome and project, its actions by state (*Open session*, *Stop*,
   *Resume*, *Retry…*, *Dismiss*) in a `⋯` on hover and on a right-click, under *Needs attention*
   also drawn as buttons beside it; its text opens the task's detail, a page of its own at the
-  prose width: a trail, the title, then *Awaiting approval* or *Out of time* in a page's box, its mark and title in the warning ink,
-  *Way out*, and the runs on a vertical stepper.
+  prose width: a trail, the title over its line of facts (the row's, a board task's between runs
+  led by *on the board at <column>*), then *Awaiting approval* or *Out of time* in a page's box, its mark and title in the warning ink,
+  *Way out*, and the runs on a vertical stepper: the last run's box titled *Run N*, or *Run N ·
+  <column>* for a run a board started in a column, then *Earlier runs*, each row led by the same
+  label.
 - *Issues*, a list page (`docs/ui-patterns.md`, *List pages*): a head (*Issues*, then *Refresh*
   and *New issue*, its primary, at the end); the row under it (the search, then *Open* and
   *Closed* as choices, each its count in a badge after its word, then pickers for project and
@@ -696,7 +702,8 @@ column…*. *Add column…* and the edit mark open the column dialog (*Add a col
 menu, with a workflow, *Starts* (*When it enters*, *When Start is pressed*) with a workflow,
 *Moves on* (*By itself*, *A person moves it*), *Limit*, empty for none; what refuses it above the
 footer in the danger ink; *Cancel*, then *Add* or *Save*. Then *Team*, a track of 1 to 8 with
-*Running tasks finish; no more start until fewer than N run.* under its title, and *Remove the
+*Tasks working at once. Lowering it stops none: no more start until fewer than N run* under its
+title, and *Remove the
 board…* in the danger ink, which asks first. A board this build cannot read shows why, alone: it is
 never written over, nor taken away. With no such project it
 says *No project here runs on this machine*. A project's dots menu, on the rail and over its page, offers *Project

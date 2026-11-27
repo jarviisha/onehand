@@ -13,7 +13,13 @@ use super::template::{GateKind, Place, StepKind, Template};
 use std::collections::BTreeMap;
 
 /// The variables every prompt may use besides `output.<id>`.
-pub(crate) const NAMES: [&str; 4] = ["brief", "instructions", "check_output", "revise"];
+pub(crate) const NAMES: [&str; 5] = [
+    "brief",
+    "instructions",
+    "check_output",
+    "revise",
+    "handover",
+];
 
 /// Every variable `prompt` names, in order, repeats included.
 pub(crate) fn refs(prompt: &str) -> Vec<&str> {
@@ -67,6 +73,8 @@ pub(crate) struct Fill<'a> {
     pub(crate) revise_by: Option<&'a str>,
     /// What the step being revised answered last time, said beside the note.
     pub(crate) revised_answer: Option<&'a str>,
+    /// What the task's run before this one last answered, on a board.
+    pub(crate) handover: Option<&'a str>,
 }
 
 /// The prompt that starts a step: `prompt` filled in, then what onehand
@@ -155,6 +163,7 @@ pub fn first_prompt(template: &Template, brief: &Brief) -> Option<String> {
                 revise: None,
                 revise_by: None,
                 revised_answer: None,
+                handover: None,
             };
             Some(step_prompt(prompt, gates, template.place, &fill))
         }
@@ -180,6 +189,7 @@ fn value(name: &str, fill: &Fill) -> String {
         "instructions" => fill.brief.instructions.clone().unwrap_or_default(),
         "check_output" => fill.check_output.unwrap_or_default().trim().to_string(),
         "revise" => fill.revise.unwrap_or_default().to_string(),
+        "handover" => fill.handover.unwrap_or_default().to_string(),
         _ => name
             .strip_prefix("output.")
             .and_then(|id| fill.outputs.get(id))

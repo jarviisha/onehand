@@ -31,6 +31,8 @@ pub fn load_from(dir: &Path) -> BoardLoad {
     };
     let board = toml::from_str::<Board>(&text)
         .map_err(|e| e.to_string())
+        .and_then(|board| board.shape().map(|()| board.read_up()))
+        // Read up, it answers to this version's rules too.
         .and_then(|board| board.shape().map(|()| board));
     match board {
         Ok(board) => BoardLoad::Found(board),

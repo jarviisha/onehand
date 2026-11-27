@@ -352,3 +352,27 @@ fn bind_copy_rebinds_the_columns_running_what_it_copies() {
         .is_some_and(|bound| bound.is_ok()));
     assert_eq!(d.board(&id()).unwrap().workflow(), "copy");
 }
+
+#[test]
+fn column_holding_names_the_column_whose_entry_names_the_task() {
+    let mut b = board(&[]);
+    b.columns[1].entries.push(crate::board::Entry {
+        issue: 4,
+        task: Some("t".into()),
+        ..crate::board::Entry::default()
+    });
+    let mut d = drive();
+    let w = write_of(d.set_board(&id(), Some(b)));
+    let _ = d.handle(
+        Input::Written {
+            id: id(),
+            pending: w.pending,
+            seq: w.seq,
+            result: Ok(()),
+        },
+        now(),
+    );
+    let name = d.board(&id()).unwrap().columns[1].name.clone();
+    assert_eq!(d.column_holding("t"), Some(name.as_str()));
+    assert_eq!(d.column_holding("other"), None);
+}

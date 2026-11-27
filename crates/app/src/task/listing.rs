@@ -62,15 +62,18 @@ pub(crate) fn rows(roots: &[PathBuf], cx: &App) -> Vec<Row> {
         .tasks()
         .iter()
         .filter(|task| roots.contains(&task.setup().repo) || roots.contains(&task.setup().dir));
+    let boards = &crate::state::Shared::global(cx).boards;
     for task in tasks {
-        rows.push((Some(task), row_of(t, task)));
+        let held_at = boards.column_holding(task.id());
+        rows.push((Some(task), row_of(t, task, held_at)));
     }
     sort_listed(&mut rows, |(task, row)| (row.group, *task));
     rows.into_iter().map(|(_, row)| row).collect()
 }
 
-/// Task `task` as the pages list it.
-fn row_of(t: &Tasks, task: &Task) -> Row {
+/// Task `task` as the pages list it; `held_at`, the board's column holding
+/// it, is said while it is not at work.
+fn row_of(t: &Tasks, task: &Task, held_at: Option<&str>) -> Row {
     let working = t.working(task.id());
     let run = task.runs().last();
     // A prompt's one step is the task itself: naming it would only say
@@ -112,7 +115,7 @@ fn row_of(t: &Tasks, task: &Task) -> Row {
             let workflow = run.map_or_else(String::new, |run| run.template.name.clone());
             match &task.origin() {
                 Some(Origin::Schedule { name, .. }) => format!("{name} · {workflow}"),
-                Some(Origin::Board { .. }) => format!("from the board · {workflow}"),
+                Some(Origin::Board { .. }) => board_name(&workflow, working.is_some(), held_at),
                 Some(Origin::Tool) => format!("by a tool · {workflow}"),
                 None => workflow,
             }
@@ -222,8 +225,38 @@ pub(crate) fn board_view(project: &onehand_core::project::ProjectId, cx: &App) -
     BoardView {
         rows: (t.tasks().iter())
             .filter(|task| named(task))
-            .map(|task| (task.id().to_string(), row_of(t, task)))
+            // The board's own rows stand in their column already.
+            .map(|task| (task.id().to_string(), row_of(t, task, None)))
             .collect(),
         taken: onehand_core::board::taken(board, t.tasks().iter(), project),
+    }
+}
+
+/// What a board task's row names it by, of its `workflow`: where its board
+/// holds it, at `column`, while it is not `working`, between two runs, else
+/// that the board started it. The place comes first, so a long ending cut
+/// short never hides it, and *board* is said once.
+fn board_name(workflow: &str, working: bool, column: Option<&str>) -> String {
+    match (working, column) {
+        (false, Some(column)) => format!("on the board at {column} · {workflow}"),
+        (true, _) | (false, None) => format!("from the board · {workflow}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::board_name;
+
+    #[test]
+    fn a_held_task_between_runs_says_where_the_board_holds_it() {
+        assert_eq!(
+            board_name("Build", false, Some("Review")),
+            "on the board at Review · Build"
+        );
+        assert_eq!(
+            board_name("Build", true, Some("Review")),
+            "from the board · Build"
+        );
+        assert_eq!(board_name("Build", false, None), "from the board · Build");
     }
 }

@@ -270,7 +270,7 @@ pub(super) fn task_detail(
         Group::Running | Group::Waiting => true,
         Group::Ended | Group::Queued | Group::Finished => false,
     };
-    let title = format!("Run {}", task.runs().len());
+    let title = last.label(task.runs().len());
     out.push(
         page_card(title, Some(last.visits().len()), None, cx)
             .children(visits::timeline(detail, last, live, cx))
@@ -299,12 +299,7 @@ pub(super) fn task_detail(
                 .on_click(cx.listener(move |page: &mut TasksPage, _, _, cx| {
                     page.toggle_earlier(id.clone(), cx)
                 }))
-                .child(
-                    div()
-                        .flex_none()
-                        .font_semibold()
-                        .child(format!("Run {}", n + 1)),
-                )
+                .child(div().flex_none().font_semibold().child(run.label(n + 1)))
                 .child(div().flex_1().min_w_0().truncate().child(ended))
                 .child(slot(at, cx)),
             );

@@ -46,6 +46,7 @@ impl Run {
                 .as_ref()
                 .and_then(|_| self.outputs.get(id))
                 .map(String::as_str),
+            handover: self.handover.as_deref(),
         };
         let mut text = prompt::step_prompt(prompt, gates, self.template.place, &fill);
         if matches!(kind, StepKind::Review { .. }) {

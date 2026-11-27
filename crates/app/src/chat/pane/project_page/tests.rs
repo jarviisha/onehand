@@ -506,3 +506,14 @@ fn rows_in_a_scrolling_box_keep_a_lane_beside_its_scrollbar(cx: &mut TestAppCont
         );
     }
 }
+
+#[test]
+fn the_board_link_says_only_what_there_is() {
+    use super::board_label;
+    assert_eq!(board_label(0, 0, 0), "Board");
+    assert_eq!(board_label(0, 2, 0), "Board · 2 to do");
+    assert_eq!(
+        board_label(1, 2, 3),
+        "Board · 1 running · 2 to do · 3 waiting for you"
+    );
+}

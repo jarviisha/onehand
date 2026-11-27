@@ -72,6 +72,12 @@ minor bump may break any of them.
 
 ### Workflows and tasks
 
+- A board's workflow column hands its run what the task's run before it last answered, as the
+  prompt variable `{handover}`, empty on a first run. A board task's detail labels each run by the
+  column it ran in (*Run 2 · Ship*), and a held task between runs reads *on the board at
+  <column>* on the Tasks page and in its detail. The project page's board link adds *· N waiting
+  for you* for the board's own waits on a person, and leaves out each part at none. A board kept at
+  version 2 is read as version 3, so its columns can be changed.
 - A fourth built-in workflow, **Board team**, is made for a project's board: it plans, changes the
   code and passes the check on a branch, has a reviewer in a session of its own approve the change
   or send it back (one task at a time), then pushes, opens a draft pull request and repairs it

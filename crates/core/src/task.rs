@@ -353,8 +353,9 @@ impl Task {
     /// A next run, `id`, of `template` from its first step, for the board's
     /// column `column` it entered: on the same place as its last run (its
     /// project, folder, branch and forge), carrying nothing, with the agent,
-    /// mode, check command and timeout a new task takes now (`current`).
-    /// `None` with no run to go on from.
+    /// mode, check command and timeout a new task takes now (`current`),
+    /// handed what that last run last answered. `None` with no run to go on
+    /// from.
     pub(crate) fn next_run(
         &mut self,
         id: String,
@@ -372,8 +373,10 @@ impl Task {
             check: current.check.clone(),
             ..last.setup.clone()
         };
+        let handover = last.last_answer().map(str::to_string);
         let mut next = Run::new(id, template, self.brief.clone(), setup);
         next.column = Some(column);
+        next.handover = handover;
         self.dismissed = false;
         self.runs.push(next);
         self.runs.last()

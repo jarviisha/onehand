@@ -194,6 +194,51 @@ fn entry_works(project: &ProjectId, issue: u64, cx: &App) -> bool {
         .is_some_and(|task| crate::task::is_working(&task, cx))
 }
 
+/// Why a start in a column doing `work` would be refused, of the workflows
+/// on offer (`templates`): its workflow gone, or one a board cannot run.
+pub(crate) fn start_refused(
+    work: &board::Work,
+    templates: &[crate::workflow::Entry],
+) -> Option<String> {
+    match work {
+        board::Work::Workflow { id } => match crate::workflow::find(templates, id) {
+            None => Some(format!("Its workflow, {id}, is gone")),
+            Some(t) => board::usable(Some(t)).err(),
+        },
+        board::Work::Person => None,
+    }
+}
+
+/// What the tasks say of `entry` on `project`'s board, as its line takes
+/// it, `start` why its column cannot start it.
+pub(crate) fn entry_facts(
+    project: &ProjectId,
+    entry: &board::Entry,
+    start: Option<String>,
+    cx: &App,
+) -> board::line::Facts {
+    let task = entry.task.as_deref();
+    board::line::Facts {
+        working: task.is_some_and(|t| crate::task::is_working(t, cx)),
+        run_here: task
+            .and_then(|t| crate::task::task(t, cx))
+            .is_some_and(|t| t.runs().iter().any(|r| Some(&r.id) == entry.run.as_ref())),
+        starting: (Shared::global(cx).boards.starting(project)).any(|n| n == entry.issue),
+        start,
+    }
+}
+
+/// How many entries of `project`'s board wait on a person.
+pub(crate) fn waiting(project: &ProjectId, cx: &App) -> usize {
+    let Some(b) = Shared::global(cx).boards.board(project) else {
+        return 0;
+    };
+    let templates = crate::workflow::templates(cx);
+    board::line::waiting(b, |column, entry| {
+        entry_facts(project, entry, start_refused(&column.work, &templates), cx)
+    })
+}
+
 /// A new column's id: one no other column has.
 pub(crate) fn column_id() -> String {
     format!("col-{}", onehand_core::task::new_id())

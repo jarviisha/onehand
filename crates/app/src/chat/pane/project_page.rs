@@ -777,8 +777,27 @@ impl ChatPane {
     }
 }
 
-/// The way to `project`'s board, saying what works on it and what waits in
-/// its To do; none for a project with no board.
+/// What the board's link says: what works on it, what waits in its To do
+/// and what waits on a person, each left out at none, so the link is no
+/// longer than what there is.
+fn board_label(running: usize, todo: usize, waiting: usize) -> String {
+    let parts = [
+        (running, "running"),
+        (todo, "to do"),
+        (waiting, "waiting for you"),
+    ];
+    std::iter::once("Board".to_string())
+        .chain(
+            (parts.iter())
+                .filter(|(n, _)| *n > 0)
+                .map(|(n, what)| format!("{n} {what}")),
+        )
+        .collect::<Vec<_>>()
+        .join(" · ")
+}
+
+/// The way to `project`'s board, saying what works on it, what waits in its
+/// To do and what waits on a person; none for a project with no board.
 fn board_link(
     project: &onehand_core::project::Project,
     cx: &mut Context<ChatPane>,
@@ -786,7 +805,8 @@ fn board_link(
     let board = (crate::state::Shared::global(cx).boards.board(&project.id))
         .filter(|_| project.host.is_none())?;
     let running = crate::task::board_running(&project.id, cx);
-    let label = format!("Board · {running} running · {} to do", board.todo().len());
+    let waiting = crate::board::waiting(&project.id, cx);
+    let label = board_label(running, board.todo().len(), waiting);
     let id = project.id.clone();
     Some(
         crate::controls::action("project-board")

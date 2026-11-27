@@ -5,7 +5,6 @@ use super::column::{ColumnKey, ColumnParts, column, column_count};
 use super::rows::Button;
 use super::{BoardPage, BoardPageEvent};
 use crate::drag::DragGhost;
-use crate::state::Shared;
 use gpui::{
     AppContext as _, Context, InteractiveElement as _, IntoElement, SharedString, Stateful,
     StatefulInteractiveElement as _, Styled as _,
@@ -129,15 +128,7 @@ impl BoardPage {
         let now = onehand_core::chat::now_secs();
         let templates = crate::workflow::templates(cx);
         for (at, col) in board.columns.iter().enumerate() {
-            // Why a start in this column would be refused: its workflow gone,
-            // or one a board cannot run.
-            let start = match &col.work {
-                Work::Workflow { id } => match crate::workflow::find(&templates, id) {
-                    None => Some(format!("Its workflow, {id}, is gone")),
-                    Some(t) => onehand_core::board::usable(Some(t)).err(),
-                },
-                Work::Person => None,
-            };
+            let start = crate::board::start_refused(&col.work, &templates);
             let gone = match &col.work {
                 Work::Workflow { id } => crate::workflow::find(&templates, id).is_none(),
                 Work::Person => false,
@@ -234,23 +225,20 @@ impl BoardPage {
         let issue = entry.issue;
         let task = entry.task.as_deref();
         let row = task.and_then(|t| view.rows.get(t)).cloned();
-        let working = task.is_some_and(|t| crate::task::is_working(t, cx));
-        let run_here = task
-            .and_then(|t| crate::task::task(t, cx))
-            .is_some_and(|t| t.runs().iter().any(|r| Some(&r.id) == entry.run.as_ref()));
-        let starting = Shared::global(cx).boards.starting(id).any(|n| n == issue);
+        let facts = crate::board::entry_facts(id, entry, start, cx);
+        let (working, starting) = (facts.working, facts.starting);
         let (line, act) = onehand_core::board::line::line(
             board,
             issue,
-            run_here,
+            facts.run_here,
             working,
             starting,
-            start.as_deref(),
+            facts.start.as_deref(),
         );
         let standing = Standing {
             working,
             starting,
-            start,
+            start: facts.start,
         };
         let offered = offers(board, issue, act.as_ref(), &standing);
         let has_task = row.is_some();

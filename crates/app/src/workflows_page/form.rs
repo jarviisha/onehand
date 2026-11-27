@@ -236,6 +236,7 @@ pub(super) fn variables_hint(cx: &App) -> impl IntoElement {
         .child(code("{instructions}"))
         .child(code("{check_output}"))
         .child(code("{revise}"))
+        .child(code("{handover}"))
         .child("and")
         .child(code("{output.<step id>}"))
         .child("for what an earlier step kept")

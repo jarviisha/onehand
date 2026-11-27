@@ -212,9 +212,9 @@ impl BoardDrive {
     /// What [`super::Input::Landed`] brought: the start is no longer on its way.
     /// One that went ahead lets the board look again, to fill a place left
     /// over from counting it twice meanwhile; one refused before its task was
-    /// made is said, its issue already out of To do and so back in the
-    /// Backlog, and nothing is pulled in its place, so a reason every issue
-    /// shares is said once; one refused after is its task's to say.
+    /// made is said, its issue staying in its column to read *Did not start*,
+    /// and nothing is pulled in its place, so a reason every issue shares is
+    /// said once; one refused after is its task's to say.
     pub(super) fn landed(
         &mut self,
         id: &ProjectId,

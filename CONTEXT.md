@@ -163,7 +163,7 @@ _Avoid_: gate (that is onehand's own check), approval on its own (that waits for
 A run's session for one step, or the run's own session: a step that names its own agent, and every
 review step, works in a lane of its own, keyed by the step. Only the current lane is worked; a
 lane's session that is lost without being the current one is opened again when its step is.
-_Avoid_: thread, track (a board has no lane in the kanban sense: its columns are steps)
+_Avoid_: thread, track (a board has no lane in the kanban sense: its parts are columns)
 
 **Verdict**:
 What a review step's agent gives, by the tool `review_verdict`: approve, or send back with a note.
@@ -267,24 +267,34 @@ due time while onehand is open, and once for the times it missed while it was no
 _Avoid_: cron job, timer, job
 
 **Board**:
-A project's issues laid out as work: its *Backlog*, its *To do*, a column per step of the
-workflow it is bound to, and what is done. A person moves issues to To do, and a team of tasks of
-that workflow pulls them in order.
+A project's issues laid out as work: its *Backlog*, the columns a person defines, in order, and
+what is done. Each column is a person's or runs a workflow. One piece of work, an issue, crosses
+the columns from left to right keeping its task, so its worktree and its runs go with it.
 _Avoid_: kanban, card, ticket
 
+**Column**:
+One stretch of a board between the Backlog and Done, with a name, its issues in order, and who
+works them: a person, or a run of one workflow on each. A workflow column starts its run when an
+issue enters it or when a person presses *Start*. An issue ready to leave a column (at once in a
+person's, once its run there ended done in a workflow's) moves on to the next by itself, when that
+one has room, or waits for a person to move it. A column may hold a limit: how many issues it holds
+at most, those waiting to move on counted.
+_Avoid_: lane, stage, step (that is a workflow's), swimlane, WIP limit
+
 **Backlog**:
-The open issues of a project's own tracker that a brief can be made from and no list of the board
-holds. An issue goes back to it when its pull is refused or its task is stopped.
+The open issues of a project's own tracker that a brief can be made from and that no column holds.
+An issue goes back to it only when a person takes it off the board.
 _Avoid_: icebox, inbox
 
 **To do**:
-The issue numbers a person has put in order on a project's board, kept with the project; each is
-made a task when it is pulled, so none is a task before. First is pulled first.
+The first column a new board is made with: a person's, whose issues move on by themselves into the
+column that runs the board's workflow. A person puts issues in it in order; first moves on first.
+An issue there is not a task yet.
 _Avoid_: queue (that is the places', `task/queue.rs`), ticket
 
 **Team size**:
-How many tasks of a board may work at once, 1 to 8. The board pulls from To do only while fewer
-than that run.
+How many of a board's runs may work at once, 1 to 8. The board starts a run by itself only while
+fewer than that hold a place; a person's *Start* goes past it.
 _Avoid_: concurrency, WIP limit
 
 ## Issues
