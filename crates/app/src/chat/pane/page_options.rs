@@ -3,7 +3,10 @@
 //! said. What is picked here is set on the session before its first prompt.
 
 use super::ChatPane;
-use gpui::{AnyElement, App, Context, IntoElement, ParentElement, SharedString, Styled, div};
+use gpui::{
+    AnyElement, App, Context, InteractiveElement as _, IntoElement, ParentElement, SharedString,
+    Styled, div,
+};
 use gpui_component::ActiveTheme;
 use gpui_component::button::ButtonVariants as _;
 use onehand_core::acp::Role;
@@ -36,12 +39,22 @@ impl ChatPane {
             .facts_of(agent)
             .cloned()
         else {
+            // In the room the agent's own name leaves, and gone when that
+            // cannot hold it whole.
             return vec![
-                div()
-                    .text_xs()
-                    .text_color(cx.theme().muted_foreground)
-                    .child("Agent's default")
-                    .into_any_element(),
+                super::project_page::facts::facts(
+                    div()
+                        .debug_selector(|| "page-agent-default".into())
+                        .flex_none()
+                        .whitespace_nowrap()
+                        .text_xs()
+                        .text_color(cx.theme().muted_foreground)
+                        .child("Agent's default")
+                        .into_any_element(),
+                    div().into_any_element(),
+                    false,
+                )
+                .into_any_element(),
             ];
         };
         let picks = self.page_picks(root);
@@ -132,7 +145,7 @@ impl ChatPane {
         let at = root.to_path_buf();
         let id = SharedString::from(format!("page-group-{}", group.id));
         let trigger = SharedString::from(format!("page-group-{}-trigger", group.id));
-        crate::controls::menu_below(
+        super::page_draft::page_menu(
             id,
             onehand_ui::picker(trigger, label, false, onehand_ui::ControlSize::Short, cx),
             move |mut menu, _, _| {
@@ -231,7 +244,7 @@ impl ChatPane {
         let at = root.to_path_buf();
         let pane = cx.entity().downgrade();
         let choices = choices.to_vec();
-        let chip = crate::controls::menu_below(
+        let chip = super::page_draft::page_menu(
             "page-cards",
             onehand_ui::picker(
                 "page-cards-trigger",

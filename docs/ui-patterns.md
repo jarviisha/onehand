@@ -256,7 +256,8 @@ large or its list overfull. Each came from a fault seen in the app.
 - Checked by: tests `a_long_workspace_name_leaves_the_toggles_in_place`,
   `a_long_page_title_leaves_its_actions_in_place`,
   `a_long_project_name_truncates_and_its_tail_keeps_its_width`,
-  `a_long_task_title_stays_inside_its_column`.
+  `a_long_task_title_stays_inside_its_column`,
+  `the_heads_place_stays_on_one_line_beside_its_actions`.
 
 #### L-05 A control with a fixed place keeps it
 
@@ -274,7 +275,8 @@ large or its list overfull. Each came from a fault seen in the app.
   over them, hiding them while they show; a row without them keeps its actions in a held slot.
 - Checked by: tests `one_history_row_keeps_its_height_and_its_trailing_slot`,
   `every_history_row_keeps_its_height_and_its_trailing_slot`,
-  `a_long_project_name_truncates_and_its_tail_keeps_its_width`.
+  `a_long_project_name_truncates_and_its_tail_keeps_its_width`,
+  `a_rows_facts_give_way_before_its_title`.
 
 #### L-07 A row of actions stays on one line
 
@@ -284,7 +286,8 @@ large or its list overfull. Each came from a fault seen in the app.
 - Unless: where a cut label would hide what a press grants (a pinned card's answers), the
   answers wrap onto a second line whole before a label is cut.
 - Checked by: tests `a_cards_answers_as_worded_stand_on_one_line`,
-  `a_question_cards_answers_as_worded_stand_on_one_line`; for the exception,
+  `a_question_cards_answers_as_worded_stand_on_one_line`,
+  `the_composers_controls_stay_inside_their_boxes`; for the exception,
   `answers_that_do_not_fit_wrap_whole`, `answers_worded_long_wrap_whole`.
 
 #### L-08 The last item stands off its container's end

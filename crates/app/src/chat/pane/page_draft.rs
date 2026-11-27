@@ -33,6 +33,29 @@ const PAGE_MENTION_FILES: usize = crate::chat::session::MAX_MENTION_FILES;
 /// How wide the new worktree's branch field stands beside its start chip.
 const BRANCH_FIELD_W: gpui::Rems = gpui::rems(16.);
 
+/// A picker of the page's composer opening its menu below: its words cut,
+/// rather than run past the card or the pane, when its row runs short, as it
+/// does in a narrow pane at a large zoom.
+pub(super) fn page_menu(
+    id: impl Into<gpui::ElementId>,
+    trigger: gpui_component::button::Button,
+    build: impl Fn(
+        gpui_component::menu::PopupMenu,
+        &mut Window,
+        &mut Context<gpui_component::menu::PopupMenu>,
+    ) -> gpui_component::menu::PopupMenu
+    + 'static,
+) -> gpui_component::popover::Popover {
+    let id = id.into();
+    let marked = id.to_string();
+    let trigger = trigger
+        .debug_selector(move || marked)
+        .flex_shrink_1()
+        .min_w_0();
+    onehand_ui::menu_below(id, trigger, build)
+        .trigger_style(gpui::StyleRefinement::default().min_w_0())
+}
+
 /// A project page's draft, kept while the person is elsewhere.
 #[derive(Default)]
 pub(super) struct PageDraft {
@@ -463,6 +486,7 @@ impl ChatPane {
                 strip.child(
                     div()
                         .w(BRANCH_FIELD_W)
+                        .min_w_0()
                         .child(text_input(&self.page_branch, cx).disabled(locked)),
                 )
             });
@@ -509,7 +533,7 @@ impl ChatPane {
         let picked = self.page_agent(root, cx).unwrap_or_default();
         let pane = cx.entity().downgrade();
         let at = root.to_path_buf();
-        onehand_ui::menu_below(
+        page_menu(
             "page-agent",
             onehand_ui::picker(
                 "page-agent-trigger",
@@ -573,7 +597,7 @@ impl ChatPane {
                 .collect();
         let more = crate::projects::more_not_shown(worktrees.len());
         let current = start.clone();
-        onehand_ui::menu_below(
+        page_menu(
             "page-start-in",
             onehand_ui::picker(
                 "page-start-in-trigger",

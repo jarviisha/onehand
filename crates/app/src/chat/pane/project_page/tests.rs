@@ -4,8 +4,8 @@
 
 use super::HOME_ROWS;
 use crate::shell::rig::strain::{
-    NARROWEST, SHORT, TO_150, WIDE, assert_inside, assert_one_height, bounds, long, same, selector,
-    unbroken, width,
+    NARROWEST, SHORT, SLACK, TO_150, WIDE, assert_inside, assert_one_height, bounds, long, same,
+    selector, unbroken, width,
 };
 use crate::shell::rig::{folder, keep_projects, kept_conversation, nowhere, shell_on, zoom_pane};
 use gpui::{
@@ -176,15 +176,130 @@ fn rows_hold(
     }
 }
 
+/// A title of a few words: longer than a short one, shorter than a wide row.
+fn medium() -> String {
+    "word ".repeat(8).trim_end().to_string()
+}
+
+/// Each zoom the page is drawn at, its titles short, medium, long and
+/// unbroken, on a page of its own: `check` is given the title and its page.
+fn each_page(name: &str, seed: u64, check: impl Fn(&str, &str, &mut VisualTestContext)) {
+    let mut seed = seed;
+    for &(zoom, steps, _) in DRAWN {
+        for title in [SHORT.to_string(), medium(), long(), unbroken()] {
+            seed += 1;
+            let mut app = TestAppContext::single();
+            let (shell, cx) = page(
+                &format!("{name}-{seed}"),
+                seed,
+                std::slice::from_ref(&title),
+                &mut app,
+            );
+            zoom_pane(&shell, steps, cx);
+            check(zoom, &title, cx);
+            app.quit();
+        }
+    }
+}
+
 #[gpui::test]
-fn a_short_title_shows_in_the_narrowest_pane(cx: &mut TestAppContext) {
-    let (_, cx) = page("strain-home-title", 913_060, &titled(1, SHORT), cx);
-    width(cx, NARROWEST);
-    let title = bounds(cx, "home-title-0");
-    assert!(
-        title.size.width > Pixels::ZERO,
-        "a row's title is down to nothing at 100% in the narrowest pane: {title:?}"
-    );
+fn a_rows_facts_give_way_before_its_title(_: &mut TestAppContext) {
+    each_page("strain-home-give", 913_060, |zoom, title, cx| {
+        width(cx, WIDE);
+        let whole = bounds(cx, "home-title-0").size.width;
+        if title == SHORT {
+            assert!(
+                cx.debug_bounds("home-facts-0").is_some(),
+                "a short title's facts are not drawn in a wide pane at {zoom}%"
+            );
+        }
+        width(cx, NARROWEST);
+        let (row, named, more) = (
+            bounds(cx, "home-row-0"),
+            bounds(cx, "home-title-0"),
+            bounds(cx, "home-more-0"),
+        );
+        let cut = named.size.width + SLACK < whole;
+        let facts = cx.debug_bounds("home-facts-0");
+        assert!(
+            !(cut && facts.is_some()),
+            "at {zoom}% in the narrowest pane the title is cut to {named:?} from {whole:?} while its facts stand at {facts:?}"
+        );
+        if let Some(facts) = facts {
+            assert_inside(facts, row, "a row's facts");
+            assert!(
+                facts.left() >= named.right(),
+                "the facts run over the title"
+            );
+        }
+        assert!(
+            named.right() <= more.left() + SLACK,
+            "the title runs under the row's ⋯ at {zoom}%"
+        );
+        if title == SHORT {
+            assert!(
+                !cut,
+                "a short title is cut at {zoom}% in the narrowest pane: {named:?} from {whole:?}"
+            );
+        }
+    });
+}
+
+#[gpui::test]
+fn the_heads_place_stays_on_one_line_beside_its_actions(_: &mut TestAppContext) {
+    for (seed, &(zoom, steps, _)) in (913_080..).zip(DRAWN) {
+        let mut app = TestAppContext::single();
+        let (shell, cx) = page(&format!("strain-home-head-{zoom}"), seed, &[], &mut app);
+        zoom_pane(&shell, steps, cx);
+        width(cx, WIDE);
+        let line = bounds(cx, "project-page-path").size.height;
+        width(cx, NARROWEST);
+        let (path, head, actions) = (
+            bounds(cx, "project-page-path"),
+            bounds(cx, "page-head"),
+            bounds(cx, "page-head-actions"),
+        );
+        assert!(
+            same(path.size.height, line),
+            "the path breaks onto a second line at {zoom}%: {path:?}"
+        );
+        assert_inside(path, head, "the head's path");
+        assert!(
+            path.right() <= actions.left() + SLACK,
+            "the path runs under the head's actions at {zoom}%: {path:?} {actions:?}"
+        );
+        app.quit();
+    }
+}
+
+#[gpui::test]
+fn the_composers_controls_stay_inside_their_boxes(_: &mut TestAppContext) {
+    for (seed, &(zoom, steps, _)) in (913_090..).zip(DRAWN) {
+        let mut app = TestAppContext::single();
+        let (shell, cx) = page(&format!("strain-home-composer-{zoom}"), seed, &[], &mut app);
+        zoom_pane(&shell, steps, cx);
+        width(cx, NARROWEST);
+        let (card, column, send) = (
+            bounds(cx, "page-card"),
+            bounds(cx, "project-page-column"),
+            bounds(cx, "page-send"),
+        );
+        // The agent's default line is dropped once it cannot be said whole.
+        let parts = std::iter::once(("page-agent", Some(bounds(cx, "page-agent"))))
+            .chain([("page-agent-default", cx.debug_bounds("page-agent-default"))]);
+        for (part, at) in parts {
+            let Some(at) = at else { continue };
+            assert_inside(at, card, &format!("{part} at {zoom}%"));
+            assert!(
+                at.right() <= send.left() + SLACK,
+                "{part} runs under Send at {zoom}%: {at:?} {send:?}"
+            );
+        }
+        for part in ["page-start-in", "page-cards"] {
+            assert_inside(bounds(cx, part), column, &format!("{part} at {zoom}%"));
+        }
+        app.quit();
+    }
 }
 
 #[gpui::test]

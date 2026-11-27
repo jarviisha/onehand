@@ -14,7 +14,9 @@ use onehand_core::chat::ConvMeta;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
+pub(super) mod facts;
 mod host;
+mod no_agent;
 pub(super) use host::focus_rows as host_rows;
 mod offload_box;
 mod worktrees_box;
@@ -30,6 +32,12 @@ mod tests;
 /// the cap cut off is said on screen rather than silently dropped. The list
 /// scrolls as well, because this many rows already outgrows a short window.
 const HOME_ROWS: usize = 8;
+
+/// How much faster than the part beside it a part of a line that gives way
+/// first shrinks. Flex shares a shortfall by each part's shrink factor times
+/// its width, so a factor this large makes it give way all but whole before
+/// the other starts to.
+const GIVES_FIRST: f32 = 1e3;
 
 /// The project the pane is standing in while no conversation is showing.
 ///
@@ -361,7 +369,7 @@ impl ChatPane {
         // Ahead of whether there is a project: with no agent nothing can be
         // started anywhere, and that is the first thing to put right.
         if crate::state::Shared::global(cx).settings.agents.is_empty() {
-            return no_agent(cx);
+            return no_agent::no_agent(cx);
         }
         let Some(project) = self.empty.as_ref() else {
             // Not a project with nothing in it -- no project at all. Naming
@@ -404,10 +412,34 @@ impl ChatPane {
             &project.path,
             std::env::home_dir().as_deref(),
         );
-        let place = std::iter::once(path)
-            .chain(self.git.as_ref().map(ToString::to_string))
-            .collect::<Vec<_>>()
-            .join(" · ");
+        // On one line: the path gives way first, from its start, so the
+        // folder's own name is the last of it to go, and then what git says.
+        let place = div()
+            .h_flex()
+            .min_w_0()
+            .child(facts::natural(
+                path.clone(),
+                div()
+                    .debug_selector(|| "project-page-path".into())
+                    .overflow_hidden()
+                    .whitespace_nowrap()
+                    .text_ellipsis_start()
+                    .child(path)
+                    .into_any_element(),
+                GIVES_FIRST,
+            ))
+            .children(self.git.as_ref().map(|git| {
+                let git = format!(" · {git}");
+                facts::natural(
+                    git.clone(),
+                    div()
+                        .debug_selector(|| "project-page-git".into())
+                        .truncate()
+                        .child(git)
+                        .into_any_element(),
+                    1.,
+                )
+            }));
         // The project as the store has it, for its worktrees: none for a
         // folder of no project, or one on a host, which has none. An
         // offloaded folder's worktrees run here or on their own.
@@ -536,23 +568,36 @@ impl ChatPane {
                                 .text_color(crate::theme::meta_ink(cx))
                                 .child(rel_time(now, meta.updated)),
                         )
-                        .child(
+                        .child(facts::natural(
+                            meta.title.clone(),
                             div()
+                                .id(("home-title", i))
                                 .debug_selector(move || format!("home-title-{i}"))
-                                .flex_1()
-                                .min_w_0()
                                 .truncate()
-                                .child(meta.title.clone()),
-                        )
+                                .child(meta.title.clone())
+                                // Said whole, since the row cuts it first at
+                                // a narrow width.
+                                .tooltip({
+                                    let whole = SharedString::from(meta.title.clone());
+                                    onehand_ui::tip(move |window, cx| {
+                                        gpui_component::tooltip::Tooltip::new(whole.clone())
+                                            .build(window, cx)
+                                    })
+                                })
+                                .into_any_element(),
+                            1.,
+                        ))
                         // The agent *is* named here, unlike in a session's
                         // own picker: this list crosses every agent that
                         // has worked in the project, and resuming a row
                         // starts a session on the one that held it.
-                        // What it continued gives way first, so the row's
-                        // own title keeps its room.
+                        // The title is what the row is for, so what stands
+                        // beside it gives way first: the facts, cut and then
+                        // dropped, then what it continued, and only then the
+                        // title.
                         .children(meta.continued.as_ref().map(|earlier| {
                             div()
-                                .flex_shrink_1()
+                                .flex_shrink(GIVES_FIRST)
                                 .min_w_0()
                                 .max_w(gpui::relative(0.4))
                                 .truncate()
@@ -560,20 +605,26 @@ impl ChatPane {
                                 .text_color(muted)
                                 .child(format!("Continued from {earlier}"))
                         }))
-                        // Its facts give way after the title does, so the
-                        // row's ⋯ keeps its place at the row's end.
-                        .child(
+                        // The count leads: cut short it says nothing, so
+                        // the line goes once the count no longer fits.
+                        .child(facts::facts(
+                            div()
+                                .debug_selector(move || format!("home-facts-{i}"))
+                                .flex_none()
+                                .whitespace_nowrap()
+                                .text_xs()
+                                .text_color(muted)
+                                .child(count_of(meta.item_count, "item"))
+                                .into_any_element(),
                             div()
                                 .min_w_0()
                                 .truncate()
                                 .text_xs()
                                 .text_color(muted)
-                                .child(format!(
-                                    "{} · {}",
-                                    count_of(meta.item_count, "item"),
-                                    meta.agent
-                                )),
-                        )
+                                .child(format!(" · {}", meta.agent))
+                                .into_any_element(),
+                            true,
+                        ))
                         .on_click(
                             cx.listener(move |_: &mut Self, _, _, cx| cx.emit(resumed.event())),
                         )
@@ -694,72 +745,4 @@ fn board_link(
             }))
             .into_any_element(),
     )
-}
-
-/// What the pane shows while no agent is set up: the line saying so, each
-/// built-in agent offered when it is on this machine and its install command
-/// when it is not, and the way to the agent settings, where any other agent
-/// is declared.
-///
-/// **More than a hint's one line, on purpose.** Every action in the window
-/// waits on an agent, so the state names what fixes it rather than only that
-/// something is missing; the commands stand in the code face, as a command
-/// line does everywhere else.
-fn no_agent(cx: &mut Context<ChatPane>) -> gpui::AnyElement {
-    let muted = cx.theme().muted_foreground;
-    let mono = cx.theme().mono_font_family.clone();
-    let on_machine = crate::state::Shared::global(cx).on_machine.clone();
-    // An agent already installed is offered rather than explained: the list can
-    // be empty with one on the machine (it was emptied, or written while
-    // nothing was installed), and telling someone to install what they have
-    // is a way out that leads back here.
-    let install = onehand_core::config::Preset::ALL.map(|preset| {
-        if on_machine.contains(&preset) {
-            div()
-                .h_flex()
-                .items_center()
-                .gap_2()
-                .child(format!("{} is on this machine", preset.info().shown_name))
-                .child(
-                    crate::controls::action(("no-agent-add", preset as usize))
-                        .secondary()
-                        .short()
-                        .label("Add")
-                        .on_click(cx.listener(move |_: &mut ChatPane, _, _, cx| {
-                            cx.emit(ChatPaneEvent::AddFoundAgent(preset));
-                        })),
-                )
-                .into_any_element()
-        } else {
-            div()
-                .font_family(mono.clone())
-                .child(format!(
-                    "{}: {}",
-                    preset.info().shown_name,
-                    preset.info().install
-                ))
-                .into_any_element()
-        }
-    });
-    div()
-        .flex_1()
-        .v_flex()
-        .items_center()
-        .justify_center()
-        .gap_2()
-        .text_xs()
-        .text_color(muted)
-        .child("No agent is set up")
-        .children(install)
-        .child("Then restart onehand, or add another agent in the settings")
-        .child(
-            crate::controls::action("no-agent-settings")
-                .secondary()
-                .short()
-                .label("Open the agent settings")
-                .on_click(cx.listener(|_: &mut ChatPane, _, _, cx| {
-                    cx.emit(ChatPaneEvent::OpenAgentSettings);
-                })),
-        )
-        .into_any_element()
 }

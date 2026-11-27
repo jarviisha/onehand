@@ -31,11 +31,11 @@ the ones that exist. What workflows and tasks do not do is listed at the end of
   refuses (*Move up* on a workflow's first step) is drawn refusing without its reason, which its
   place has to say.
 - **A cut name is not said whole everywhere.** The workspace's name, a project's and a
-  session's row on the rail and a dock's tabs say their name whole in a tooltip when it is cut;
-  the rule was written from those. The names cut elsewhere have none yet: a task's, an issue's,
-  a workflow's, a schedule's, a plugin's and a file's in their lists, a past conversation's on a
-  project's page, a session's in the pane's header and a page's title in its head. Each needs
-  its row or its label given the name as its tooltip, beside what the row's own tooltip says.
+  session's row on the rail, a past conversation's title on a project's page and a dock's tabs
+  say their name whole in a tooltip when it is cut. The names cut elsewhere have none yet: a
+  task's, an issue's, a workflow's, a schedule's, a plugin's and a file's in their lists, a
+  session's in the pane's header and a page's title in its head. Each needs its row or its label
+  given the name as its tooltip, beside what the row's own tooltip says.
 - **A tooltip of a row or a mark comes back only once the pointer leaves it.** After a press it
   stays away until the pointer leaves the control, not as soon as it moves from where it was
   pressed: gpui's own tooltip, which these use, counts the one kept away as shown and offers no
