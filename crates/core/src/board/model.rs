@@ -330,47 +330,7 @@ impl Board {
         board
     }
 
-    /// The board with `issue` taken out of To do into the work column, as
-    /// task `task`'s first run, entered at `now`.
-    pub(crate) fn started(&self, issue: u64, task: &str, now: u64) -> Board {
-        let mut board = self.clone();
-        if let Some(todo) = board.columns.first_mut() {
-            todo.entries.retain(|e| e.issue != issue);
-        }
-        if let Some(column) = board.columns.get_mut(1) {
-            column.entries.push(Entry {
-                issue,
-                task: Some(task.to_string()),
-                run: Some(task.to_string()),
-                since: now,
-                done: false,
-            });
-        }
-        board
-    }
 
-    /// The board with task `task`'s work entry moved to the front of Done,
-    /// entered at `now`.
-    pub(crate) fn finished(&self, task: &str, now: u64) -> Board {
-        let mut board = self.clone();
-        let Some(column) = board.columns.get_mut(1) else {
-            return board;
-        };
-        let Some(at) = (column.entries.iter()).position(|e| e.task.as_deref() == Some(task)) else {
-            return board;
-        };
-        let entry = column.entries.remove(at);
-        board.done.insert(
-            0,
-            Entry {
-                run: None,
-                since: now,
-                ..entry
-            },
-        );
-        board.done.truncate(DONE_KEPT);
-        board
-    }
 
     /// The board with `issue` in no column and not in Done.
     pub(crate) fn removed(&self, issue: u64) -> Board {

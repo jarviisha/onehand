@@ -130,6 +130,19 @@ pub enum Effect {
         issue: u64,
         task: String,
         template: Template,
+        /// The name of the column it starts in.
+        column: String,
+    },
+    /// Start run `run` of `template` on task `task`, which works issue
+    /// `issue` of project `id` and entered column `column`, off screen, and
+    /// report [`Input::Landed`]. A late answer is **recorded**, as a start's.
+    NextRun {
+        id: ProjectId,
+        issue: u64,
+        task: String,
+        run: String,
+        template: Template,
+        column: String,
     },
     /// Close issue `issue` of project `id`'s own tracker.
     CloseIssue {
@@ -458,7 +471,7 @@ impl BoardDrive {
                 task,
                 run: _,
                 outcome,
-            } => self.ended(&id, issue, &task, outcome.as_ref(), now),
+            } => self.ended(&id, issue, &task, outcome.as_ref()),
             Input::TasksRead { tasks } => self.tasks_read(&tasks, now),
         }
     }
@@ -592,6 +605,7 @@ fn place_before(todo: &[u64], dragged: u64, target: u64) -> Option<usize> {
         .position(|&n| n == target)
 }
 
+mod columns;
 mod look;
 mod seen;
 pub use look::Facts;

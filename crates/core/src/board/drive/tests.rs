@@ -51,7 +51,7 @@ fn write_of(fx: Vec<Effect>) -> Box<BoardWrite> {
             | Effect::Signal(_)
             | Effect::ReadIssues { .. }
             | Effect::GivePlace { .. }
-            | Effect::Start { .. }
+            | Effect::Start { .. } | Effect::NextRun { .. }
             | Effect::CloseIssue { .. }
             | Effect::Held { .. } => None,
         })
@@ -224,7 +224,7 @@ fn a_failed_write_puts_the_board_back() {
         | Effect::Signal(_)
         | Effect::ReadIssues { .. }
         | Effect::GivePlace { .. }
-        | Effect::Start { .. }
+        | Effect::Start { .. } | Effect::NextRun { .. }
         | Effect::CloseIssue { .. }
         | Effect::Held { .. } => false,
     });
@@ -236,7 +236,7 @@ fn a_failed_write_puts_the_board_back() {
         | Effect::Changed(_)
         | Effect::ReadIssues { .. }
         | Effect::GivePlace { .. }
-        | Effect::Start { .. }
+        | Effect::Start { .. } | Effect::NextRun { .. }
         | Effect::CloseIssue { .. }
         | Effect::Held { .. } => false,
     });
@@ -255,7 +255,7 @@ fn set_team_waits_then_writes_once() {
                 | Effect::Signal(_)
                 | Effect::ReadIssues { .. }
                 | Effect::GivePlace { .. }
-                | Effect::Start { .. }
+                | Effect::Start { .. } | Effect::NextRun { .. }
                 | Effect::CloseIssue { .. }
                 | Effect::Held { .. } => None,
             })
@@ -313,7 +313,7 @@ fn a_change_says_changed() {
         | Effect::Signal(_)
         | Effect::ReadIssues { .. }
         | Effect::GivePlace { .. }
-        | Effect::Start { .. }
+        | Effect::Start { .. } | Effect::NextRun { .. }
         | Effect::CloseIssue { .. }
         | Effect::Held { .. } => false,
     }));

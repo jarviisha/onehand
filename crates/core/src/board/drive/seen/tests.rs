@@ -46,7 +46,7 @@ fn held(fx: &[Effect]) -> Option<HashSet<String>> {
         | Effect::Signal(_)
         | Effect::ReadIssues { .. }
         | Effect::GivePlace { .. }
-        | Effect::Start { .. }
+        | Effect::Start { .. } | Effect::NextRun { .. }
         | Effect::CloseIssue { .. } => None,
     })
 }
@@ -105,20 +105,22 @@ fn adoption_happens_once() {
     assert_eq!(d.board(&id()).cloned(), before);
 }
 
+/// An entry whose task is not there stays, to read as a start that did not
+/// land: a person starts it again; nothing starts it by itself.
 #[test]
-fn an_entry_naming_a_lost_task_is_dropped() {
+fn an_entry_naming_a_lost_task_is_kept() {
     let mut d = drive(&[], true);
     let _ = read(&mut d, vec![seen("a", 5, Some(false), 1)]);
     let fx = read(&mut d, Vec::new());
-    assert!(d.board(&id()).unwrap().work().is_empty());
-    assert_eq!(held(&fx), Some(HashSet::new()));
+    assert_eq!(d.board(&id()).unwrap().work().len(), 1);
+    assert_eq!(held(&fx), Some(["a".to_string()].into_iter().collect()));
 }
 
 #[test]
 fn an_entry_whose_start_is_on_its_way_is_kept() {
     let mut d = drive(&[4], false);
     d.starting.entry(id()).or_default().insert(4);
-    let board = d.board(&id()).unwrap().started(4, "t", 2);
+    let board = d.board(&id()).unwrap().placed(4, 1, None, 2).begun(4, "t", "t");
     d.boards.boards.insert(id(), board);
     let _ = read(&mut d, Vec::new());
     assert_eq!(d.board(&id()).unwrap().work().len(), 1);

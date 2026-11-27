@@ -142,27 +142,7 @@ fn upgraded_moves_to_do_issues_that_tasks_hold_and_caps_done() {
     assert_eq!(board.schema_version, SCHEMA_VERSION);
 }
 
-#[test]
-fn started_moves_an_issue_from_to_do_to_work() {
-    let board = made().started(4, "t1", 50);
-    assert_eq!(board.todo(), [9]);
-    assert_eq!(
-        board.work(),
-        [work(4, "t1")].map(|e| Entry { since: 50, ..e })
-    );
-}
 
-#[test]
-fn finished_puts_the_newest_first() {
-    let board = made()
-        .upgraded(vec![work(4, "a"), work(5, "b")], vec![done(7, "c")])
-        .finished("b", 60);
-    assert_eq!(board.work().len(), 1);
-    let order: Vec<u64> = board.done().iter().map(|e| e.issue).collect();
-    assert_eq!(order, [5, 7]);
-    assert_eq!(board.done()[0].since, 60);
-    assert!(board.done()[0].run.is_none());
-}
 
 #[test]
 fn removed_leaves_no_trace() {

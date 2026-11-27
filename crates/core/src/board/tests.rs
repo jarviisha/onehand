@@ -15,67 +15,11 @@ fn none() -> HashSet<u64> {
     HashSet::new()
 }
 
-#[test]
-fn pull_fills_up_to_team() {
-    let got = pull(&board(2, &[4, 3, 2]), 0, None, &five(), None, &none());
-    assert_eq!(got.start, [4, 3]);
-    assert!(got.gone.is_empty());
-}
 
-#[test]
-fn pull_none_when_full() {
-    let got = pull(&board(2, &[4, 3]), 2, None, &five(), None, &none());
-    assert!(got.start.is_empty());
-}
 
-#[test]
-fn pull_after_team_lowered() {
-    let got = pull(&board(1, &[4, 3]), 3, None, &five(), None, &none());
-    assert!(got.start.is_empty());
-    assert!(got.gone.is_empty());
-}
 
-/// Only an issue that is closed or no longer there leaves To do; one that is
-/// open but cannot be worked now, as a forge-synced one while the forge is
-/// not found, waits in To do for the next look.
-#[test]
-fn pull_drops_only_closed_or_missing_issues() {
-    let kept = issues(
-        r#"{"next":5,"issues":[
-        {"number":1,"title":"mine"},
-        {"number":2,"title":"theirs","imported_from":"github"},
-        {"number":3,"title":"closed","open":false}]}"#,
-    );
-    let got = pull(&board(4, &[3, 2, 9, 1]), 0, None, &kept, None, &none());
-    assert_eq!(got.gone, [3, 9]);
-    assert_eq!(got.start, [1]);
-}
 
-/// An issue a task of the board still holds is not started twice: it stays
-/// in To do, skipped, until the task gives it up.
-#[test]
-fn pull_skips_an_issue_a_task_holds() {
-    let got = pull(
-        &board(2, &[4, 3, 2]),
-        0,
-        None,
-        &five(),
-        None,
-        &HashSet::from([4]),
-    );
-    assert_eq!(got.start, [3, 2]);
-    assert!(got.gone.is_empty(), "kept in To do");
-}
 
-/// The board's first step is limited and full: nothing is pulled, whatever
-/// room the team has, until a task leaves it.
-#[test]
-fn pull_waits_for_room_at_the_first_step() {
-    let full = pull(&board(4, &[4, 3]), 1, Some((1, 1)), &five(), None, &none());
-    assert!(full.start.is_empty());
-    let one = pull(&board(4, &[4, 3]), 1, Some((2, 1)), &five(), None, &none());
-    assert_eq!(one.start, [4], "only as many as the step has room for");
-}
 
 fn issues(json: &str) -> Issues {
     serde_json::from_str(json).unwrap()
