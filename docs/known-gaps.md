@@ -502,4 +502,7 @@ the ones that exist. What workflows and tasks do not do is listed at the end of
   It also stands beside the title whole, so a long act keeps the title short.
 - **The project page's head keeps its actions whole at the narrowest pane.** The board link and
   *Run check* keep their words, so at 720 wide the project's name and path are cut to a letter. A
-  link that shortened its words when narrow would leave the name its room.
+  link that shortened its words when narrow would leave the name its room. A board task's detail
+  is squeezed the same way: its trail's last crumb, *on the board at <column> · <workflow>*, keeps
+  its room and cuts the project's crumb to nothing, the column read whole on the line under the
+  title.

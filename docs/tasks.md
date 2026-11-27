@@ -52,7 +52,7 @@ running, what needs me, and what has finished.
 **The task detail** opens in place of the boxes when a row's text is pressed, read as a page at
 the prose width. It shows:
 
-- **a trail**: *Tasks* to go back (Esc too) › the project › the workflow, as a breadcrumb, then what can be done with the task: the most
+- **a trail**: *Tasks* to go back (Esc too) › the project › the row's name (where it came from, or where its board holds it, then the workflow), as a breadcrumb, then what can be done with the task: the most
   fitting a primary (a secondary while *Awaiting approval*, *Out of time* or the way out holds the view's one
   primary), the next a secondary, the rest in ⋯ (*Retry…* on a finished task, and *Remove worktree…* in the danger ink once its pull request reads merged); ⋯ is
   always drawn, so that late arrival shifts nothing;
