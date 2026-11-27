@@ -46,7 +46,10 @@ fn a_person_column_says_since_when() {
         entry(None, false),
         None,
     );
-    assert_eq!(line(&b, 4, false, false, false), (Line::Since(77), None));
+    assert_eq!(
+        line(&b, 4, false, false, false, None),
+        (Line::Since(77), None)
+    );
 }
 
 #[test]
@@ -57,7 +60,7 @@ fn a_column_starting_on_a_press_waits_for_start() {
         None,
     );
     assert_eq!(
-        line(&b, 4, false, false, false),
+        line(&b, 4, false, false, false, None),
         (Line::WaitingForStart, Some(EntryAct::Start))
     );
 }
@@ -70,10 +73,13 @@ fn a_column_starting_on_entry_waits_for_the_team() {
         None,
     );
     assert_eq!(
-        line(&b, 4, false, false, false),
+        line(&b, 4, false, false, false, None),
         (Line::WaitingForTeam, None)
     );
-    assert_eq!(line(&b, 4, false, false, true), (Line::Starting, None));
+    assert_eq!(
+        line(&b, 4, false, false, true, None),
+        (Line::Starting, None)
+    );
 }
 
 #[test]
@@ -83,7 +89,7 @@ fn a_task_at_its_column_says_its_own_line() {
         entry(Some("t"), false),
         None,
     );
-    assert_eq!(line(&b, 4, true, true, false), (Line::Task, None));
+    assert_eq!(line(&b, 4, true, true, false, None), (Line::Task, None));
 }
 
 #[test]
@@ -94,7 +100,7 @@ fn a_start_that_never_landed_offers_start() {
         None,
     );
     assert_eq!(
-        line(&b, 4, false, false, false),
+        line(&b, 4, false, false, false, None),
         (Line::DidNotStart, Some(EntryAct::Start))
     );
 }
@@ -108,7 +114,7 @@ fn done_here_moves_on_by_a_person_or_waits_for_room() {
         Some(next.clone()),
     );
     assert_eq!(
-        line(&b, 4, true, false, false),
+        line(&b, 4, true, false, false, None),
         (Line::DoneHere, Some(EntryAct::MoveTo(Some("ship".into()))))
     );
     let mut full = next;
@@ -123,7 +129,7 @@ fn done_here_moves_on_by_a_person_or_waits_for_room() {
         Some(full),
     );
     assert_eq!(
-        line(&b, 4, true, false, false),
+        line(&b, 4, true, false, false, None),
         (Line::WaitingForRoom("SHIP".into()), None)
     );
 }
@@ -150,8 +156,23 @@ fn a_run_the_task_never_made_did_not_start() {
         None,
     );
     assert_eq!(
-        line(&b, 4, false, false, false),
+        line(&b, 4, false, false, false, None),
         (Line::DidNotStart, Some(EntryAct::Start)),
         "the run is not one of its task's"
     );
+}
+
+#[test]
+fn a_column_that_cannot_start_says_why_instead_of_waiting() {
+    for starts in [Starts::OnEntry, Starts::OnPress] {
+        let b = board(
+            column("ship", flow(), starts, MovesOn::ByItself),
+            entry(None, false),
+            None,
+        );
+        assert_eq!(
+            line(&b, 4, false, false, false, Some("Its workflow, w, is gone")),
+            (Line::CannotStart("Its workflow, w, is gone".into()), None)
+        );
+    }
 }

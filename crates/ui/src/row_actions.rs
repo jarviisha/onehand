@@ -61,7 +61,9 @@ pub fn row_menu_items(mut menu: PopupMenu, acts: &[RowAct], cx: &App) -> PopupMe
         if act.danger && i > 0 {
             menu = menu.separator();
         }
-        let item = match act.danger {
+        // A refused removal draws as any refused row does, not in the
+        // danger ink that says it would remove.
+        let item = match act.danger && !act.refused {
             true => crate::menu_row(move |_, _| div().text_color(danger).child(label.clone())),
             false => crate::menu_item(label),
         };

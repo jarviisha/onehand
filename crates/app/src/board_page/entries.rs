@@ -102,6 +102,7 @@ impl BoardPage {
                 ColumnParts {
                     title: "Backlog".into(),
                     count,
+                    counted: true,
                     rows: drawn,
                     note: backlog_note,
                     control: None,
@@ -142,7 +143,7 @@ impl BoardPage {
                 })
                 .collect();
             let key = ColumnKey::Board(col.id.clone());
-            let more = self.column_more(at, col, cx);
+            let more = self.column_more(at, col, gone, cx);
             // A drop off its rows puts the issue last. Its rows fill under a
             // drag, so the column fills only when it has none, or the two
             // fills would hide the row the issue lands before.
@@ -152,6 +153,7 @@ impl BoardPage {
                     ColumnParts {
                         title: column_head(col, gone).into(),
                         count: col.entries.len(),
+                        counted: col.limit.is_none(),
                         rows: drawn,
                         note: col.entries.is_empty().then(|| "Nothing here".to_string()),
                         control: Some(more),
@@ -177,6 +179,7 @@ impl BoardPage {
                 ColumnParts {
                     title: "Done".into(),
                     count: board.done().len(),
+                    counted: true,
                     note: done.is_empty().then(|| "Nothing done yet".to_string()),
                     rows: done,
                     control: None,
@@ -221,8 +224,14 @@ impl BoardPage {
             .and_then(|t| crate::task::task(t, cx))
             .is_some_and(|t| t.runs().iter().any(|r| Some(&r.id) == entry.run.as_ref()));
         let starting = Shared::global(cx).boards.starting(id).any(|n| n == issue);
-        let (line, act) =
-            onehand_core::board::line::line(board, issue, run_here, working, starting);
+        let (line, act) = onehand_core::board::line::line(
+            board,
+            issue,
+            run_here,
+            working,
+            starting,
+            start.as_deref(),
+        );
         let standing = Standing {
             working,
             starting,
@@ -256,7 +265,8 @@ impl BoardPage {
             | Line::Starting
             | Line::DoneHere
             | Line::WaitingForRoom(_)
-            | Line::DidNotStart => Some(line.words()),
+            | Line::DidNotStart
+            | Line::CannotStart(_) => Some(line.words()),
         };
         // A row whose task works stays where it is; any other drags, and
         // every row takes a dragged issue in just before itself.
@@ -284,7 +294,9 @@ impl BoardPage {
             Some(row) => self.task_row(row, words, moves, button, drags, cx),
             None => {
                 let ink = match line {
-                    Line::DidNotStart => crate::theme::status_ink(cx).warning,
+                    Line::DidNotStart | Line::CannotStart(_) => {
+                        crate::theme::status_ink(cx).warning
+                    }
                     Line::Since(_) => crate::theme::meta_ink(cx),
                     Line::Task
                     | Line::WaitingForStart
@@ -322,11 +334,12 @@ impl BoardPage {
     }
 
     /// A column's `⋯`: *Edit column…*, and *Edit workflow* on one that runs
-    /// a workflow.
+    /// a workflow that is still there.
     fn column_more(
         &mut self,
         at: usize,
         col: &onehand_core::board::Column,
+        gone: bool,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         let page = cx.entity().downgrade();
@@ -339,7 +352,8 @@ impl BoardPage {
             })
         };
         let mut acts = vec![RowAct::new("Edit column…", edit)];
-        if let Work::Workflow { id } = &col.work {
+        // A workflow that is gone has nothing to edit.
+        if let (Work::Workflow { id }, false) = (&col.work, gone) {
             let workflow = id.clone();
             let open: onehand_ui::Press = Rc::new(move |_, _, cx| {
                 let workflow = workflow.clone();

@@ -6,6 +6,7 @@ use super::section;
 use crate::controls::Named as _;
 use crate::settings::{list_row, list_rows, more_not_shown};
 use crate::shell::Shell;
+use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, Entity, InteractiveElement as _, IntoElement, ParentElement, SharedString,
     Styled, div,
@@ -255,10 +256,12 @@ fn columns_field(
                     1 => Some("Move its issue out first".to_string()),
                     n => Some(format!("Move its {n} issues out first")),
                 };
+                // A refused removal is not drawn in the danger ink.
+                let ink = why.is_none().then(|| crate::theme::status_ink(cx).danger);
                 crate::controls::action(("remove-column", at))
                     .short()
                     .secondary()
-                    .text_color(crate::theme::status_ink(cx).danger)
+                    .when_some(ink, |button, ink| button.text_color(ink))
                     .label("Remove")
                     .refuses(why)
                     .on_click(move |_, _, cx| {

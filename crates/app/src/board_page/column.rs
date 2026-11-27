@@ -47,6 +47,9 @@ impl ColumnKey {
 pub(super) struct ColumnParts {
     pub(super) title: SharedString,
     pub(super) count: usize,
+    /// Whether the head draws `count` beside its title: not where the title
+    /// already says it, as a column with a limit's does.
+    pub(super) counted: bool,
     pub(super) rows: Vec<gpui::AnyElement>,
     /// Said where there is nothing to list.
     pub(super) note: Option<String>,
@@ -66,6 +69,7 @@ pub(super) fn column(parts: ColumnParts, cx: &App) -> gpui::Div {
     let ColumnParts {
         title,
         count,
+        counted,
         rows,
         note,
         control,
@@ -96,7 +100,7 @@ pub(super) fn column(parts: ColumnParts, cx: &App) -> gpui::Div {
             }
         })
         .child(ruled(rows, cx));
-    page_card(title, Some(count), control, cx)
+    page_card(title, counted.then_some(count), control, cx)
         .debug_selector(|| format!("{}-box", key.scroll_id()))
         .flex_none()
         .w(COLUMN_W)
