@@ -9,6 +9,7 @@ use onehand_core::workflow::Run;
 use std::path::PathBuf;
 
 /// A task as the Tasks page lists it.
+#[derive(Clone)]
 pub(crate) struct Row {
     pub(crate) id: String,
     pub(crate) title: String,
@@ -199,74 +200,30 @@ pub(crate) fn room_at(
     cx.try_global::<Tasks>()?.drive.room(root, template, at)
 }
 
-/// Project `project`'s board tasks laid over `template`'s steps, each as
-/// the pages list it.
-pub(crate) struct BoardTasks {
-    /// A column per step; then any step the workflow lost.
-    pub(crate) steps: Vec<StepColumn>,
-    /// Newest first.
-    pub(crate) done: Vec<Row>,
-    /// The issues its tasks hold out of the Backlog.
+/// The tasks of project `project`'s board, as the pages list them, by id,
+/// and the issues the board holds out of the Backlog.
+pub(crate) struct BoardView {
+    pub(crate) rows: std::collections::HashMap<String, Row>,
     pub(crate) taken: std::collections::HashSet<u64>,
 }
 
-/// The column of one step of a board's workflow.
-pub(crate) struct StepColumn {
-    /// The step's label, which tells its rows apart.
-    pub(crate) label: String,
-    /// What its head says: a limited step's says how much of its room is
-    /// held.
-    pub(crate) head: String,
-    pub(crate) rows: Vec<Row>,
-    /// The step's id while the workflow still has the step.
-    pub(crate) step: Option<String>,
-}
-
-/// Project `project`'s board tasks in the columns of `template`, as core
-/// places them.
-pub(crate) fn board(
-    project: &onehand_core::project::ProjectId,
-    root: &std::path::Path,
-    template: &onehand_core::workflow::Template,
-    cx: &App,
-) -> BoardTasks {
-    let Some(t) = cx.try_global::<Tasks>() else {
-        return BoardTasks {
-            steps: Vec::new(),
-            done: Vec::new(),
+/// What project `project`'s board page reads of the tasks.
+pub(crate) fn board_view(project: &onehand_core::project::ProjectId, cx: &App) -> BoardView {
+    let (Some(t), Some(board)) = (
+        cx.try_global::<Tasks>(),
+        crate::state::Shared::global(cx).boards.board(project),
+    ) else {
+        return BoardView {
+            rows: Default::default(),
             taken: Default::default(),
         };
     };
-    let Some(board) = crate::state::Shared::global(cx).boards.board(project) else {
-        return BoardTasks {
-            steps: Vec::new(),
-            done: Vec::new(),
-            taken: Default::default(),
-        };
-    };
-    let columns = onehand_core::board::columns(template, board, t.tasks().iter());
-    let rows = |tasks: Vec<&Task>| tasks.into_iter().map(|task| row_of(t, task)).collect();
-    BoardTasks {
-        steps: columns
-            .steps
-            .into_iter()
-            .map(|column| {
-                let at = template.steps.iter().position(|s| s.id == column.step);
-                let room = at.and_then(|at| room_at(root, template, at, cx));
-                let head = match room {
-                    Some(room) => format!("{} · {} of {}", column.label, room.holding, room.limit),
-                    None => column.label.clone(),
-                };
-                let step = at.map(|_| column.step.clone());
-                StepColumn {
-                    label: column.label,
-                    head,
-                    rows: rows(column.tasks),
-                    step,
-                }
-            })
+    let named = |task: &Task| board.names(task.id()).is_some();
+    BoardView {
+        rows: (t.tasks().iter())
+            .filter(|task| named(task))
+            .map(|task| (task.id().to_string(), row_of(t, task)))
             .collect(),
-        done: rows(columns.done),
         taken: onehand_core::board::taken(board, t.tasks().iter(), project),
     }
 }

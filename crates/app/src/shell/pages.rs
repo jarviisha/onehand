@@ -135,16 +135,22 @@ impl Shell {
             E::OpenTask(id) => self.show_task(id, window, cx),
             E::Task(event) => self.on_tasks_page(event, window, cx),
             E::ProjectSettings(root) => self.show_project_settings(root.clone(), window, cx),
-            E::EditWorkflow { step } => {
+            E::EditWorkflow { workflow } => {
                 let Some(project) = self.board_page.read(cx).project().cloned() else {
                     return;
                 };
-                let bound = crate::state::Shared::global(cx)
-                    .boards
-                    .board(&project)
-                    .map(|board| board.workflow().to_string());
-                if let Some(workflow) = bound {
-                    self.show_workflow(&workflow, step.as_deref(), Some(project), window, cx);
+                self.show_workflow(workflow, None, Some(project), window, cx);
+            }
+            E::EditColumn { column } => {
+                let Some(project) = self.board_page.read(cx).project().cloned() else {
+                    return;
+                };
+                let root = crate::state::Shared::global(cx)
+                    .projects
+                    .get(&project)
+                    .map(|p| p.path.clone());
+                if let Some(root) = root {
+                    self.open_column_form(root, Some(column.clone()), window, cx);
                 }
             }
         }

@@ -104,22 +104,36 @@ mod strain {
             .expect("the shipped board workflow")
     }
 
+    /// A board of a column per step of the shipped board workflow, so it
+    /// has more columns than a narrow pane holds side by side.
+    fn wide(template: &Template) -> Board {
+        let mut board = Board::made(template.id.clone(), 2, &[], 0);
+        for step in &template.steps {
+            board.columns.push(onehand_core::board::Column {
+                id: step.id.clone(),
+                name: step.label.clone(),
+                work: onehand_core::board::Work::Person,
+                starts: onehand_core::board::Starts::OnEntry,
+                moves_on: onehand_core::board::MovesOn::ByPerson,
+                limit: None,
+                entries: Vec::new(),
+            });
+        }
+        board
+    }
+
     /// The selectors of the board's columns, left to right.
     fn columns(template: &Template) -> Vec<&'static str> {
-        [
-            "board-column-backlog".to_string(),
-            "board-column-todo".to_string(),
-        ]
-        .into_iter()
-        .chain(
-            template
-                .steps
-                .iter()
-                .map(|s| format!("board-column-step-{}", s.id)),
-        )
-        .chain(["board-column-Done".to_string()])
-        .map(|id| selector(format!("{id}-box")))
-        .collect()
+        std::iter::once("board-column-backlog".to_string())
+            .chain(
+                wide(template)
+                    .columns
+                    .iter()
+                    .map(|c| format!("board-column-{}", c.id)),
+            )
+            .chain(["board-column-Done".to_string()])
+            .map(|id| selector(format!("{id}-box")))
+            .collect()
     }
 
     /// A board on a project whose one open issue is titled `title`, beside
@@ -150,7 +164,7 @@ mod strain {
         let id = project.id.clone();
         cx.update(|_, cx| {
             use gpui::BorrowAppContext as _;
-            let board = Board::made(team().id, 2, &[], 0);
+            let board = wide(&team());
             let fx = cx.update_global::<crate::state::Shared, _>(|shared, _| {
                 shared.boards.set_board(&id, Some(board))
             });
@@ -208,11 +222,125 @@ mod strain {
             for w in [NARROWEST, WIDE] {
                 width(cx, w);
                 assert_inside(
-                    bounds(cx, "board-backlog-1-title"),
+                    bounds(cx, "board-issue-1-title"),
                     bounds(cx, "board-column-backlog-box"),
                     &format!("a long issue title at {w:?}, zoomed {steps}"),
                 );
             }
         }
+    }
+}
+
+mod columns {
+    use crate::board_page::column::column_count;
+    use crate::shell::rig::{board_page, folder, keep_projects, nowhere, shell_on};
+    use gpui::{BorrowAppContext as _, TestAppContext};
+    use onehand_core::board::{Board, Column, Entry, MovesOn, Starts, Work};
+    use onehand_core::project::{Project, ProjectId};
+    use onehand_core::workspace::Workspace;
+    use std::time::Duration;
+
+    fn column(id: &str, name: &str, work: Work, starts: Starts) -> Column {
+        Column {
+            id: id.into(),
+            name: name.into(),
+            work,
+            starts,
+            moves_on: MovesOn::ByPerson,
+            limit: None,
+            entries: Vec::new(),
+        }
+    }
+
+    /// To do, Plan (the branch workflow, started on a press, holding issue
+    /// 4) and Review (a person's).
+    fn board() -> Board {
+        let mut board = Board::made("builtin:branch".into(), 2, &[], 0);
+        board.columns[1] = column(
+            "plan",
+            "Plan",
+            Work::Workflow {
+                id: "builtin:branch".into(),
+            },
+            Starts::OnPress,
+        );
+        board.columns[1].entries.push(Entry {
+            issue: 4,
+            ..Entry::default()
+        });
+        board
+            .columns
+            .push(column("review", "Review", Work::Person, Starts::OnEntry));
+        board
+    }
+
+    #[gpui::test]
+    fn the_page_draws_the_boards_columns_in_order(cx: &mut TestAppContext) {
+        let dir = folder("board-own-columns");
+        let home = dir.join("p");
+        std::fs::create_dir_all(&home).unwrap();
+        let home = std::fs::canonicalize(home).unwrap();
+        let (handle, shell, cx) = shell_on(
+            cx,
+            dir.join("tasks"),
+            vec![nowhere()],
+            Workspace::seeded("/tmp"),
+        );
+        let branch = onehand_core::workflow::builtin::all()
+            .into_iter()
+            .find(|t| t.id == "builtin:branch")
+            .unwrap();
+        cx.update(|_, cx| crate::workflow::offer(vec![branch], cx));
+        let project = Project::new(ProjectId::mint(921), None, home);
+        let file = onehand_core::project::file::issues_file(&project.id);
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        let issues = serde_json::json!({"next": 5, "issues": [{"number": 4, "title": "Four"}]});
+        std::fs::write(&file, issues.to_string()).unwrap();
+        keep_projects(handle, &shell, vec![project.clone()], cx);
+        let id = project.id.clone();
+        cx.update(|_, cx| {
+            let fx = cx.update_global::<crate::state::Shared, _>(|shared, _| {
+                shared.boards.set_board(&id, Some(board()))
+            });
+            crate::board::carry(fx, cx);
+        });
+        cx.update(|window, cx| shell.update(cx, |shell, cx| shell.show_board(id, window, cx)));
+        for _ in 0..300 {
+            cx.run_until_parked();
+            if cx.debug_bounds("board-issue-4").is_some() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let _ = board_page(&shell, cx);
+        let x = |selector: &'static str, cx: &mut gpui::VisualTestContext| {
+            cx.debug_bounds(selector)
+                .unwrap_or_else(|| panic!("{selector} drawn"))
+                .origin
+                .x
+        };
+        let order = [
+            "board-column-backlog-box",
+            "board-column-todo-box",
+            "board-column-plan-box",
+            "board-column-review-box",
+            "board-column-Done-box",
+        ];
+        let xs: Vec<_> = order.iter().map(|s| x(s, cx)).collect();
+        assert!(xs.windows(2).all(|w| w[0] < w[1]), "left to right");
+        assert!(
+            cx.debug_bounds("board-issue-4-button").is_some(),
+            "a row waiting for Start draws Start"
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_column_with_a_limit_says_how_full_it_is() {
+        let mut review = column("review", "Review", Work::Person, Starts::OnEntry);
+        assert_eq!(column_count(&review), "0");
+        review.limit = Some(2);
+        review.entries.push(Entry::default());
+        assert_eq!(column_count(&review), "1 of 2");
     }
 }

@@ -336,6 +336,9 @@ impl BoardDrive {
         if working {
             return Err("It is at work: Stop it first".to_string());
         }
+        if self.starting.get(id).is_some_and(|s| s.contains(&issue)) {
+            return Err("It is starting: wait for it to start".to_string());
+        }
         let mut fx = self.edit(id, false, |board| board.map(|b| b.removed(issue)));
         if !fx.is_empty() {
             fx.push(self.say_held());

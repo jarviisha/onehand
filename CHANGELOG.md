@@ -18,6 +18,11 @@ minor bump may break any of them.
   take over leaves the issue in its column, and the board's tasks cannot be dismissed. A task off
   the board that a person retries is theirs, and *No board* lets the board's tasks go. The board
   file moves to version 2, naming its tasks, at the first start; an earlier build cannot read it.
+- The board page draws a board's own columns between the Backlog and Done, each issue's row with
+  what it waits on and, where it waits on a person, its act drawn beside its menu; its moves are in
+  the row's menu and by drag, between any columns. A column's head says how full it is and opens
+  the column dialog; the page's head opens the columns in Settings. The page no longer draws a
+  column per step of one workflow.
 - A board's columns are defined in *Settings ▸ Projects ▸ Board*: added, edited, moved and
   removed there, each a person's or a workflow's, with when it starts, how an issue moves on and a
   limit. The box's *Workflow* menu now only makes a board; *Remove the board…* takes one away.

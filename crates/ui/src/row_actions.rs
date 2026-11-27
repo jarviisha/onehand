@@ -24,6 +24,9 @@ pub struct RowAct {
     label: SharedString,
     danger: bool,
     press: Press,
+    /// Whether it cannot act now: kept in the menu, refusing, so the menu
+    /// keeps its shape.
+    refused: bool,
 }
 
 impl RowAct {
@@ -32,7 +35,14 @@ impl RowAct {
             label: label.into(),
             danger: false,
             press,
+            refused: false,
         }
+    }
+
+    /// One that cannot act now: listed, but refusing the press.
+    pub fn refuses(mut self, refused: bool) -> Self {
+        self.refused = refused;
+        self
     }
 
     /// A removal, in the danger ink and after a separator.
@@ -51,10 +61,13 @@ pub fn row_menu_items(mut menu: PopupMenu, acts: &[RowAct], cx: &App) -> PopupMe
         if act.danger && i > 0 {
             menu = menu.separator();
         }
-        let item = match act.danger {
+        // A refused removal draws as any refused row does, not in the
+        // danger ink that says it would remove.
+        let item = match act.danger && !act.refused {
             true => crate::menu_row(move |_, _| div().text_color(danger).child(label.clone())),
             false => crate::menu_item(label),
         };
+        let item = item.disabled(act.refused);
         menu = menu.item(item.on_click(move |event, window, cx| press(event, window, cx)));
     }
     menu

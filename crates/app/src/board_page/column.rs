@@ -21,11 +21,8 @@ const SCROLLBAR_PULL: Rems = rems(-0.75);
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub(super) enum ColumnKey {
     Backlog,
-    Todo,
-    /// A step of the workflow, by its id.
-    Step(String),
-    /// What a step the workflow no longer has left behind, by its label.
-    Removed(String),
+    /// A column of the board, by its id.
+    Board(String),
     Done,
 }
 
@@ -34,9 +31,7 @@ impl ColumnKey {
     fn scroll_id(&self) -> SharedString {
         let key = match self {
             Self::Backlog => "backlog".to_string(),
-            Self::Todo => "todo".to_string(),
-            Self::Step(step) => format!("step-{step}"),
-            Self::Removed(label) => label.clone(),
+            Self::Board(id) => id.clone(),
             Self::Done => "Done".to_string(),
         };
         format!("board-column-{key}").into()
@@ -51,10 +46,13 @@ impl ColumnKey {
 /// What a column is drawn from.
 pub(super) struct ColumnParts {
     pub(super) title: SharedString,
+    /// How many it holds, of which [`BOARD_SHOWN`] are drawn.
     pub(super) count: usize,
+    /// What the head says of `count` beside its title, muted.
+    pub(super) said: SharedString,
     pub(super) rows: Vec<gpui::AnyElement>,
-    /// Said where there is nothing to list.
-    pub(super) note: Option<String>,
+    /// Said where there is nothing to list, in its ink.
+    pub(super) note: Option<(String, gpui::Hsla)>,
     /// At the head's end.
     pub(super) control: Option<gpui::AnyElement>,
     pub(super) key: ColumnKey,
@@ -71,6 +69,7 @@ pub(super) fn column(parts: ColumnParts, cx: &App) -> gpui::Div {
     let ColumnParts {
         title,
         count,
+        said,
         rows,
         note,
         control,
@@ -101,13 +100,22 @@ pub(super) fn column(parts: ColumnParts, cx: &App) -> gpui::Div {
             }
         })
         .child(ruled(rows, cx));
-    page_card(title, Some(count), control, cx)
+    // The count stands in the head's count slot, muted, as a box's count
+    // does; the slot takes a number, and a limit's "n of m" is words.
+    let head = div().h_flex().items_center().gap_2().child(title).child(
+        div()
+            .text_xs()
+            .font_weight(gpui::FontWeight::NORMAL)
+            .text_color(muted)
+            .child(said),
+    );
+    page_card(head, None, control, cx)
         .debug_selector(|| format!("{}-box", key.scroll_id()))
         .flex_none()
         .w(COLUMN_W)
         .max_h_full()
         .min_h_0()
-        .children(note.map(muted_line))
+        .children(note.map(|(text, ink)| div().text_xs().text_color(ink).child(text)))
         .child(
             div()
                 .relative()
@@ -118,4 +126,13 @@ pub(super) fn column(parts: ColumnParts, cx: &App) -> gpui::Div {
                 .child(onehand_ui::scrollbar(&scroll).id(key.bar_id())),
         )
         .children((hidden > 0).then(|| muted_line(format!("{hidden} more not shown"))))
+}
+
+/// What a board column's head says of how many it holds: how full it is
+/// when it holds a limit.
+pub(crate) fn column_count(column: &onehand_core::board::Column) -> String {
+    match column.limit {
+        Some(limit) => format!("{} of {limit}", column.entries.len()),
+        None => column.entries.len().to_string(),
+    }
 }

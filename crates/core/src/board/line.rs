@@ -23,6 +23,8 @@ pub enum Line {
     WaitingForRoom(String),
     /// A start asked for it never landed.
     DidNotStart,
+    /// Not started, and its column cannot start it, for this reason.
+    CannotStart(String),
 }
 
 /// The one thing a row offers about its issue.
@@ -45,6 +47,7 @@ impl Line {
             Line::DoneHere => "Done here".into(),
             Line::WaitingForRoom(column) => format!("Waiting for room in {column}"),
             Line::DidNotStart => "Did not start".into(),
+            Line::CannotStart(why) => why.clone(),
         }
     }
 }
@@ -52,13 +55,15 @@ impl Line {
 /// What the row of `issue` on `board` says and offers: `run_here` says
 /// whether the run its entry asked for is one of its task's (no task kept,
 /// or a next run refused, and it is not), `working` whether that task works,
-/// and `starting` whether a start of it is on its way.
+/// `starting` whether a start of it is on its way, and `start` why its
+/// column cannot start it, when it cannot.
 pub fn line(
     board: &Board,
     issue: u64,
     run_here: bool,
     working: bool,
     starting: bool,
+    start: Option<&str>,
 ) -> (Line, Option<EntryAct>) {
     let Some((at, entry)) = board.at(issue) else {
         return (Line::Task, None);
@@ -74,10 +79,15 @@ pub fn line(
             if entry.done {
                 return done_here(column, next);
             }
-            match (&entry.run, run_here || working) {
-                (Some(_), true) => (Line::Task, None),
-                (Some(_), false) => (Line::DidNotStart, Some(EntryAct::Start)),
-                (None, _) => match column.starts {
+            match (&entry.run, run_here || working, start) {
+                (Some(_), true, _) => (Line::Task, None),
+                (Some(_), false, _) => (Line::DidNotStart, Some(EntryAct::Start)),
+                // Its task works, carried in from a column before: the row
+                // says what the task says.
+                (None, true, _) => (Line::Task, None),
+                // Waiting would never end: it says why instead.
+                (None, false, Some(why)) => (Line::CannotStart(why.into()), None),
+                (None, false, None) => match column.starts {
                     Starts::OnPress => (Line::WaitingForStart, Some(EntryAct::Start)),
                     Starts::OnEntry => (Line::WaitingForTeam, None),
                 },
