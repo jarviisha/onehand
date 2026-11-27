@@ -578,6 +578,11 @@ pub fn boot(cx: &mut App) {
         .chain(onehand_core::task::files::migrate_old_dir_blocking())
         // After the tasks are where they are kept, since it repoints them.
         .chain(onehand_core::workspace::migrate_storage_blocking(seed()))
+        // After the projects are where they are kept, and before anything
+        // reads or writes one: a board still in its project moves out.
+        .chain(onehand_core::board::file::migrate_blocking(
+            &onehand_core::project::file::store_dir(),
+        ))
     {
         eprintln!("onehand: {problem}");
     }

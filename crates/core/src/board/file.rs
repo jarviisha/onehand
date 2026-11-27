@@ -80,6 +80,62 @@ pub fn load_all_blocking(
     (boards, unreadable)
 }
 
+/// Move each board still kept in its `project.toml`, the way an earlier
+/// build kept it, into a file of its own under `projects_dir`, and answer
+/// what could not be moved. Blocking; run at start, before anything reads or
+/// writes a project.
+///
+/// **The key goes only once the file is written**: a project whose board
+/// could not be written keeps the key, which every later write of the
+/// project keeps too, and the next start tries again. A board file already
+/// there wins over the key, which is then dropped; one that cannot be read
+/// is left as it is, with the key.
+pub fn migrate_blocking(projects_dir: &Path) -> Vec<String> {
+    use crate::project::file::{load_from as load_project, save_to, ProjectLoad};
+    let mut problems = Vec::new();
+    let Ok(entries) = std::fs::read_dir(projects_dir) else {
+        return problems;
+    };
+    for dir in entries.flatten().map(|entry| entry.path()) {
+        let mut project = match load_project(&dir) {
+            ProjectLoad::Found(project) => *project,
+            ProjectLoad::Missing | ProjectLoad::Unreadable(_) => continue,
+        };
+        let Some(old) = project.board.clone() else {
+            continue;
+        };
+        match load_from(&dir) {
+            BoardLoad::Found(_) => {}
+            BoardLoad::Unreadable(why) => {
+                problems.push(format!("the board was not moved out of its project: {why}"));
+                continue;
+            }
+            BoardLoad::Missing => {
+                let since = modified_secs(&dir.join(crate::project::file::FILE));
+                let board = Board::made(old.workflow, old.team, &old.todo, since);
+                if let Err(why) = save_blocking(&dir, Some(&board)) {
+                    let at = dir.join(FILE);
+                    problems.push(format!("{}: the board was not moved: {why}", at.display()));
+                    continue;
+                }
+            }
+        }
+        project.board = None;
+        if let Err(why) = save_to(&project, &dir) {
+            let at = dir.join(crate::project::file::FILE);
+            problems.push(format!("{}: its board key was not dropped: {why}", at.display()));
+        }
+    }
+    problems
+}
+
+/// When `path` was last written, in seconds; 0 when that cannot be read.
+fn modified_secs(path: &Path) -> u64 {
+    (std::fs::metadata(path).and_then(|meta| meta.modified()).ok())
+        .and_then(|at| at.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(0, |since| since.as_secs())
+}
+
 /// The project a folder of the store is, by its name.
 fn folder_id(dir: &Path) -> Option<ProjectId> {
     let name = dir.is_dir().then(|| dir.file_name())??.to_str()?;
