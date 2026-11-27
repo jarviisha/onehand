@@ -10,7 +10,7 @@ use crate::shell::rig::strain::{
 use crate::shell::rig::{folder, keep_projects, kept_conversation, nowhere, shell_on, zoom_pane};
 use gpui::{
     Bounds, Entity, Modifiers, Pixels, ScrollDelta, ScrollWheelEvent, TestAppContext, TouchPhase,
-    VisualTestContext, point, px, size,
+    VisualTestContext, point, px, rems, size,
 };
 use onehand_core::config::PanelLayout;
 use onehand_core::project::{Project, ProjectId};
@@ -207,8 +207,9 @@ const ROW_WIDTHS: [Pixels; 4] = [WIDE, px(1100.), px(900.), NARROWEST];
 
 /// Each zoom the page is drawn at, its titles short, medium, long and
 /// unbroken, each with and without what it continued, on a page of its own:
-/// `check` is given the zoom's factor, the title and its page.
-fn each_page(name: &str, seed: u64, check: impl Fn(&str, f32, &str, &mut VisualTestContext)) {
+/// `check` is given the zoom's factor, the title, whether it continued
+/// another and its page.
+fn each_page(name: &str, seed: u64, check: impl Fn(&str, f32, &str, bool, &mut VisualTestContext)) {
     let mut seed = seed;
     for &(zoom, steps, _) in DRAWN {
         let factor = zoom.parse::<f32>().unwrap() / 100.;
@@ -224,11 +225,28 @@ fn each_page(name: &str, seed: u64, check: impl Fn(&str, f32, &str, &mut VisualT
                     &mut app,
                 );
                 zoom_pane(&shell, steps, cx);
-                check(zoom, factor, &title, cx);
+                check(zoom, factor, &title, continued.is_some(), cx);
                 app.quit();
             }
         }
     }
+}
+
+/// How wide `text` draws at `size` in the theme's font.
+fn drawn(text: &str, size: Pixels, cx: &mut VisualTestContext) -> Pixels {
+    cx.update(|window, cx| {
+        let mut style = window.text_style();
+        style.font_family = gpui_component::ActiveTheme::theme(cx).font_family.clone();
+        window
+            .text_system()
+            .shape_line(
+                text.to_string().into(),
+                size,
+                &[style.to_run(text.len())],
+                None,
+            )
+            .width
+    })
 }
 
 /// Whether a row's facts at `facts` show in its middle at `middle`: on its
@@ -239,100 +257,106 @@ fn shown(facts: Bounds<Pixels>, middle: Bounds<Pixels>) -> bool {
 
 #[gpui::test]
 fn a_rows_facts_stand_whole_or_not_at_all(_: &mut TestAppContext) {
-    each_page("strain-home-facts", 913_100, |zoom, factor, title, cx| {
-        let (least, line) = cx.update(|window, cx| {
-            let rem = window.rem_size() * factor;
-            // A short title's least is its own whole width.
-            let mut style = window.text_style();
-            style.font_family = gpui_component::ActiveTheme::theme(cx).font_family.clone();
-            let whole = window
-                .text_system()
-                .shape_line(
-                    title.to_string().into(),
+    each_page(
+        "strain-home-facts",
+        913_100,
+        |zoom, factor, title, continued, cx| {
+            let rem = cx.update(|window, _| window.rem_size() * factor);
+            let (least, line) = (
+                // A short title's least is its own whole width.
+                super::TITLE_LEAST.to_pixels(rem).min(drawn(
+                    title,
                     crate::tokens::CHROME_TEXT.to_pixels(rem),
-                    &[style.to_run(title.len())],
-                    None,
-                )
-                .width;
-            (
-                super::TITLE_LEAST.to_pixels(rem).min(whole),
+                    cx,
+                )),
                 onehand_ui::tokens::ROW_H.to_pixels(rem),
-            )
-        });
-        width(cx, WIDE);
-        let whole = bounds(cx, "home-facts-0").size.width;
-        assert!(
-            shown(bounds(cx, "home-facts-0"), bounds(cx, "home-middle-0")),
-            "a row's facts are not shown in a wide pane at {zoom}%"
-        );
-        for w in ROW_WIDTHS {
-            width(cx, w);
-            let (row, middle, named, text, facts, more) = (
-                bounds(cx, "home-row-0"),
-                bounds(cx, "home-middle-0"),
-                bounds(cx, "home-title-0"),
-                bounds(cx, "home-title-text-0"),
-                bounds(cx, "home-facts-0"),
-                bounds(cx, "home-more-0"),
             );
-            assert_inside(more, row, &format!("the row's ⋯ at {w:?}, {zoom}%"));
-            // One line high, whatever it wrapped out of sight.
+            // What it continued keeps its words whole, the ellipsis after them.
+            let earlier_least = drawn("Continued from…", rems(0.75).to_pixels(rem), cx);
+            width(cx, WIDE);
+            let whole = bounds(cx, "home-facts-0").size.width;
             assert!(
-                same(row.size.height, line),
-                "a row stands {:?} high, not one line's {line:?}, at {w:?}, {zoom}%",
-                row.size.height
+                shown(bounds(cx, "home-facts-0"), bounds(cx, "home-middle-0")),
+                "a row's facts are not shown in a wide pane at {zoom}%"
             );
-            assert!(
-                named.size.width + SLACK >= least.min(middle.size.width),
-                "the title is down to {named:?} under its least {least:?} at {w:?}, {zoom}%"
-            );
-            // That the second line is out of sight is the middle's clip,
-            // which bounds cannot read: a picture holds it.
-            if shown(facts, middle) {
-                // While the facts stand, the title's own words keep their
-                // least, whatever it continued takes beside them.
-                assert!(
-                    text.size.width + SLACK >= least,
-                    "the title's words are down to {text:?} under {least:?} beside its facts at {w:?}, {zoom}%"
+            for w in ROW_WIDTHS {
+                width(cx, w);
+                let (row, middle, named, text, facts, more) = (
+                    bounds(cx, "home-row-0"),
+                    bounds(cx, "home-middle-0"),
+                    bounds(cx, "home-title-0"),
+                    bounds(cx, "home-title-text-0"),
+                    bounds(cx, "home-facts-0"),
+                    bounds(cx, "home-more-0"),
                 );
-                assert_inside(facts, middle, &format!("a row's facts at {w:?}, {zoom}%"));
+                assert_inside(more, row, &format!("the row's ⋯ at {w:?}, {zoom}%"));
+                // One line high, whatever it wrapped out of sight.
                 assert!(
-                    same(facts.size.width, whole),
-                    "a row's facts are drawn at {facts:?}, narrower than their words' {whole:?}, at {w:?}, {zoom}%"
-                );
-                assert!(
-                    same(facts.right(), middle.right()),
-                    "a row's facts leave its end at {w:?}, {zoom}%"
+                    same(row.size.height, line),
+                    "a row stands {:?} high, not one line's {line:?}, at {w:?}, {zoom}%",
+                    row.size.height
                 );
                 assert!(
-                    facts.left() >= named.right(),
-                    "the facts run over the title"
+                    named.size.width + SLACK >= least.min(middle.size.width),
+                    "the title is down to {named:?} under its least {least:?} at {w:?}, {zoom}%"
                 );
-                assert!(
-                    (facts.center().y - named.center().y).abs() <= px(1.),
-                    "a row's facts stand off its title's line at {w:?}, {zoom}%"
-                );
-            } else {
-                assert!(
-                    facts.top() + SLACK >= middle.bottom(),
-                    "a row's facts are partly in sight at {w:?}, {zoom}%: {facts:?} in {middle:?}"
-                );
+                // That the second line is out of sight is the middle's clip,
+                // which bounds cannot read: a picture holds it.
+                if shown(facts, middle) {
+                    // While the facts stand, the title's own words keep their
+                    // least, whatever it continued takes beside them.
+                    assert!(
+                        text.size.width + SLACK >= least,
+                        "the title's words are down to {text:?} under {least:?} beside its facts at {w:?}, {zoom}%"
+                    );
+                    assert_inside(facts, middle, &format!("a row's facts at {w:?}, {zoom}%"));
+                    assert!(
+                        same(facts.size.width, whole),
+                        "a row's facts are drawn at {facts:?}, narrower than their words' {whole:?}, at {w:?}, {zoom}%"
+                    );
+                    assert!(
+                        same(facts.right(), middle.right()),
+                        "a row's facts leave its end at {w:?}, {zoom}%"
+                    );
+                    assert!(
+                        facts.left() >= named.right(),
+                        "the facts run over the title"
+                    );
+                    assert!(
+                        (facts.center().y - named.center().y).abs() <= px(1.),
+                        "a row's facts stand off its title's line at {w:?}, {zoom}%"
+                    );
+                } else {
+                    assert!(
+                        facts.top() + SLACK >= middle.bottom(),
+                        "a row's facts are partly in sight at {w:?}, {zoom}%: {facts:?} in {middle:?}"
+                    );
+                }
+                // Beside a short title, what it continued is never cut inside
+                // "Continued from" while the facts stand.
+                if w == NARROWEST && title == SHORT && continued && shown(facts, middle) {
+                    let earlier = bounds(cx, "home-continued-0");
+                    assert!(
+                        earlier.size.width + SLACK >= earlier_least,
+                        "what a short title continued is cut to {earlier:?} under its words' {earlier_least:?} beside its facts at {zoom}%"
+                    );
+                }
+                // A short title leaves its facts room beside it even in the
+                // narrowest pane; any other is cut to its least there first.
+                if w == NARROWEST && title == SHORT && !continued && zoom == "100" {
+                    assert!(
+                        shown(facts, middle),
+                        "a short title's facts are not shown in the narrowest pane"
+                    );
+                } else if w == NARROWEST && title != SHORT {
+                    assert!(
+                        !shown(facts, middle),
+                        "a row's facts are shown in the narrowest pane at {zoom}%"
+                    );
+                }
             }
-            // A short title leaves its facts room beside it even in the
-            // narrowest pane; any other is cut to its least there first.
-            if w == NARROWEST && title == SHORT && zoom == "100" {
-                assert!(
-                    shown(facts, middle),
-                    "a short title's facts are not shown in the narrowest pane"
-                );
-            } else if w == NARROWEST && title != SHORT {
-                assert!(
-                    !shown(facts, middle),
-                    "a row's facts are shown in the narrowest pane at {zoom}%"
-                );
-            }
-        }
-    });
+        },
+    );
 }
 
 #[gpui::test]

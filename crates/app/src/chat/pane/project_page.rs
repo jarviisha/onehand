@@ -10,6 +10,7 @@ use gpui::{
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::menu::ContextMenuExt as _;
+use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, StyledExt};
 use onehand_core::chat::ConvMeta;
 use std::path::{Path, PathBuf};
@@ -52,34 +53,69 @@ const CONTINUED_SHARE: f32 = 0.4;
 /// The gap between a title and what it continued.
 const CONTINUED_GAP: gpui::Rems = gpui::rems(0.5);
 
-/// The least a past conversation's title box keeps before its facts go: the
-/// smaller of the title's whole width and [`TITLE_LEAST`], so a short title
-/// keeps its facts beside it, and beside what it continued enough more that
-/// the title's own words keep that once the earlier one takes its share and
-/// the half-rem gap. A box that truncates reports to layout the width it was
-/// cut to, so the whole width is shaped here, as the row's text draws it; up
-/// to the device pixel, or layout's rounding cuts a title that fits whole.
-/// `rem` is the pane's, its zoom taken in.
-fn title_least(title: &str, continued: bool, rem: Pixels, window: &Window, cx: &App) -> Pixels {
+/// What leads the line naming what a conversation continued.
+const CONTINUED_WORDS: &str = "Continued from";
+
+/// How wide `text` draws at `size` in the theme's font: its widest line, as
+/// the text element shapes it when it decides whether to cut.
+fn drawn(text: &str, size: Pixels, window: &Window, cx: &App) -> Pixels {
     let mut style = window.text_style();
     style.font_family = cx.theme().font_family.clone();
-    let size = crate::tokens::CHROME_TEXT.to_pixels(rem);
-    let run = style.to_run(title.len());
-    let whole = (window.text_system())
-        .shape_text(title.to_string().into(), size, &[run], None, None)
+    let run = style.to_run(text.len());
+    (window.text_system())
+        .shape_text(text.to_string().into(), size, &[run], None, None)
         .map_or(Pixels::ZERO, |lines| {
             lines
                 .iter()
                 .map(|line| line.width())
                 .fold(Pixels::ZERO, Pixels::max)
-        });
-    let least = whole.min(TITLE_LEAST.to_pixels(rem));
-    let least = match continued {
-        true => (least + CONTINUED_GAP.to_pixels(rem)) / (1. - CONTINUED_SHARE),
-        false => least,
-    };
+        })
+}
+
+/// The least what a conversation continued keeps beside its title: its words
+/// "Continued from" whole, the ellipsis after them, so a row never cuts
+/// inside them. The cut counts each character's width on its own and keeps
+/// one only while it and the ellipsis stay under the room, so the least is
+/// counted the same way and taken to the device pixel above it. `rem` is the
+/// pane's, its zoom taken in.
+fn continued_least(rem: Pixels, window: &Window, cx: &App) -> Pixels {
+    // Read off the text size the line is drawn at, so the two stay one.
+    let mut xs = div().text_xs();
+    let size = (xs.text_style().font_size).map_or(Pixels::ZERO, |size| size.to_pixels(rem));
+    let words: Pixels = (CONTINUED_WORDS.chars().chain(['…']))
+        .map(|c| drawn(&c.to_string(), size, window, cx))
+        .sum();
     let scale = window.scale_factor();
-    gpui::px((f32::from(least) * scale).ceil() / scale)
+    gpui::px(((f32::from(words) * scale).floor() + 1.) / scale)
+}
+
+/// The least a past conversation's title keeps before its facts, or what it
+/// continued, go: the smaller of its whole width and [`TITLE_LEAST`], so a
+/// short title keeps them beside it. A box that truncates reports to layout
+/// the width it was cut to, so the whole width is shaped here, and taken up
+/// to the device pixel, or layout's rounding cuts a title that fits whole.
+/// `rem` is the pane's, its zoom taken in.
+fn title_least(title: &str, rem: Pixels, window: &Window, cx: &App) -> Pixels {
+    let whole = drawn(title, crate::tokens::CHROME_TEXT.to_pixels(rem), window, cx);
+    device_up(whole.min(TITLE_LEAST.to_pixels(rem)), window)
+}
+
+/// The least a title box keeps beside what it continued: the title's
+/// `least`, the `earlier` one's and the gap, and enough more that the title
+/// keeps its least once the earlier one takes its share. The gap is taken to
+/// the device pixel as layout takes it, to the nearest with a half toward
+/// zero.
+fn beside_continued(least: Pixels, earlier: Pixels, rem: Pixels, window: &Window) -> Pixels {
+    let scale = window.scale_factor();
+    let gap = f32::from(CONTINUED_GAP.to_pixels(rem)) * scale;
+    let gap = gpui::px((gap - 0.5).ceil() / scale);
+    (least + earlier + gap).max(device_up((least + gap) / (1. - CONTINUED_SHARE), window))
+}
+
+/// `width` taken up to the device pixel.
+fn device_up(width: Pixels, window: &Window) -> Pixels {
+    let scale = window.scale_factor();
+    gpui::px((f32::from(width) * scale).ceil() / scale)
 }
 
 /// The project the pane is standing in while no conversation is showing.
@@ -423,6 +459,7 @@ impl ChatPane {
         };
         let now = onehand_core::chat::now_secs();
         let rem = window.rem_size() * self.zoom.factor();
+        let earlier_least = continued_least(rem, window, cx);
         let (muted, ring) = (cx.theme().muted_foreground, cx.theme().ring);
         let muted_line = |text: String| div().text_xs().text_color(muted).child(text);
         // Bounded, and the bound says so below. A project worked in for months
@@ -479,7 +516,7 @@ impl ChatPane {
                     })
                     .child(path)
                     .tooltip(onehand_ui::tip(move |window, cx| {
-                        gpui_component::tooltip::Tooltip::new(whole.clone()).build(window, cx)
+                        Tooltip::new(whole.clone()).build(window, cx)
                     })),
             )
             .children(self.git.as_ref().map(|git| {
@@ -550,6 +587,7 @@ impl ChatPane {
                 .enumerate()
                 .map(|(i, (meta, focus))| {
                     let resumed = resume_of(&project.path, &meta);
+                    let least = title_least(&meta.title, rem, window, cx);
                     let dir = meta.dir.clone();
                     let name = SharedString::from(meta.title.clone());
                     let group = SharedString::from(format!("home-row-{i}"));
@@ -636,57 +674,84 @@ impl ChatPane {
                                 .flex_wrap()
                                 .gap_x_2()
                                 .overflow_hidden()
+                                // The title and what it continued on one
+                                // line that wraps, as the row's middle does:
+                                // where the title's least and the earlier
+                                // one's do not both fit, what it continued
+                                // goes to the line out of sight, whole.
                                 .child(
                                     div()
                                         .debug_selector(move || format!("home-title-{i}"))
                                         .h_full()
                                         .flex()
-                                        .items_center()
+                                        .flex_wrap()
                                         .gap(CONTINUED_GAP)
-                                        .flex_basis(title_least(
-                                            &meta.title,
-                                            meta.continued.is_some(),
-                                            rem,
-                                            window,
-                                            cx,
-                                        ))
+                                        .flex_basis(match meta.continued {
+                                            Some(_) => {
+                                                beside_continued(least, earlier_least, rem, window)
+                                            }
+                                            None => least,
+                                        })
                                         .flex_grow(1.)
                                         .min_w_0()
                                         .child(
                                             div()
-                                                .id(("home-title", i))
-                                                .debug_selector(move || {
-                                                    format!("home-title-text-{i}")
-                                                })
-                                                .flex_1()
+                                                .h_full()
+                                                .flex()
+                                                .items_center()
+                                                .flex_basis(least)
+                                                .flex_grow(1.)
                                                 .min_w_0()
-                                                .truncate()
-                                                .child(meta.title.clone())
-                                                // Said whole, since the row
-                                                // cuts it at a narrow width.
-                                                .tooltip({
-                                                    let whole =
-                                                        SharedString::from(meta.title.clone());
-                                                    onehand_ui::tip(move |window, cx| {
-                                                        gpui_component::tooltip::Tooltip::new(
-                                                            whole.clone(),
-                                                        )
-                                                        .build(window, cx)
-                                                    })
-                                                }),
+                                                .child(
+                                                    div()
+                                                        .id(("home-title", i))
+                                                        .debug_selector(move || {
+                                                            format!("home-title-text-{i}")
+                                                        })
+                                                        .flex_1()
+                                                        .min_w_0()
+                                                        .truncate()
+                                                        .child(meta.title.clone())
+                                                        // Said whole, since the
+                                                        // row cuts it at a
+                                                        // narrow width.
+                                                        .tooltip({
+                                                            let whole = SharedString::from(
+                                                                meta.title.clone(),
+                                                            );
+                                                            onehand_ui::tip(move |window, cx| {
+                                                                Tooltip::new(whole.clone())
+                                                                    .build(window, cx)
+                                                            })
+                                                        }),
+                                                ),
                                         )
                                         // What it continued beside the
                                         // title, as wide as its words up to
-                                        // two fifths of the room.
+                                        // two fifths of the room, and never
+                                        // narrower than "Continued from".
                                         .children(meta.continued.as_ref().map(|earlier| {
                                             div()
+                                                .h_full()
+                                                .flex()
+                                                .items_center()
                                                 .flex_shrink_1()
-                                                .min_w_0()
+                                                .min_w(earlier_least)
                                                 .max_w(gpui::relative(CONTINUED_SHARE))
-                                                .truncate()
-                                                .text_xs()
-                                                .text_color(muted)
-                                                .child(format!("Continued from {earlier}"))
+                                                .child(
+                                                    div()
+                                                        .debug_selector(move || {
+                                                            format!("home-continued-{i}")
+                                                        })
+                                                        .flex_1()
+                                                        .min_w_0()
+                                                        .truncate()
+                                                        .text_xs()
+                                                        .text_color(muted)
+                                                        .child(format!(
+                                                            "{CONTINUED_WORDS} {earlier}"
+                                                        )),
+                                                )
                                         })),
                                 )
                                 // The agent *is* named here, unlike in a

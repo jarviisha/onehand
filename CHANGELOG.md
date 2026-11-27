@@ -390,7 +390,9 @@ minor bump may break any of them.
 - A past conversation's title on a project's page keeps its room: its "N items · agent" line is
   shown whole or not at all, and dropped where the row cannot leave the title its whole width or
   about twenty characters, whichever is less, so a short title keeps it beside it in a narrow
-  pane. The title is cut in whatever room it has, and says itself whole in a tooltip.
+  pane. The title is cut in whatever room it has, and says itself whole in a tooltip. What a
+  conversation continued is never cut inside its words "Continued from": where they do not fit
+  beside the title, it is not shown.
 - A project's page holds together at a large zoom in a narrow pane: its path and branch stay on one
   line, the path cut from its start (a host's from its middle) and said whole in its tooltip, and
   the composer's agent, *Start in* and *Cards* pickers are cut inside the card and the pane instead
