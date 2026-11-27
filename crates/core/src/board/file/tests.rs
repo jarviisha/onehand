@@ -1,6 +1,6 @@
 use super::*;
-use std::path::PathBuf;
 use crate::board::model::Board;
+use std::path::PathBuf;
 
 fn scratch(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("onehand-boardfile-{name}-{}", std::process::id()));
@@ -64,7 +64,7 @@ fn load_all_lists_boards_and_problems() {
     std::fs::write(b.join(FILE), "not = [toml").unwrap();
     let (boards, problems) = load_all_blocking(&root);
     assert_eq!(boards.get(&id(1)), Some(&made()));
-    assert!(boards.get(&id(3)).is_none());
+    assert!(!boards.contains_key(&id(3)));
     assert!(problems.contains_key(&id(2)));
     assert_eq!(problems.len(), 1);
 }

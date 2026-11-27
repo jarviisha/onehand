@@ -167,13 +167,21 @@ impl BoardPage {
                 onehand_ui::hint("This project is no longer kept", cx),
             );
         };
-        let Some(board) = project.board().cloned() else {
-            return self.frame(
-                head("Board", project.name.clone(), None, cx),
-                onehand_ui::hint("This project has no board", cx),
+        let boards = &Shared::global(cx).boards;
+        let Some(board) = boards.board(&id).cloned() else {
+            let head = head("Board", project.name.clone(), None, cx);
+            let Some(why) = boards.unreadable(&id).map(str::to_string) else {
+                return self.frame(head, onehand_ui::hint("This project has no board", cx));
+            };
+            let body = refusal(
+                format!("This board cannot be read: {why}"),
+                project.path.clone(),
+                cx.entity().downgrade(),
+                cx,
             );
+            return self.frame(head, body);
         };
-        let template = crate::control::template(&board.workflow, cx).ok();
+        let template = crate::control::template(board.workflow(), cx).ok();
         let refused = onehand_core::board::local(&project)
             .and(onehand_core::board::usable(template.as_ref()).map(|_| ()))
             .err();
@@ -196,7 +204,7 @@ impl BoardPage {
 
         let tasks = crate::task::board(&id, &project.path, &template, cx);
         let mut taken = tasks.taken;
-        taken.extend(Shared::global(cx).projects.starting(&id));
+        taken.extend(Shared::global(cx).boards.starting(&id));
         let columns = self.columns(&id, &board, tasks.steps, tasks.done, &taken, cx);
         // Sideways alone: gpui turns a plain wheel into sideways travel only
         // on a box that scrolls on x and not y, so the gaps and the heads
@@ -231,7 +239,7 @@ impl BoardPage {
     fn columns(
         &mut self,
         id: &ProjectId,
-        board: &onehand_core::project::Board,
+        board: &onehand_core::board::Board,
         steps: Vec<crate::task::StepColumn>,
         done: Vec<Row>,
         taken: &HashSet<u64>,
@@ -256,7 +264,8 @@ impl BoardPage {
                      with create_issue"
                         .to_string()
                 });
-                let titles: Vec<Option<String>> = (board.todo.iter().take(BOARD_SHOWN))
+                let todo = board.todo();
+                let titles: Vec<Option<String>> = (todo.iter().take(BOARD_SHOWN))
                     .map(|&n| issues.get(n).map(|issue| issue.title().to_string()))
                     .collect();
                 (listed, note, titles)
@@ -314,13 +323,13 @@ impl BoardPage {
         };
 
         // To do, in the order the team pulls it.
-        let last = board.todo.len().saturating_sub(1);
+        let last = board.todo().len().saturating_sub(1);
         let drawn = board
-            .todo
-            .iter()
+            .todo()
+            .into_iter()
             .take(BOARD_SHOWN)
             .enumerate()
-            .map(|(at, &n)| {
+            .map(|(at, n)| {
                 let mut moves = Vec::new();
                 if at > 0 {
                     moves.push(("Move up", todo_press(id, Todo::Move(n, Toward::Up))));
@@ -342,13 +351,13 @@ impl BoardPage {
         // A drop off its rows puts the issue last. Its rows fill under a
         // drag, so the column fills only when it has none, or the two fills
         // would hide the row the issue lands before.
-        let empty = board.todo.is_empty();
+        let empty = board.todo().is_empty();
         let todo = {
             let id = id.clone();
             column(
                 ColumnParts {
                     title: "To do".into(),
-                    count: board.todo.len(),
+                    count: board.todo().len(),
                     rows: drawn,
                     note: empty
                         .then(|| "Nothing to do; move an issue here from the Backlog".to_string()),
@@ -728,18 +737,19 @@ fn todo_press(id: &ProjectId, change: Todo) -> onehand_ui::Press {
 }
 
 /// Make `change` to project `id`'s To do, a press's or a drop's: through the
-/// projects' drive, and To do looked at again at once, since the team may
+/// boards' drive, and To do looked at again at once, since the team may
 /// have room.
 fn change_todo(id: &ProjectId, change: Todo, cx: &mut App) {
+    let now = onehand_core::Now::read();
     let fx = cx.update_global::<Shared, _>(|shared, _| match change {
-        Todo::Add(n) => shared.projects.add_todo(id, n),
-        Todo::Move(n, toward) => shared.projects.move_todo(id, n, toward),
-        Todo::Drop(n) => shared.projects.drop_todo(id, n),
-        Todo::Last(n) => shared.projects.place_todo(id, n, usize::MAX),
-        Todo::Before(n, target) => shared.projects.place_todo_before(id, n, target),
+        Todo::Add(n) => shared.boards.add_todo(id, n, now),
+        Todo::Move(n, toward) => shared.boards.move_todo(id, n, toward, now),
+        Todo::Drop(n) => shared.boards.drop_todo(id, n, now),
+        Todo::Last(n) => shared.boards.place_todo(id, n, usize::MAX, now),
+        Todo::Before(n, target) => shared.boards.place_todo_before(id, n, target, now),
     });
-    crate::projects::carry(fx, cx);
-    crate::board::pull_now(id, cx);
+    crate::board::carry(fx, cx);
+    crate::board::look(id, cx);
     cx.refresh_windows();
 }
 

@@ -658,9 +658,10 @@ fn board_link(
     project: &onehand_core::project::Project,
     cx: &mut Context<ChatPane>,
 ) -> Option<gpui::AnyElement> {
-    let board = project.board().filter(|_| project.host.is_none())?;
+    let board = (crate::state::Shared::global(cx).boards.board(&project.id))
+        .filter(|_| project.host.is_none())?;
     let running = crate::task::board_running(&project.id, cx);
-    let label = format!("Board · {running} running · {} to do", board.todo.len());
+    let label = format!("Board · {running} running · {} to do", board.todo().len());
     let id = project.id.clone();
     Some(
         crate::controls::action("project-board")

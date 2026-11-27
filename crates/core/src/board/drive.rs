@@ -21,8 +21,8 @@ use super::model::{Board, FIRST_TEAM};
 use crate::connector::Connector;
 use crate::issues::Issues;
 use crate::project::{ProjectId, Toward};
-use crate::workflow::Outcome;
 use crate::saving::{Pending, Saves};
+use crate::workflow::Outcome;
 use crate::workflow::Template;
 use crate::Now;
 use std::collections::{BTreeSet, HashMap};
@@ -50,6 +50,11 @@ impl Boards {
     /// Why project `id`'s board cannot be read, when it cannot.
     pub fn unreadable(&self, id: &ProjectId) -> Option<&str> {
         self.unreadable.get(id).map(String::as_str)
+    }
+
+    /// Whether project `id` has a board, read or not.
+    pub fn kept(&self, id: &ProjectId) -> bool {
+        self.boards.contains_key(id) || self.unreadable.contains_key(id)
     }
 
     /// The projects with a board this build can read.
@@ -89,17 +94,24 @@ pub enum Effect {
     Write(Box<BoardWrite>),
     /// Report [`Input::Elapsed`] with `token` after `after`. A late answer is
     /// **dropped** by its token: a later change armed a later wait.
-    Arm { token: u64, after: Duration },
+    Arm {
+        token: u64,
+        after: Duration,
+    },
     /// Project `id`'s board changed: draw it again wherever it is held.
     Changed(ProjectId),
     Signal(Signal),
     /// Read project `id`'s issues and what the tasks and the library say of
     /// its board, and report [`Input::IssuesRead`]. A late answer is
     /// **dropped** in effect: it is a look, and a later one looks again.
-    ReadIssues { id: ProjectId },
+    ReadIssues {
+        id: ProjectId,
+    },
     /// Give task `task`, an extend waiting for a place on its board's team,
     /// that place.
-    GivePlace { task: String },
+    GivePlace {
+        task: String,
+    },
     /// Start a task `task` of `template` on issue `issue` of project `id`,
     /// off screen, and report [`Input::Landed`]. A late answer is
     /// **recorded**: a task kept is the board's whatever moved since.
@@ -110,7 +122,10 @@ pub enum Effect {
         template: Template,
     },
     /// Close issue `issue` of project `id`'s own tracker.
-    CloseIssue { id: ProjectId, issue: u64 },
+    CloseIssue {
+        id: ProjectId,
+        issue: u64,
+    },
 }
 
 /// What the front end reports back.
@@ -128,7 +143,7 @@ pub enum Input {
     IssuesRead {
         id: ProjectId,
         read: Result<(Issues, Option<&'static dyn Connector>), String>,
-        facts: Facts,
+        facts: Box<Facts>,
     },
     /// Where [`Effect::Start`] landed: started or queued, or refused for
     /// why; `kept` says whether its task was made before it was refused.
@@ -261,7 +276,13 @@ impl BoardDrive {
 
     /// Move `issue` one place up (or down) in project `id`'s To do.
     #[must_use = "its effects are to be carried"]
-    pub fn move_todo(&mut self, id: &ProjectId, issue: u64, toward: Toward, now: Now) -> Vec<Effect> {
+    pub fn move_todo(
+        &mut self,
+        id: &ProjectId,
+        issue: u64,
+        toward: Toward,
+        now: Now,
+    ) -> Vec<Effect> {
         self.edit_todo(id, now, |todo| {
             let Some(at) = todo.iter().position(|&n| n == issue) else {
                 return;
@@ -348,7 +369,7 @@ impl BoardDrive {
                 }
                 self.flush()
             }
-            Input::IssuesRead { id, read, facts } => self.issues_read(&id, read, facts, now),
+            Input::IssuesRead { id, read, facts } => self.issues_read(&id, read, *facts, now),
             Input::Landed {
                 id,
                 issue,
@@ -360,7 +381,12 @@ impl BoardDrive {
         }
     }
 
-    fn edit_todo(&mut self, id: &ProjectId, now: Now, edit: impl FnOnce(&mut Vec<u64>)) -> Vec<Effect> {
+    fn edit_todo(
+        &mut self,
+        id: &ProjectId,
+        now: Now,
+        edit: impl FnOnce(&mut Vec<u64>),
+    ) -> Vec<Effect> {
         self.edit(id, false, |board| {
             board.map(|b| {
                 let mut todo = b.todo();

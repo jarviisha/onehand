@@ -102,7 +102,7 @@ fn tell(id: &ProjectId, cx: &mut App) {
 }
 
 /// Run `act` in each window holding project `id`, after this update.
-fn for_each_holding(
+pub(crate) fn for_each_holding(
     id: &ProjectId,
     cx: &mut App,
     act: impl Fn(&mut crate::shell::Shell, &mut gpui::Window, &mut gpui::Context<crate::shell::Shell>)
@@ -468,5 +468,6 @@ pub(crate) fn board_here(
     root.local_path()?;
     let id = root.project.as_ref()?;
     let project = crate::state::Shared::global(cx).projects.get(id)?;
-    (project.host.is_none() && project.board().is_some()).then(|| id.clone())
+    let boards = &crate::state::Shared::global(cx).boards;
+    (project.host.is_none() && boards.kept(id)).then(|| id.clone())
 }

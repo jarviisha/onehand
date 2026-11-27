@@ -28,7 +28,10 @@ fn flow(place: Place) -> Template {
 /// A drive whose project's board, a team of `team`, holds `todo`, written.
 fn drive(team: u8, todo: &[u64]) -> BoardDrive {
     let mut d = BoardDrive::new(HashMap::new(), HashMap::new(), "/data/projects".into());
-    let fx = d.set_board(&id(), Some(Board::made("builtin:branch".into(), team, todo, 1)));
+    let fx = d.set_board(
+        &id(),
+        Some(Board::made("builtin:branch".into(), team, todo, 1)),
+    );
     land(&mut d, fx);
     d
 }
@@ -87,7 +90,7 @@ fn read(d: &mut BoardDrive, issues: Issues, facts: Facts) -> Vec<Effect> {
         Input::IssuesRead {
             id: id(),
             read: Ok((issues, None)),
-            facts,
+            facts: Box::new(facts),
         },
         now(),
     )
@@ -169,7 +172,7 @@ fn an_unreadable_read_only_gives_places() {
         Input::IssuesRead {
             id: id(),
             read: Err("gone".into()),
-            facts: f,
+            facts: Box::new(f),
         },
         now(),
     );
@@ -279,7 +282,10 @@ fn ended(d: &mut BoardDrive, issue: u64, outcome: Outcome) -> Vec<Effect> {
 fn a_done_end_closes_an_own_issue_once() {
     let mut d = drive(2, &[]);
     assert_eq!(said(&ended(&mut d, 4, Outcome::Done)), ["read"]);
-    assert_eq!(said(&read(&mut d, issues(&[4], &[]), facts(0))), ["close 4"]);
+    assert_eq!(
+        said(&read(&mut d, issues(&[4], &[]), facts(0))),
+        ["close 4"]
+    );
     assert!(read(&mut d, issues(&[4], &[]), facts(0)).is_empty());
 }
 
@@ -302,11 +308,15 @@ fn a_synced_issue_is_left_open() {
         Input::IssuesRead {
             id: id(),
             read: Ok((kept, Some(forge))),
-            facts: facts(0),
+            facts: Box::new(facts(0)),
         },
         now(),
     );
-    assert!(said(&fx).iter().all(|e| !e.starts_with("close")), "{:?}", said(&fx));
+    assert!(
+        said(&fx).iter().all(|e| !e.starts_with("close")),
+        "{:?}",
+        said(&fx)
+    );
 }
 
 #[test]
@@ -318,7 +328,10 @@ fn a_failed_end_pulls_nothing() {
 #[test]
 fn a_stopped_end_looks_again() {
     let mut d = drive(2, &[4]);
-    assert_eq!(said(&ended(&mut d, 9, Outcome::Stopped(Stop::ByPerson))), ["read"]);
+    assert_eq!(
+        said(&ended(&mut d, 9, Outcome::Stopped(Stop::ByPerson))),
+        ["read"]
+    );
 }
 
 #[test]
@@ -327,6 +340,9 @@ fn an_end_after_unbinding_still_closes_but_pulls_nothing() {
     let fx = d.unbind(&id());
     let _ = land(&mut d, fx);
     assert_eq!(said(&ended(&mut d, 4, Outcome::Done)), ["read"]);
-    assert_eq!(said(&read(&mut d, issues(&[4], &[]), facts(0))), ["close 4"]);
+    assert_eq!(
+        said(&read(&mut d, issues(&[4], &[]), facts(0))),
+        ["close 4"]
+    );
     assert!(ended(&mut d, 5, Outcome::Stopped(Stop::ByPerson)).is_empty());
 }

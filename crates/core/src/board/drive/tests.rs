@@ -45,7 +45,13 @@ fn write_of(fx: Vec<Effect>) -> Box<BoardWrite> {
     fx.into_iter()
         .find_map(|e| match e {
             Effect::Write(w) => Some(w),
-            Effect::Arm { .. } | Effect::Changed(_) | Effect::Signal(_) | Effect::ReadIssues { .. } | Effect::GivePlace { .. } | Effect::Start { .. } | Effect::CloseIssue { .. } => None,
+            Effect::Arm { .. }
+            | Effect::Changed(_)
+            | Effect::Signal(_)
+            | Effect::ReadIssues { .. }
+            | Effect::GivePlace { .. }
+            | Effect::Start { .. }
+            | Effect::CloseIssue { .. } => None,
         })
         .expect("a write")
 }
@@ -187,7 +193,10 @@ fn unbind_writes_none() {
     let mut d = drive_with_todo(&[4]);
     let w = write_of(d.unbind(&id()));
     assert!(w.board.is_none());
-    assert_eq!(w.dir, std::path::Path::new("/data/projects").join(id().as_str()));
+    assert_eq!(
+        w.dir,
+        std::path::Path::new("/data/projects").join(id().as_str())
+    );
     assert!(d.board(&id()).is_none());
 }
 
@@ -207,12 +216,24 @@ fn a_failed_write_puts_the_board_back() {
     assert_eq!(todo_of(&d), [4]);
     let changed = fx.iter().any(|e| match e {
         Effect::Changed(of) => *of == id(),
-        Effect::Write(_) | Effect::Arm { .. } | Effect::Signal(_) | Effect::ReadIssues { .. } | Effect::GivePlace { .. } | Effect::Start { .. } | Effect::CloseIssue { .. } => false,
+        Effect::Write(_)
+        | Effect::Arm { .. }
+        | Effect::Signal(_)
+        | Effect::ReadIssues { .. }
+        | Effect::GivePlace { .. }
+        | Effect::Start { .. }
+        | Effect::CloseIssue { .. } => false,
     });
     let said = fx.iter().any(|e| match e {
         Effect::Signal(Signal::SaveFailed { id: of, why }) => *of == id() && why == "disk full",
         Effect::Signal(Signal::NotStarted { .. }) => false,
-        Effect::Write(_) | Effect::Arm { .. } | Effect::Changed(_) | Effect::ReadIssues { .. } | Effect::GivePlace { .. } | Effect::Start { .. } | Effect::CloseIssue { .. } => false,
+        Effect::Write(_)
+        | Effect::Arm { .. }
+        | Effect::Changed(_)
+        | Effect::ReadIssues { .. }
+        | Effect::GivePlace { .. }
+        | Effect::Start { .. }
+        | Effect::CloseIssue { .. } => false,
     });
     assert!(changed && said);
 }
@@ -224,7 +245,13 @@ fn set_team_waits_then_writes_once() {
         fx.iter()
             .find_map(|e| match e {
                 Effect::Arm { token, .. } => Some(*token),
-                Effect::Write(_) | Effect::Changed(_) | Effect::Signal(_) | Effect::ReadIssues { .. } | Effect::GivePlace { .. } | Effect::Start { .. } | Effect::CloseIssue { .. } => None,
+                Effect::Write(_)
+                | Effect::Changed(_)
+                | Effect::Signal(_)
+                | Effect::ReadIssues { .. }
+                | Effect::GivePlace { .. }
+                | Effect::Start { .. }
+                | Effect::CloseIssue { .. } => None,
             })
             .expect("a wait")
     };
@@ -264,7 +291,13 @@ fn a_change_says_changed() {
     let fx = d.add_todo(&id(), 4, now());
     assert!(fx.iter().any(|e| match e {
         Effect::Changed(of) => *of == id(),
-        Effect::Write(_) | Effect::Arm { .. } | Effect::Signal(_) | Effect::ReadIssues { .. } | Effect::GivePlace { .. } | Effect::Start { .. } | Effect::CloseIssue { .. } => false,
+        Effect::Write(_)
+        | Effect::Arm { .. }
+        | Effect::Signal(_)
+        | Effect::ReadIssues { .. }
+        | Effect::GivePlace { .. }
+        | Effect::Start { .. }
+        | Effect::CloseIssue { .. } => false,
     }));
 }
 

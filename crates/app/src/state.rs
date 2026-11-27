@@ -45,6 +45,10 @@ pub struct Shared {
     /// project is the same project in each window holding it. Read at boot,
     /// changed only through it, carried by `crate::projects`.
     pub projects: onehand_core::project::ProjectsDrive,
+    /// Every project's board: one drive for every window, as a project is.
+    /// Read at boot beside the projects, changed only through it, carried by
+    /// `crate::board`.
+    pub boards: onehand_core::board::drive::BoardDrive,
     /// The tokio runtime every ACP adapter runs on (see [`crate::acp`]).
     pub acp: AcpRuntime<crate::control::Token>,
     /// The one connection to each host, shared by every window's projects there.
@@ -115,6 +119,11 @@ impl Shared {
             next_uid: 1,
             recents,
             projects: onehand_core::project::ProjectsDrive::new(
+                Default::default(),
+                onehand_core::project::file::store_dir(),
+            ),
+            boards: onehand_core::board::drive::BoardDrive::new(
+                Default::default(),
                 Default::default(),
                 onehand_core::project::file::store_dir(),
             ),

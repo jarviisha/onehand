@@ -549,7 +549,10 @@ fn a_board_task_that_cannot_start_says_it_failed() {
                 project: project.clone(),
                 issue: 7,
                 task: "1".into(),
-                run: tasks.task("1").and_then(|t| t.runs.last()).map(|r| r.id.clone()),
+                run: tasks
+                    .task("1")
+                    .and_then(|t| t.runs.last())
+                    .map(|r| r.id.clone()),
                 outcome: tasks.task("1").and_then(Task::outcome),
             })),
         "{fx:?}"

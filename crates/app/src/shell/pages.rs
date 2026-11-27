@@ -110,7 +110,8 @@ impl Shell {
                         .as_ref()
                         .and_then(|id| crate::state::Shared::global(cx).projects.get(id))
                         .is_some_and(|p| {
-                            p.board().is_some() && (p.host.is_some() || root.local_path().is_none())
+                            crate::state::Shared::global(cx).boards.kept(&p.id)
+                                && (p.host.is_some() || root.local_path().is_none())
                         })
                 });
                 let note = crate::toast::info(match on_host {
@@ -139,10 +140,9 @@ impl Shell {
                     return;
                 };
                 let bound = crate::state::Shared::global(cx)
-                    .projects
-                    .get(&project)
-                    .and_then(|p| p.board())
-                    .map(|board| board.workflow.clone());
+                    .boards
+                    .board(&project)
+                    .map(|board| board.workflow().to_string());
                 if let Some(workflow) = bound {
                     self.show_workflow(&workflow, step.as_deref(), Some(project), window, cx);
                 }

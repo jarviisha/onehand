@@ -25,7 +25,7 @@ mod workers;
 
 pub(crate) use keeping::watch as watch_conversation;
 use start::start;
-pub(crate) use start::{start_task, template};
+pub(crate) use start::{start_task, start_task_as, template};
 pub(crate) use workers::bring_back;
 
 pub(crate) use workers::whose::{

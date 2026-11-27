@@ -123,7 +123,10 @@ pub fn migrate_blocking(projects_dir: &Path) -> Vec<String> {
         project.old_board = None;
         if let Err(why) = save_to(&project, &dir) {
             let at = dir.join(crate::project::file::FILE);
-            problems.push(format!("{}: its board key was not dropped: {why}", at.display()));
+            problems.push(format!(
+                "{}: its board key was not dropped: {why}",
+                at.display()
+            ));
         }
     }
     problems
@@ -131,9 +134,11 @@ pub fn migrate_blocking(projects_dir: &Path) -> Vec<String> {
 
 /// When `path` was last written, in seconds; 0 when that cannot be read.
 fn modified_secs(path: &Path) -> u64 {
-    (std::fs::metadata(path).and_then(|meta| meta.modified()).ok())
-        .and_then(|at| at.duration_since(std::time::UNIX_EPOCH).ok())
-        .map_or(0, |since| since.as_secs())
+    (std::fs::metadata(path)
+        .and_then(|meta| meta.modified())
+        .ok())
+    .and_then(|at| at.duration_since(std::time::UNIX_EPOCH).ok())
+    .map_or(0, |since| since.as_secs())
 }
 
 /// The project a folder of the store is, by its name.

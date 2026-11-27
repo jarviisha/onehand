@@ -516,7 +516,7 @@ fn perform(id: &str, effects: Vec<Effect>, cx: &mut App) {
                 let board = super::task(id, cx)
                     .and_then(|task| task.board_issue().map(|(project, _)| project.clone()));
                 if let Some(project) = board {
-                    crate::board::pull_now(&project, cx);
+                    crate::board::look(&project, cx);
                 }
             }
         }

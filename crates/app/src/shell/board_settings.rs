@@ -32,11 +32,12 @@ impl Shell {
             return;
         };
         let Some(workflow) = workflow else {
-            let projects = &crate::state::Shared::global(cx).projects;
-            if !projects.unbinding_asks(&id) {
+            let shared = crate::state::Shared::global(cx);
+            if !shared.boards.unbinding_asks(&id) {
                 return self.unbind_board(root, window, cx);
             }
-            let name = projects
+            let name = shared
+                .projects
                 .get(&id)
                 .map(|p| p.name.clone())
                 .unwrap_or_default();
@@ -56,7 +57,9 @@ impl Shell {
         };
         let template = crate::control::template(&workflow, cx).ok();
         let bound = cx.update_global::<crate::state::Shared, _>(|shared, _| {
-            shared.projects.bind_board(&id, template.as_ref())
+            shared
+                .boards
+                .bind(&id, template.as_ref(), onehand_core::Now::read())
         });
         self.bound(root, id, bound, cx);
     }
@@ -80,7 +83,9 @@ impl Shell {
         };
         // Passed as written: the list on offer is read again only after.
         let Some(bound) = cx.update_global::<crate::state::Shared, _>(|shared, _| {
-            shared.projects.bind_copy(&project, &template)
+            shared
+                .boards
+                .bind_copy(&project, &template, onehand_core::Now::read())
         }) else {
             return;
         };
@@ -94,9 +99,8 @@ impl Shell {
 
     fn unbind_board(&mut self, root: PathBuf, _: &mut Window, cx: &mut Context<Self>) {
         if let Some(id) = self.project_of_row(&root) {
-            let fx = cx.update_global::<crate::state::Shared, _>(|shared, _| {
-                shared.projects.set_board(&id, None)
-            });
+            let fx =
+                cx.update_global::<crate::state::Shared, _>(|shared, _| shared.boards.unbind(&id));
             self.bound(root, id, Ok(fx), cx);
         }
     }
@@ -107,13 +111,13 @@ impl Shell {
         &mut self,
         root: PathBuf,
         id: ProjectId,
-        bound: Result<Vec<onehand_core::project::drive::Effect>, String>,
+        bound: Result<Vec<onehand_core::board::drive::Effect>, String>,
         cx: &mut Context<Self>,
     ) {
         match bound {
             Ok(fx) => {
-                crate::projects::carry(fx, cx);
-                crate::board::pull_now(&id, cx);
+                crate::board::carry(fx, cx);
+                crate::board::look(&id, cx);
             }
             Err(why) => self.board_refused = Some((root, why)),
         }
@@ -126,11 +130,11 @@ impl Shell {
             return;
         };
         let fx = cx.update_global::<crate::state::Shared, _>(|shared, _| {
-            shared.projects.set_team(&id, team)
+            shared.boards.set_team(&id, team)
         });
-        crate::projects::carry(fx, cx);
+        crate::board::carry(fx, cx);
         // A bigger team has room at once.
-        crate::board::pull_now(&id, cx);
+        crate::board::look(&id, cx);
         cx.notify();
     }
 }

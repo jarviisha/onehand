@@ -8,7 +8,6 @@ use gpui::{
 };
 use gpui_component::StyledExt;
 use gpui_component::button::ButtonVariants as _;
-use onehand_core::project::Board;
 use onehand_ui::{ControlSize, Tall as _};
 use std::path::Path;
 
@@ -17,9 +16,12 @@ const NO_BOARD: &str = "No board";
 pub(super) fn board_section(handle: &Entity<Shell>, root: &Path, cx: &App) -> AnyElement {
     let shell = handle.read(cx);
     let project = crate::projects::of(root, cx);
-    let bound = project
-        .as_ref()
-        .and_then(|project| project.board().cloned());
+    let bound = project.as_ref().and_then(|project| {
+        crate::state::Shared::global(cx)
+            .boards
+            .board(&project.id)
+            .cloned()
+    });
     let templates = crate::workflow::templates(cx);
     let name_of = |id: &str| {
         crate::workflow::find(&templates, id)
@@ -27,12 +29,12 @@ pub(super) fn board_section(handle: &Entity<Shell>, root: &Path, cx: &App) -> An
     };
     let label = bound
         .as_ref()
-        .map_or_else(|| NO_BOARD.to_string(), |board| name_of(&board.workflow));
+        .map_or_else(|| NO_BOARD.to_string(), |board| name_of(board.workflow()));
     let offered: Vec<(String, String, bool)> = templates
         .iter()
         .filter_map(|entry| entry.template.as_ref().ok())
         .map(|t| {
-            let on = bound.as_ref().is_some_and(|b| b.workflow == t.id);
+            let on = bound.as_ref().is_some_and(|b| b.workflow() == t.id);
             (t.id.clone(), t.name.clone(), on)
         })
         .collect();
@@ -85,11 +87,14 @@ pub(super) fn board_section(handle: &Entity<Shell>, root: &Path, cx: &App) -> An
     // A workflow that is gone has nothing to open.
     let edit = bound
         .as_ref()
-        .filter(|board| crate::workflow::find(&templates, &board.workflow).is_some())
+        .filter(|board| crate::workflow::find(&templates, board.workflow()).is_some())
         .zip(project.as_ref())
         .map(|(board, project)| {
-            let (handle, workflow, id) =
-                (handle.clone(), board.workflow.clone(), project.id.clone());
+            let (handle, workflow, id) = (
+                handle.clone(),
+                board.workflow().to_string(),
+                project.id.clone(),
+            );
             crate::controls::action("board-edit-workflow")
                 .tall()
                 .secondary()
@@ -126,7 +131,7 @@ pub(super) fn board_section(handle: &Entity<Shell>, root: &Path, cx: &App) -> An
 
 /// The team size, 1 to the most a board holds.
 fn team_field(handle: &Entity<Shell>, root: &Path, team: u8, cx: &App) -> gpui::Div {
-    let segments = (1..=Board::MOST_TEAM).map(|n| {
+    let segments = (1..=onehand_core::board::model::MOST_TEAM).map(|n| {
         let (handle, root) = (handle.clone(), root.to_path_buf());
         onehand_ui::segment(
             ("board-team", usize::from(n)),
