@@ -7,11 +7,10 @@ use gpui::{
     Context, InteractiveElement, IntoElement, ParentElement, SharedString, Stateful,
     StatefulInteractiveElement, Styled, div,
 };
-use gpui_component::button::ButtonVariants as _;
 use gpui_component::menu::ContextMenuExt as _;
 use gpui_component::{ActiveTheme, StyledExt};
 use onehand_core::task::Section;
-use onehand_ui::{Refuses as _, RowAct, Short as _};
+use onehand_ui::{Quiet as _, Refuses as _, RowAct, Short as _};
 use std::rc::Rc;
 
 /// A row's one act drawn beside its `⋯`, for a row waiting on a person: its
@@ -59,14 +58,14 @@ impl BoardPage {
     pub(super) fn task_row(
         &mut self,
         row: Row,
-        line: Option<String>,
+        line: Option<(String, gpui::Hsla)>,
         more: Vec<RowAct>,
         button: Option<Button>,
         drags: impl FnOnce(Stateful<gpui::Div>) -> Stateful<gpui::Div>,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         let (said, ink) = match line {
-            Some(line) => (line, cx.theme().muted_foreground),
+            Some(line) => line,
             None => {
                 let ink = match row.group.section() == Section::NeedsAttention {
                     true => crate::theme::status_ink(cx).warning,
@@ -152,8 +151,8 @@ impl BoardPage {
                 .on_click(move |event, window, cx| open(event, window, cx)),
             None => text,
         };
-        // The act a person is waited on for stays drawn, as the Tasks page's
-        // rows needing attention keep theirs.
+        // The act a person is waited on for stays drawn, a quiet button as
+        // the Tasks page's row actions are.
         let button = button.map(
             |Button {
                  label,
@@ -167,7 +166,7 @@ impl BoardPage {
                     .child(
                         crate::controls::action(SharedString::from(format!("{name}-act")))
                             .short()
-                            .secondary()
+                            .quiet(cx)
                             .label(label)
                             .refuses(refused)
                             .on_click(move |event, window, cx| press(event, window, cx)),

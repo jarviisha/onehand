@@ -232,7 +232,7 @@ mod strain {
 }
 
 mod columns {
-    use crate::board_page::column::column_head;
+    use crate::board_page::column::column_count;
     use crate::shell::rig::{board_page, folder, keep_projects, nowhere, shell_on};
     use gpui::{BorrowAppContext as _, TestAppContext};
     use onehand_core::board::{Board, Column, Entry, MovesOn, Starts, Work};
@@ -338,20 +338,9 @@ mod columns {
     #[test]
     fn a_column_with_a_limit_says_how_full_it_is() {
         let mut review = column("review", "Review", Work::Person, Starts::OnEntry);
-        assert_eq!(column_head(&review, false), "Review");
+        assert_eq!(column_count(&review), "0");
         review.limit = Some(2);
         review.entries.push(Entry::default());
-        assert_eq!(column_head(&review, false), "Review · 1 of 2");
-    }
-
-    #[test]
-    fn a_column_whose_workflow_is_gone_says_so() {
-        let plan = column(
-            "plan",
-            "Plan",
-            Work::Workflow { id: "gone".into() },
-            Starts::OnEntry,
-        );
-        assert_eq!(column_head(&plan, true), "Plan · its workflow is gone");
+        assert_eq!(column_count(&review), "1 of 2");
     }
 }

@@ -82,9 +82,12 @@ pub fn line(
             match (&entry.run, run_here || working, start) {
                 (Some(_), true, _) => (Line::Task, None),
                 (Some(_), false, _) => (Line::DidNotStart, Some(EntryAct::Start)),
+                // Its task works, carried in from a column before: the row
+                // says what the task says.
+                (None, true, _) => (Line::Task, None),
                 // Waiting would never end: it says why instead.
-                (None, _, Some(why)) => (Line::CannotStart(why.into()), None),
-                (None, _, None) => match column.starts {
+                (None, false, Some(why)) => (Line::CannotStart(why.into()), None),
+                (None, false, None) => match column.starts {
                     Starts::OnPress => (Line::WaitingForStart, Some(EntryAct::Start)),
                     Starts::OnEntry => (Line::WaitingForTeam, None),
                 },

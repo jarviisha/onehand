@@ -176,3 +176,15 @@ fn a_column_that_cannot_start_says_why_instead_of_waiting() {
         );
     }
 }
+
+#[test]
+fn a_task_carried_in_at_work_is_its_task_not_waiting() {
+    let mut carried = entry(None, false);
+    carried.task = Some("t".into());
+    let b = board(
+        column("plan", flow(), Starts::OnPress, MovesOn::ByItself),
+        carried,
+        None,
+    );
+    assert_eq!(line(&b, 4, false, true, false, None), (Line::Task, None));
+}

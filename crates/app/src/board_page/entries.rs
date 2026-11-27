@@ -1,7 +1,7 @@
 //! The board page's columns: the Backlog, the board's own, each issue a row
 //! with its line, its one waiting act and its moves, and Done.
 
-use super::column::{ColumnKey, ColumnParts, column, column_head};
+use super::column::{ColumnKey, ColumnParts, column, column_count};
 use super::rows::Button;
 use super::{BoardPage, BoardPageEvent};
 use crate::drag::DragGhost;
@@ -36,6 +36,10 @@ impl BoardPage {
         cx: &mut Context<Self>,
     ) -> Vec<gpui::AnyElement> {
         let view = crate::task::board_view(id, cx);
+        let (muted, warning) = (
+            cx.theme().muted_foreground,
+            crate::theme::status_ink(cx).warning,
+        );
         // What the rows need of the issues, taken out first so the rows can
         // be drawn while the page is borrowed to make their focus handles.
         let kept = self.issues.as_ref().map(|(_, held)| held.kept(cx));
@@ -72,10 +76,13 @@ impl BoardPage {
             ),
         };
         let title_of = |n: u64| titles.get(&n).cloned().unwrap_or_else(|| format!("#{n}"));
-        let first = board
-            .columns
-            .first()
-            .map(|c| (c.id.clone(), c.name.clone()));
+        // The first column, refused while it is full, as a row's moves are.
+        let first = board.columns.first().map(|c| {
+            let full = c
+                .limit
+                .is_some_and(|limit| c.entries.len() >= limit as usize);
+            (c.id.clone(), c.name.clone(), full)
+        });
         let count = backlog_rows.len();
         let drawn = backlog_rows
             .into_iter()
@@ -83,11 +90,12 @@ impl BoardPage {
             .map(|(n, title)| {
                 let acts: Rc<[RowAct]> = first
                     .iter()
-                    .map(|(column, name)| {
+                    .map(|(column, name, full)| {
                         RowAct::new(
                             format!("Move to {name}"),
                             place(id, n, Some(column.clone()), None),
                         )
+                        .refuses(*full)
                     })
                     .collect();
                 let line = (format!("#{n}"), crate::theme::meta_ink(cx));
@@ -102,9 +110,9 @@ impl BoardPage {
                 ColumnParts {
                     title: "Backlog".into(),
                     count,
-                    counted: true,
+                    said: count.to_string().into(),
                     rows: drawn,
-                    note: backlog_note,
+                    note: backlog_note.map(|note| (note, muted)),
                     control: None,
                     scroll: self.column_scroll(&ColumnKey::Backlog),
                     key: ColumnKey::Backlog,
@@ -151,11 +159,16 @@ impl BoardPage {
             columns.push(
                 column(
                     ColumnParts {
-                        title: column_head(col, gone).into(),
+                        title: col.name.clone().into(),
                         count: col.entries.len(),
-                        counted: col.limit.is_none(),
+                        said: column_count(col).into(),
                         rows: drawn,
-                        note: col.entries.is_empty().then(|| "Nothing here".to_string()),
+                        // Its rows say why it cannot start; with none, the
+                        // column says it.
+                        note: col.entries.is_empty().then(|| match start {
+                            Some(why) => (why, warning),
+                            None => ("Nothing here".to_string(), muted),
+                        }),
                         control: Some(more),
                         scroll: self.column_scroll(&key),
                         key,
@@ -172,15 +185,17 @@ impl BoardPage {
         }
         let done: Vec<gpui::AnyElement> = (board.done().iter())
             .take(BOARD_SHOWN)
-            .map(|entry| self.done_row(entry, &view, title_of(entry.issue), cx))
+            .map(|entry| self.done_row(id, entry, &view, title_of(entry.issue), cx))
             .collect();
         columns.push(
             column(
                 ColumnParts {
                     title: "Done".into(),
                     count: board.done().len(),
-                    counted: true,
-                    note: done.is_empty().then(|| "Nothing done yet".to_string()),
+                    said: board.done().len().to_string().into(),
+                    note: done
+                        .is_empty()
+                        .then(|| ("Nothing done yet".to_string(), muted)),
                     rows: done,
                     control: None,
                     scroll: self.column_scroll(&ColumnKey::Done),
@@ -290,21 +305,22 @@ impl BoardPage {
                 None => row,
             }
         };
+        let ink = match line {
+            Line::DidNotStart | Line::CannotStart(_) => crate::theme::status_ink(cx).warning,
+            Line::Since(_) => crate::theme::meta_ink(cx),
+            Line::Task
+            | Line::WaitingForStart
+            | Line::WaitingForTeam
+            | Line::Starting
+            | Line::DoneHere
+            | Line::WaitingForRoom(_) => cx.theme().muted_foreground,
+        };
         match row {
-            Some(row) => self.task_row(row, words, moves, button, drags, cx),
+            Some(row) => {
+                let words = words.map(|words| (words, ink));
+                self.task_row(row, words, moves, button, drags, cx)
+            }
             None => {
-                let ink = match line {
-                    Line::DidNotStart | Line::CannotStart(_) => {
-                        crate::theme::status_ink(cx).warning
-                    }
-                    Line::Since(_) => crate::theme::meta_ink(cx),
-                    Line::Task
-                    | Line::WaitingForStart
-                    | Line::WaitingForTeam
-                    | Line::Starting
-                    | Line::DoneHere
-                    | Line::WaitingForRoom(_) => cx.theme().muted_foreground,
-                };
                 let line = (words.unwrap_or_else(|| format!("#{issue}")), ink);
                 self.issue_row(issue, title, line, moves.into(), button, drags, cx)
             }
@@ -314,6 +330,7 @@ impl BoardPage {
     /// A row of Done: its task's, which it opens, or its issue's.
     fn done_row(
         &mut self,
+        id: &ProjectId,
         entry: &Entry,
         view: &crate::task::BoardView,
         title: String,
@@ -324,11 +341,27 @@ impl BoardPage {
             .as_deref()
             .and_then(|t| view.rows.get(t))
             .cloned();
+        // Taken off the board from Done too, as from any column.
+        let back = {
+            let (id, issue, task) = (id.clone(), entry.issue, entry.task.clone());
+            let press: onehand_ui::Press = Rc::new(move |_, window, cx| {
+                crate::board::remove(&id, issue, task.as_deref(), window, cx)
+            });
+            RowAct::new(Offer::Back.words(row.is_some()), press).danger()
+        };
         match row {
-            Some(row) => self.task_row(row, None, Vec::new(), None, |row| row, cx),
+            Some(row) => self.task_row(row, None, vec![back], None, |row| row, cx),
             None => {
                 let line = (format!("#{}", entry.issue), crate::theme::meta_ink(cx));
-                self.issue_row(entry.issue, title, line, Rc::new([]), None, |row| row, cx)
+                self.issue_row(
+                    entry.issue,
+                    title,
+                    line,
+                    Rc::new([back]),
+                    None,
+                    |row| row,
+                    cx,
+                )
             }
         }
     }
@@ -378,7 +411,10 @@ fn is_act(offer: &Offer, act: &EntryAct) -> bool {
     match (offer, act) {
         (Offer::Start, EntryAct::Start) => true,
         (Offer::MoveTo { column, .. }, EntryAct::MoveTo(to)) => column == to,
-        (Offer::Start | Offer::MoveTo { .. } | Offer::Up | Offer::Down | Offer::Back, _) => false,
+        (
+            Offer::Start | Offer::MoveTo { .. } | Offer::Up | Offer::Down | Offer::Back,
+            EntryAct::Start | EntryAct::MoveTo(_),
+        ) => false,
     }
 }
 

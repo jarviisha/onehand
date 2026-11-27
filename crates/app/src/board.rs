@@ -171,11 +171,12 @@ pub(crate) fn start_on_press(
     let template = crate::control::template(&workflow, cx);
     // A task named but never kept is started anew.
     let task_lost = task.is_some_and(|task| crate::task::task(&task, cx).is_none());
+    let working = entry_works(project, issue, cx);
     let ids = vec![onehand_core::task::new_id()];
     let started = cx.update_global::<Shared, _>(|shared, _| {
         shared
             .boards
-            .start(project, issue, task_lost, ids, template)
+            .start(project, issue, task_lost, working, ids, template)
     });
     match started {
         Ok(fx) => carry(fx, cx),

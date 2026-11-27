@@ -24,8 +24,8 @@ pub struct RowAct {
     label: SharedString,
     danger: bool,
     press: Press,
-    /// Why it cannot act now, when it cannot: kept in the menu, refusing,
-    /// so the menu keeps its shape.
+    /// Whether it cannot act now: kept in the menu, refusing, so the menu
+    /// keeps its shape.
     refused: bool,
 }
 

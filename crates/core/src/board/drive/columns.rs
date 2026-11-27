@@ -140,14 +140,19 @@ impl BoardDrive {
     /// a full team, which caps only what the board starts by itself. A new
     /// task when no task works it or its task was never kept (`task_lost`),
     /// else a next run of its task; held for the write that names it.
+    /// Refused while its task works (`working`).
     pub fn start(
         &mut self,
         id: &ProjectId,
         issue: u64,
         task_lost: bool,
+        working: bool,
         ids: Vec<String>,
         template: Result<Template, String>,
     ) -> Result<Vec<Effect>, String> {
+        if working {
+            return Err("It is at work: Stop it first".to_string());
+        }
         let template = template?;
         usable(Some(&template))?;
         if self.starting.get(id).is_some_and(|s| s.contains(&issue)) {

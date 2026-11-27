@@ -199,7 +199,7 @@ fn start_on_a_press_goes_ahead_past_a_full_team() {
         .find(|t| t.id == "builtin:branch")
         .unwrap();
     let fx = d
-        .start(&id(), 4, false, vec!["n".into()], Ok(flow))
+        .start(&id(), 4, false, false, vec!["n".into()], Ok(flow))
         .unwrap();
     assert_eq!(starts(&fx), 0, "held for its write");
     let rest = land(&mut d, fx);
@@ -228,7 +228,7 @@ fn turning_a_column_refuses_while_a_start_is_on_its_way() {
         .find(|t| t.id == "builtin:branch")
         .unwrap();
     let _ = d
-        .start(&id(), 4, false, vec!["n".into()], Ok(flow))
+        .start(&id(), 4, false, false, vec!["n".into()], Ok(flow))
         .unwrap();
     assert!(d
         .edit_column(&id(), "work", column("work", Work::Person), &idle, &ok)
@@ -261,9 +261,28 @@ fn remove_refuses_an_issue_starting() {
         .find(|t| t.id == "builtin:branch")
         .unwrap();
     let _ = d
-        .start(&id(), 4, false, vec!["n".into()], Ok(flow))
+        .start(&id(), 4, false, false, vec!["n".into()], Ok(flow))
         .unwrap();
     assert!(d
         .remove(&id(), 4, false)
         .is_err_and(|why| why.contains("starting")));
+}
+
+#[test]
+fn start_refuses_while_its_task_works() {
+    let mut board = Board::made("a".into(), 1, &[], 1);
+    board.columns[1].starts = Starts::OnPress;
+    board.columns[1].entries.push(Entry {
+        issue: 4,
+        task: Some("t".into()),
+        ..Entry::default()
+    });
+    let mut d = drive(board);
+    let flow = crate::workflow::builtin::all()
+        .into_iter()
+        .find(|t| t.id == "builtin:branch")
+        .unwrap();
+    let got = d.start(&id(), 4, false, true, vec!["n".into()], Ok(flow));
+    assert_eq!(got.err().as_deref(), Some("It is at work: Stop it first"));
+    assert_eq!(d.board(&id()).unwrap().columns[1].entries[0].run, None);
 }

@@ -60,7 +60,7 @@ impl Offer {
 }
 
 /// What the row of `issue` on `board` offers, its line's `act` first, each
-/// with why it refuses: every move while its task works or its start is on
+/// with why it refuses: everything while its task works or its start is on
 /// its way, a start its column cannot make, a move into a full column, and
 /// a move past its column's end.
 pub fn offers(
@@ -126,17 +126,17 @@ pub fn offers(
         .into_iter()
         .map(|offer| {
             let why = match &offer {
-                Offer::Start => standing.start.clone(),
-                Offer::MoveTo { .. } | Offer::Up | Offer::Down | Offer::Back
+                Offer::Start | Offer::MoveTo { .. } | Offer::Up | Offer::Down | Offer::Back
                     if standing.starting =>
                 {
                     Some("It is starting: wait for it to start".to_string())
                 }
-                Offer::MoveTo { .. } | Offer::Up | Offer::Down | Offer::Back
+                Offer::Start | Offer::MoveTo { .. } | Offer::Up | Offer::Down | Offer::Back
                     if standing.working =>
                 {
                     Some("It is at work: Stop it first".to_string())
                 }
+                Offer::Start => standing.start.clone(),
                 Offer::MoveTo {
                     column: Some(id),
                     name,

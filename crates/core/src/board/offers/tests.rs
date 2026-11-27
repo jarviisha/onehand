@@ -143,3 +143,10 @@ fn every_move_refuses_while_it_starts() {
         .iter()
         .all(|(_, why)| why.as_deref() == Some("It is starting: wait for it to start")));
 }
+
+#[test]
+fn start_refuses_while_its_task_works() {
+    let got = offers(&board(), 4, Some(&EntryAct::Start), &standing(true));
+    assert_eq!(got[0].0, Offer::Start);
+    assert_eq!(got[0].1.as_deref(), Some("It is at work: Stop it first"));
+}
