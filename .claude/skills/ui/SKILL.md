@@ -123,9 +123,12 @@ div().p_3().border_1().border_color(theme.border).bg(theme.muted).shadow(lift(cx
 div().v_flex().gap_2().child(heading).child(group)
 ```
 
-## The reviewer
+## The reviewers
 
-A change a person can see ends with a review its author does not write.
+A change a person can see ends with two reviews its author does not write: one reads the
+pictures, the other the code. Each finds what the other misses: a picture shows a fault the
+diff hides, and the code shows a state no picture held (a hover, a long name, a zoom, a frame
+that depends on the one before).
 
 **When.** Every change a person can see, before it is called finished. Skip it for a change to
 words alone, or one no screenshot can show (a key binding, focus order, a refusal's tooltip
@@ -140,13 +143,15 @@ scripts cannot drag, so a dock is pictured at the width the window gives it, and
 window cannot hold the conversation beside the narrowest useful Workbench (at 720 wide), the
 Workbench takes the whole area under a way back to the conversation: a dock's own narrowest
 width beside the conversation goes under what the reviewer could not see.
-Picture the states the change touches (a long name, an empty list, a hover) with more steps
-files, and where a rule is checked at a zoom, the steps press the zoom keys before the shot.
-Read each picture yourself first.
+Picture the states the change touches with more steps files: every name the view shows at its
+longest (a title, an agent's name, a branch, a path), an empty list and one past its cap, and
+a hover over each control the change can cut or wrap, so its tooltip is in the picture; where
+a rule is checked at a zoom, the steps press the zoom keys before the shot. Read each picture
+yourself first.
 
-**The reviewer is fresh**: an agent with no part in the change, started for this alone. A
-subagent, or a second session where the host has no subagents (in Claude Code, for example, the
-Agent tool with `general-purpose`). Never the author answering for it. Where no second agent
+**The picture reviewer is fresh**: an agent with no part in the change, started for this
+alone. A subagent, or a second session where the host has no subagents (in Claude Code, for
+example, the Agent tool with `general-purpose`). Never the author answering for it. Where no second agent
 can be started, the pull request says *Not reviewed: no second agent*, and the owner's look
 stands alone.
 
@@ -158,6 +163,9 @@ The diff, pasted whole: the output of
   git diff BASE...HEAD -- crates .claude docs DESIGN.md AGENTS.md CONTEXT.md
   (BASE the branch's base, main as a rule).
 The pictures, each with its width, palette and state: <path> (<width>, <light|dark>, <state>) …
+First, before any rule: for each picture, go down every row, bar and line the change touches
+and say what each part of it shows (its words, whole or cut and where, its place in the row),
+one line per row. A fault is most often missed in a row read as a whole.
 The rules the change touches, by id; read each in DESIGN.md or docs/ui-patterns.md before
 answering: <T-23, L-04, …>
 Every view also answers to DESIGN.md's Principles 2 (a signal only where something needs the
@@ -170,7 +178,24 @@ Then anything else a picture shows wrong that no rule above names.
 
 It is told nothing of the author's own judgment of the work.
 
-**Its findings** are fixed in the change, with the affected pictures taken again and given to the
+**The code reviewer** is a second fresh agent, apart from the picture reviewer, given the diff
+alone and no pictures, and told what the change is for, which rules it touches, and the risks
+of its kind, each to be checked in the source rather than taken on trust:
+
+- a layout under strain: how the library divides a shortfall, rounds a width or truncates a
+  text (read in gpui's and taffy's own source); any width where a part is cut early, overlaps
+  or leaves its row; anything decided from an earlier frame;
+- a control that can now be cut or wrapped: whether it says its words whole in a tooltip
+  (`L-13`), and whether the tooltip stands over what the control opens;
+- a custom element: its three phases, the rem size and zoom in each, a panic (an index, an
+  unwrap, a newline handed to the text shaper);
+- a test: whether it fails when the fault it is named for is put back;
+- the repository's rules: the lints, the guards, the size census, no document cited in code.
+
+It answers with findings ranked Critical, Important and Minor, each with its file and line,
+the case that breaks, and whether it read that in the source or inferred it.
+
+**Their findings** are fixed in the change, with the affected pictures taken again and given to the
 same reviewer, or to a fresh one given the earlier findings where it cannot be continued; at most
 two rounds, after which what is left is listed in the pull request as open. The pull request
 says in words what was pictured (the view, the widths, the palettes, the states) and what the
@@ -210,7 +235,7 @@ Take the path the diff needs; neither path's evidence proves the other complete.
    (`docs/rules-and-gotchas.md`, *Guard coverage*); a site that needs one of the banned calls
    takes `#[expect(clippy::disallowed_methods, reason = "…")]` on the narrowest item, its reason
    in its own words.
-2. **Picture and review**, as *The reviewer* says, or say why it was skipped.
+2. **Picture and review**, both reviewers as *The reviewers* says, or say why one was skipped.
 3. **Carry the documents** in the same change: what a screen holds or its order to
    `docs/screens.md` (or the feature's own document); a principle, the frame or the transcript
    to `DESIGN.md`, which gets at most one line per new region; a rule to `DESIGN.md` or
@@ -218,8 +243,8 @@ Take the path the diff needs; neither path's evidence proves the other complete.
    departure the change leaves standing is recorded in `docs/known-gaps.md` with its reason.
 4. **Compare peers and report**: the rules the change touches, by id; the same-role component
    compared; the shared builder or tokens checked; a changed shared default's callers inspected;
-   failures, fixes, remaining gaps and checks run. Report what was pictured and the reviewer's
-   line for each rule; passing tests are not evidence of visual consistency. The owner's look
-   stays, for taste: hand them a focused visual check in `make dev` or `make showcase` (both
-   themes, narrow and wide containers, zoom, long text, the states that apply), and keep what
-   was observed apart from what is pending.
+   failures, fixes, remaining gaps and checks run. Report what was pictured, the picture
+   reviewer's line for each rule and the code reviewer's findings; passing tests are not
+   evidence of visual consistency. The owner's look stays, for taste: hand them a focused visual
+   check in `make dev` or `make showcase` (both themes, narrow and wide containers, zoom, long
+   text, the states that apply), and keep what was observed apart from what is pending.
