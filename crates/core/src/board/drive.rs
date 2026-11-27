@@ -65,6 +65,20 @@ impl Boards {
             .collect()
     }
 
+    /// The name of the column whose entry names task `task`, on any board;
+    /// none in Done or off every board.
+    pub fn column_holding(&self, task: &str) -> Option<&str> {
+        (self.boards.values())
+            .flat_map(|board| board.columns.iter())
+            .find(|column| {
+                column
+                    .entries
+                    .iter()
+                    .any(|e| e.task.as_deref() == Some(task))
+            })
+            .map(|column| column.name.as_str())
+    }
+
     /// The projects with a board this build can read.
     pub fn ids(&self) -> impl Iterator<Item = &ProjectId> {
         self.boards.keys()

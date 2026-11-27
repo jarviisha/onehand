@@ -62,15 +62,18 @@ pub(crate) fn rows(roots: &[PathBuf], cx: &App) -> Vec<Row> {
         .tasks()
         .iter()
         .filter(|task| roots.contains(&task.setup().repo) || roots.contains(&task.setup().dir));
+    let boards = &crate::state::Shared::global(cx).boards;
     for task in tasks {
-        rows.push((Some(task), row_of(t, task)));
+        let held_at = boards.column_holding(task.id());
+        rows.push((Some(task), row_of(t, task, held_at)));
     }
     sort_listed(&mut rows, |(task, row)| (row.group, *task));
     rows.into_iter().map(|(_, row)| row).collect()
 }
 
-/// Task `task` as the pages list it.
-fn row_of(t: &Tasks, task: &Task) -> Row {
+/// Task `task` as the pages list it; `held_at`, the board's column holding
+/// it, is said while it is not at work.
+fn row_of(t: &Tasks, task: &Task, held_at: Option<&str>) -> Row {
     let working = t.working(task.id());
     let run = task.runs().last();
     // A prompt's one step is the task itself: naming it would only say
@@ -90,6 +93,7 @@ fn row_of(t: &Tasks, task: &Task) -> Row {
         (None, None) => format!("cut off at {step}"),
         (None, Some(said)) => said,
     };
+    let at = on_board(at, working.is_some(), held_at);
     let group = task.group(working);
     let waits = match group {
         Group::Waiting | Group::Ended => {
@@ -222,8 +226,33 @@ pub(crate) fn board_view(project: &onehand_core::project::ProjectId, cx: &App) -
     BoardView {
         rows: (t.tasks().iter())
             .filter(|task| named(task))
-            .map(|task| (task.id().to_string(), row_of(t, task)))
+            // The board's own rows stand in their column already.
+            .map(|task| (task.id().to_string(), row_of(t, task, None)))
             .collect(),
         taken: onehand_core::board::taken(board, t.tasks().iter(), project),
+    }
+}
+
+/// A task's `at`, then where its board holds it, at `column`, while it is
+/// not `working`: between two runs it stands on the board, not ended.
+fn on_board(at: String, working: bool, column: Option<&str>) -> String {
+    match (working, column) {
+        (false, Some(column)) => format!("{at} · on the board at {column}"),
+        (true, _) | (false, None) => at,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::on_board;
+
+    #[test]
+    fn a_held_task_between_runs_says_where_the_board_holds_it() {
+        assert_eq!(
+            on_board("done".into(), false, Some("Review")),
+            "done · on the board at Review"
+        );
+        assert_eq!(on_board("Plan".into(), true, Some("Review")), "Plan");
+        assert_eq!(on_board("done".into(), false, None), "done");
     }
 }
