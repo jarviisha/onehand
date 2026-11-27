@@ -500,3 +500,6 @@ the ones that exist. What workflows and tasks do not do is listed at the end of
 - **A refused quiet button on a board row reads close to plain words.** The row's one act (*Start*,
   *Move to <column>*) is a quiet button, and refused it loses most of what marks it as a button.
   It also stands beside the title whole, so a long act keeps the title short.
+- **The project page's head keeps its actions whole at the narrowest pane.** The board link and
+  *Run check* keep their words, so at 720 wide the project's name and path are cut to a letter. A
+  link that shortened its words when narrow would leave the name its room.

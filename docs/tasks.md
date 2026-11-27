@@ -37,8 +37,9 @@ running, what needs me, and what has finished.
 - **A board holds its task** while an entry in one of its columns names it: the history cap passes
   over it, and *Dismiss* refuses it (*It is on its board; remove it from the board first*), the
   board's *Remove from board* letting it go instead. Between two runs, while it is not queued,
-  running or waiting, its line starts with where the board holds it: *on the board at <column> ·
-  <what it said>*, so a long ending cut short never hides it. It stands in the group its last run puts it in, *Finished* after a run done. One in
+  running or waiting, its line starts with where the board holds it, in place of *from the board*:
+  *on the board at <column> · <workflow> · <what it said>*, so a long ending cut short never hides
+  it and *board* is said once. It stands in the group its last run puts it in, *Finished* after a run done. One in
   the board's Done, or off the board, is history like any other.
 - **History is bounded:** the most recent 200 finished tasks per project. The page says how many
   older ones were removed since onehand started.

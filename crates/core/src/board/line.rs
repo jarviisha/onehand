@@ -108,12 +108,14 @@ pub struct Facts {
 }
 
 /// How many entries of `board` wait on a person: those whose line offers
-/// an act (a Start, or a move on), given what `facts` knows of each. The
-/// board's own waits, not a run's: a run waiting on an approval or a card
-/// is counted where tasks are.
+/// an act (a Start, or a move on), given what `facts` knows of each, but
+/// those its To do counts already. The board's own waits, not a run's: a
+/// run waiting on an approval or a card is counted where tasks are.
 pub fn waiting(board: &Board, facts: impl Fn(&Column, &Entry) -> Facts) -> usize {
+    let todo = board.todo();
     (board.columns.iter())
         .flat_map(|column| column.entries.iter().map(move |entry| (column, entry)))
+        .filter(|(_, entry)| !todo.contains(&entry.issue))
         .filter(|(column, entry)| {
             let f = facts(column, entry);
             let (_, act) = line(

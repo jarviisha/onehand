@@ -778,8 +778,8 @@ impl ChatPane {
 }
 
 /// What the board's link says: what works on it, what waits in its To do
-/// and what waits on a person, each left out at none so the head keeps its
-/// room for the project's name.
+/// and what waits on a person, each left out at none, so the link is no
+/// longer than what there is.
 fn board_label(running: usize, todo: usize, waiting: usize) -> String {
     let parts = [
         (running, "running"),

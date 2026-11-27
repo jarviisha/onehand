@@ -225,9 +225,9 @@ fn waiting_counts_what_waits_on_a_person() {
         starting: false,
         start: None,
     };
-    // 4 waits for Start, 5 is done here, 6 did not start; 7 works, 8 is a
-    // person's column at rest.
-    assert_eq!(waiting(&b, facts), 3);
+    // 5 is done here, 6 did not start; 4 waits for Start but To do counts
+    // it, 7 works, 8 is a person's column at rest.
+    assert_eq!(waiting(&b, facts), 2);
     let gone = |c: &Column, e: &Entry| Facts {
         start: Some("Its workflow, w, is gone".into()),
         ..facts(c, e)
@@ -235,4 +235,17 @@ fn waiting_counts_what_waits_on_a_person() {
     // Nothing starts there: only 5, done, waits on a person, and 6 still
     // says it did not start.
     assert_eq!(waiting(&b, gone), 2);
+}
+
+#[test]
+fn waiting_leaves_out_what_to_do_counts() {
+    // A first column that runs a workflow on a press: its issue waiting for
+    // Start is in To do already.
+    let b = board(
+        column("plan", flow(), Starts::OnPress, MovesOn::ByPerson),
+        entry(None, false),
+        None,
+    );
+    assert_eq!(b.todo(), vec![4]);
+    assert_eq!(waiting(&b, |_, _| Facts::default()), 0);
 }

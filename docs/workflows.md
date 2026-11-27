@@ -267,7 +267,8 @@ empty mode, an option with no id or no value, and an option `mode`, which is set
 A variable is `{name}`: `{brief}` (the title and details), `{instructions}`, `{check_output}` (what
 the failed command printed), `{revise}` (a person's note on a revision), `{handover}` (on a board,
 what the task's run before this one last answered: its last visit to an agent step keeping its
-answer; empty on a first run, and never refused as always empty, since a workflow cannot know
+answer, else, for a retry that made no such visit, the last answer it carried over, else what that
+run was handed itself (`Run::last_answer`); empty on a first run, and never refused as always empty, since a workflow cannot know
 whether it runs first), `{output.<id>}` (what an earlier step kept). `{handover}` is placed only
 where the prompt names it; onehand never adds it. **Any other brace is text**, so a code sample needs no escaping. Because
 validation refuses unknown names, filling a prompt in never fails.

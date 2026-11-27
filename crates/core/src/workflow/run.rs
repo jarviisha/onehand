@@ -353,24 +353,29 @@ impl Run {
         }
     }
 
-    /// The answer its last visit to an agent step that keeps its answer
-    /// kept, if one did.
+    /// What it hands on to its task's next run: the answer its last visit
+    /// to an agent step that keeps its answer kept; else, for a retry that
+    /// made no such visit, the last answer it carried over, in its steps'
+    /// order; else what it was handed itself.
     pub(crate) fn last_answer(&self) -> Option<&str> {
-        self.visits.iter().rev().find_map(|visit| {
-            let step = self.template.steps.iter().find(|s| s.id == visit.step)?;
-            match step.kind {
-                StepKind::Agent {
-                    keep_answer: true, ..
-                } => visit.output.as_deref(),
-                StepKind::Agent { .. }
-                | StepKind::Review { .. }
-                | StepKind::Command { .. }
-                | StepKind::Approval { .. }
-                | StepKind::Push
-                | StepKind::PullRequest
-                | StepKind::StatusChecks { .. } => None,
-            }
-        })
+        let keeps = |id: &str| {
+            self.template
+                .steps
+                .iter()
+                .find(|s| s.id == id)
+                .is_some_and(|step| keeps_answer(&step.kind))
+        };
+        let visited = self.visits.iter().rev().find_map(|visit| {
+            keeps(&visit.step)
+                .then_some(visit.output.as_deref())
+                .flatten()
+        });
+        let carried = || {
+            (self.template.steps.iter().rev())
+                .filter(|step| keeps_answer(&step.kind))
+                .find_map(|step| self.outputs.get(&step.id).map(String::as_str))
+        };
+        visited.or_else(carried).or(self.handover.as_deref())
     }
 
     /// A run of `template` on `brief`, not started: [`Run::resume`] starts
@@ -843,5 +848,18 @@ impl Run {
         if self.history.len() > HISTORY_MAX {
             self.history.remove(0);
         }
+    }
+}
+
+/// Whether a step of `kind` keeps its answer: an agent step saying so.
+fn keeps_answer(kind: &StepKind) -> bool {
+    match kind {
+        StepKind::Agent { keep_answer, .. } => *keep_answer,
+        StepKind::Review { .. }
+        | StepKind::Command { .. }
+        | StepKind::Approval { .. }
+        | StepKind::Push
+        | StepKind::PullRequest
+        | StepKind::StatusChecks { .. } => false,
     }
 }

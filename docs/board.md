@@ -244,12 +244,13 @@ notification.
   ([workflows.md](workflows.md#prompts)). A person editing the work between two columns is seen as
   a retry sees it: the new run's first mark records the work as it now is.
 - **The task detail** labels each run by the column it ran in (*Run N · <column>*, `Run::label`),
-  and its line, like its row on the Tasks page, starts *on the board at <column> · * while the task
-  is not at work (`Boards::column_holding`), so a long ending cut short never hides it.
+  and its line, like its row on the Tasks page, starts *on the board at <column> · <workflow>*, in
+  place of *from the board*, while the task is not at work (`BoardDrive::column_holding`), so a long ending cut short never hides it.
 - **The project page's link** reads *Board · N running · M to do · K waiting for you*, each part
   left out at zero (*Board*, *Board · 2 to do*): N the board's runs holding a team place, M the
-  first column's issues no task works yet, K the entries waiting on a person, those offering an act
-  (`board::line::waiting`). These waits are the board at rest by the person's design, not
+  first column's issues no task works yet, K the other entries waiting on a person, those offering
+  an act (`board::line::waiting`), so an issue waiting for Start in a first column that runs a
+  workflow is counted once, under M. These waits are the board at rest by the person's design, not
   something gone wrong: they are not *Needs attention* and are not counted on the rail.
 - **A worktree is never removed unasked**: *Remove worktree…* after the pull request merged, as for
   any task. An issue entering Done, or leaving the board, removes nothing.

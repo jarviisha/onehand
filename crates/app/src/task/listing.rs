@@ -93,7 +93,6 @@ fn row_of(t: &Tasks, task: &Task, held_at: Option<&str>) -> Row {
         (None, None) => format!("cut off at {step}"),
         (None, Some(said)) => said,
     };
-    let at = on_board(at, working.is_some(), held_at);
     let group = task.group(working);
     let waits = match group {
         Group::Waiting | Group::Ended => {
@@ -116,7 +115,7 @@ fn row_of(t: &Tasks, task: &Task, held_at: Option<&str>) -> Row {
             let workflow = run.map_or_else(String::new, |run| run.template.name.clone());
             match &task.origin() {
                 Some(Origin::Schedule { name, .. }) => format!("{name} · {workflow}"),
-                Some(Origin::Board { .. }) => format!("from the board · {workflow}"),
+                Some(Origin::Board { .. }) => board_name(&workflow, working.is_some(), held_at),
                 Some(Origin::Tool) => format!("by a tool · {workflow}"),
                 None => workflow,
             }
@@ -233,27 +232,31 @@ pub(crate) fn board_view(project: &onehand_core::project::ProjectId, cx: &App) -
     }
 }
 
-/// A task's `at`, after where its board holds it, at `column`, while it is
-/// not `working`: between two runs it stands on the board, not ended. The
-/// place comes first, so a long ending cut short never hides it.
-fn on_board(at: String, working: bool, column: Option<&str>) -> String {
+/// What a board task's row names it by, of its `workflow`: where its board
+/// holds it, at `column`, while it is not `working`, between two runs, else
+/// that the board started it. The place comes first, so a long ending cut
+/// short never hides it, and *board* is said once.
+fn board_name(workflow: &str, working: bool, column: Option<&str>) -> String {
     match (working, column) {
-        (false, Some(column)) => format!("on the board at {column} · {at}"),
-        (true, _) | (false, None) => at,
+        (false, Some(column)) => format!("on the board at {column} · {workflow}"),
+        (true, _) | (false, None) => format!("from the board · {workflow}"),
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::on_board;
+    use super::board_name;
 
     #[test]
     fn a_held_task_between_runs_says_where_the_board_holds_it() {
         assert_eq!(
-            on_board("done".into(), false, Some("Review")),
-            "on the board at Review · done"
+            board_name("Build", false, Some("Review")),
+            "on the board at Review · Build"
         );
-        assert_eq!(on_board("Plan".into(), true, Some("Review")), "Plan");
-        assert_eq!(on_board("done".into(), false, None), "done");
+        assert_eq!(
+            board_name("Build", true, Some("Review")),
+            "from the board · Build"
+        );
+        assert_eq!(board_name("Build", false, None), "from the board · Build");
     }
 }

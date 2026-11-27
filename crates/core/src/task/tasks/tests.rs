@@ -1413,3 +1413,41 @@ fn next_run_after_no_kept_answer_is_handed_nothing() {
     let run = tasks.task("1").unwrap().runs().last().unwrap().clone();
     assert_eq!(run.handover, None);
 }
+
+#[test]
+fn a_retried_run_hands_on_what_it_carried_or_was_handed() {
+    let mut tasks = TasksDrive::default();
+    let mut task = worked("1");
+    task.runs[0].template = next_template();
+    // A retry from verify: plan's answer carried, no visit of its own.
+    task.runs[0]
+        .outputs
+        .insert("plan".into(), "carried plan".into());
+    tasks.add(task);
+    let _ = tasks.next_run(
+        "1",
+        "r2".into(),
+        next_template(),
+        current(),
+        "Ship".into(),
+        WINDOW,
+    );
+    let run = tasks.task("1").unwrap().runs().last().unwrap().clone();
+    assert_eq!(run.handover.as_deref(), Some("carried plan"));
+
+    let mut tasks = TasksDrive::default();
+    let mut task = worked("2");
+    // A run that never made a visit, handed something itself.
+    task.runs[0].handover = Some("from before".into());
+    tasks.add(task);
+    let _ = tasks.next_run(
+        "2",
+        "r2".into(),
+        next_template(),
+        current(),
+        "Ship".into(),
+        WINDOW,
+    );
+    let run = tasks.task("2").unwrap().runs().last().unwrap().clone();
+    assert_eq!(run.handover.as_deref(), Some("from before"));
+}

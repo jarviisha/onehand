@@ -225,3 +225,22 @@ fn a_version_two_board_reads_as_this_version() {
     more.columns[2].entries.clear();
     assert!(more.shape().is_ok(), "{:?}", more.shape());
 }
+
+/// Read as this version, a version-two board answers to this version's
+/// rules: one holding an issue twice is not read.
+#[test]
+fn a_version_two_board_breaking_this_versions_rules_is_unreadable() {
+    let dir = scratch("second-twice");
+    let mut old = made();
+    old.schema_version = 2;
+    let twice = old.columns[0].entries[0].clone();
+    old.done.push(crate::board::Entry {
+        task: Some("t".into()),
+        ..twice
+    });
+    save_blocking(&dir, Some(&old)).unwrap();
+    match load_from(&dir) {
+        BoardLoad::Unreadable(_) => {}
+        BoardLoad::Found(_) | BoardLoad::Missing => panic!("read"),
+    }
+}
