@@ -233,11 +233,12 @@ pub(crate) fn board_view(project: &onehand_core::project::ProjectId, cx: &App) -
     }
 }
 
-/// A task's `at`, then where its board holds it, at `column`, while it is
-/// not `working`: between two runs it stands on the board, not ended.
+/// A task's `at`, after where its board holds it, at `column`, while it is
+/// not `working`: between two runs it stands on the board, not ended. The
+/// place comes first, so a long ending cut short never hides it.
 fn on_board(at: String, working: bool, column: Option<&str>) -> String {
     match (working, column) {
-        (false, Some(column)) => format!("{at} · on the board at {column}"),
+        (false, Some(column)) => format!("on the board at {column} · {at}"),
         (true, _) | (false, None) => at,
     }
 }
@@ -250,7 +251,7 @@ mod tests {
     fn a_held_task_between_runs_says_where_the_board_holds_it() {
         assert_eq!(
             on_board("done".into(), false, Some("Review")),
-            "done · on the board at Review"
+            "on the board at Review · done"
         );
         assert_eq!(on_board("Plan".into(), true, Some("Review")), "Plan");
         assert_eq!(on_board("done".into(), false, None), "done");

@@ -31,7 +31,7 @@ pub fn load_from(dir: &Path) -> BoardLoad {
     };
     let board = toml::from_str::<Board>(&text)
         .map_err(|e| e.to_string())
-        .and_then(|board| board.shape().map(|()| board));
+        .and_then(|board| board.shape().map(|()| board.read_up()));
     match board {
         Ok(board) => BoardLoad::Found(board),
         Err(why) => BoardLoad::Unreadable(format!("{}: {why}", path.display())),

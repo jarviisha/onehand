@@ -203,3 +203,25 @@ fn a_board_still_in_its_project_is_unreadable_not_missing() {
     assert!(boards.is_empty());
     assert!(unreadable.contains_key(&project.id), "{unreadable:?}");
 }
+
+/// A version-two board is a board of this version in one shape: read, it
+/// is of this version, so a column can be added to it and an issue moved
+/// into its work column with no task yet.
+#[test]
+fn a_version_two_board_reads_as_this_version() {
+    let dir = scratch("second");
+    let mut old = made();
+    old.schema_version = 2;
+    save_blocking(&dir, Some(&old)).unwrap();
+    let board = match load_from(&dir) {
+        BoardLoad::Found(board) => board,
+        BoardLoad::Missing | BoardLoad::Unreadable(_) => panic!("not read back"),
+    };
+    assert_eq!(board.schema_version, crate::board::model::SCHEMA_VERSION);
+    let mut more = board.clone();
+    more.columns.push(more.columns[0].clone());
+    more.columns[2].id = "review".into();
+    more.columns[2].name = "Review".into();
+    more.columns[2].entries.clear();
+    assert!(more.shape().is_ok(), "{:?}", more.shape());
+}

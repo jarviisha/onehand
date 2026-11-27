@@ -28,8 +28,9 @@ the ones that exist. What workflows and tasks do not do is listed at the end of
   scrolling menu's rows itself (a session's history, the Issues page's label filters), where
   every other scrolling region keeps a lane clear for it. Fixing it means a menu of the app's own.
 - **A refused menu row cannot say why.** The library's menu row takes no tooltip, so a row that
-  refuses (*Move up* on a workflow's first step) is drawn refusing without its reason, which its
-  place has to say.
+  refuses (*Move up* on a workflow's first step, a board row's move while its task works or into a
+  full column) is drawn refusing without its reason, which its place has to say: for a board
+  row, its line and its column's head (*n of limit*).
 - **A cut name is not said whole everywhere.** The workspace's name, a project's and a
   session's row on the rail, a past conversation's title on a project's page and a dock's tabs
   say their name whole in a tooltip when it is cut. The names cut elsewhere have none yet: a
@@ -470,23 +471,32 @@ the ones that exist. What workflows and tasks do not do is listed at the end of
   variant of our own enums with `matches!` (`workflow/tests.rs`), outside the drives and links the
   whole-match rule holds; and `connector::memory::Forge`, the forge kept in memory, is
   `cfg(test)`, as nothing outside core needs it.
-- **A board pulls nothing when a window opens on its project.** To do is looked at when it or the
-  team changes, when a board task leaves the board, when the tasks are read at boot and whenever
-  the workflow library is read, and only while a window holds the project; a project no window
-  held at those moments waits for the next one. Pulling when a window opens means a look from the
-  shell as it is built.
-- **A start landed but not yet asking for room is counted at no step.** A pull counts the starts
-  on their way against the first step's limit only until their task is kept, and the task asks for
-  room a moment later, so a pull in that gap may start one task too many at the first step. The
-  room ledger still holds, so the extra task waits for room; it is not run over the limit.
-- **A board's old workflow's tasks still count after it is changed.** Bound to another workflow,
-  the board keeps the tasks the old one started: they hold their issues, count against the team
-  and stand in columns named by step ids the new workflow may not have, until a person removes
-  them from the board. Leaving them out would mean keeping the workflow on each task and comparing.
-- **Only a copy of a built-in workflow rebinds the board it was opened from.** A copy of the
-  person's own workflow, saved from the board's *Edit workflow*, leaves the board on the original;
-  it is bound in *Settings ▸ Projects ▸ Board*. Their own is edited in place, so a copy of it is
-  taken as a new workflow, not the board's.
+- **A board starts nothing when a window opens on its project.** A board is looked at when its
+  columns, entries or team change, when a start lands or a run of it ends, when room frees, when
+  the tasks are read at boot and whenever the workflow library is read, and it starts only while a
+  window holds the project; a project no window held at those moments waits for the next one.
+  Looking when a window opens means a look from the shell as it is built.
+- **A start landed but not yet asking for room is counted at no step.** A look counts the starts
+  on their way against a workflow's first-step limit only until their task is kept, and the task
+  asks for room a moment later, so a look in that gap may start one run too many at the first
+  step. The room ledger still holds, so the extra run waits for room; it is not run over the limit.
+- **Only a copy of a built-in workflow takes a column's place.** A copy of the person's own
+  workflow, saved from a column's *Edit workflow*, leaves the column on the original; it is set in
+  the column dialog. Their own is edited in place, so a copy of it is taken as a new workflow, not
+  the column's.
 - **Dragging on the board has no edge autoscroll**, as on the rail, and draws no line where the
   issue will land: the row it lands before fills instead. A column past the board's visible edge
   has to be scrolled to first. A refused move is said after the drop, not while dragging.
+- **The board draws every column.** Each column caps its rows, but nothing caps how many columns
+  stand side by side, and the page does not say when there are many; Settings lists 20 and says
+  how many more. A board of a few columns is what a person defines, so no cap was named yet.
+- **The column dialog's *Add* and *Save* never refuse before a press**, and then say one problem
+  at a time. The form is read as a column only on a press (`board_columns::read_column`), and what
+  the drive refuses (a name another column has) is known only once it is asked. Saying every
+  problem as it is typed means reading the form against the board on each change.
+- **Settings says a column's gone workflow in the muted ink**, as *Runs <id> (gone)* in the row's
+  line, not in the warning ink the board page uses for it. The row's line is one string in one ink;
+  saying part of it in another means a line of parts.
+- **A refused quiet button on a board row reads close to plain words.** The row's one act (*Start*,
+  *Move to <column>*) is a quiet button, and refused it loses most of what marks it as a button.
+  It also stands beside the title whole, so a long act keeps the title short.

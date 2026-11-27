@@ -34,6 +34,12 @@ running, what needs me, and what has finished.
   started with *by a tool*. Kept on the task, so it holds after the schedule is renamed or
   deleted. See [schedules.md](schedules.md). A board's task reads *from the board · <workflow>*,
   fails unwatched and closes its session when done, as a schedule's does. See [board.md](board.md).
+- **A board holds its task** while an entry in one of its columns names it: the history cap passes
+  over it, and *Dismiss* refuses it (*It is on its board; remove it from the board first*), the
+  board's *Remove from board* letting it go instead. Between two runs, while it is not queued,
+  running or waiting, its line starts with where the board holds it: *on the board at <column> ·
+  <what it said>*, so a long ending cut short never hides it. It stands in the group its last run puts it in, *Finished* after a run done. One in
+  the board's Done, or off the board, is history like any other.
 - **History is bounded:** the most recent 200 finished tasks per project. The page says how many
   older ones were removed since onehand started.
 - **Every box is capped at 50 rows** and says how many more it left out.
@@ -49,7 +55,7 @@ the prose width. It shows:
   fitting a primary (a secondary while *Awaiting approval*, *Out of time* or the way out holds the view's one
   primary), the next a secondary, the rest in ⋯ (*Retry…* on a finished task, and *Remove worktree…* in the danger ink once its pull request reads merged); ⋯ is
   always drawn, so that late arrival shifts nothing;
-- **a head**: the title, large, and the row's muted line;
+- **a head**: the title, large, and the row's muted line, led by *on the board at <column>* as the row is;
 - **Way out**, on an ended task: why it ended and the way out that fits, in the words of
   `next_action`, with *Retry with current settings…* when that is a way out (first for a
   configuration failure);
@@ -61,7 +67,8 @@ the prose width. It shows:
   long it worked against what it was given, *Extend* beside what it gives, and *Open session*; gone
   once Extend was pressed and waits for a team place, which the head's line says. *Stop*
   is the trail's;
-- **Run N**, the last run's timeline as a vertical stepper (a dot per visit on a rail, a check once
+- **Run N**, or *Run N · <column>* for a run a board started in one of its columns (`Run::label`),
+  the last run's timeline as a vertical stepper (a dot per visit on a rail, a check once
   it ended, its number ringed in `info` while it runs): one line per step visit (the step, why it ended, when it
   started and how long it took), each opening onto what it kept or printed (its last 60 lines) and
   the files it changed between its start and end marks, with their added and removed lines.
@@ -71,8 +78,9 @@ the prose width. It shows:
   duration; one with a mark missing says *No marks were pinned for this visit*. A read that fails says *Reading
 the diff failed: <why>* in the warning ink. The timeline draws the newest 100 visits and a visit
 lists 100 files, each cap said;
-- **Earlier runs**, newest first and the newest 20 of them: the run's number, how it ended and
-  when, each opening onto the same timeline.
+- **Earlier runs**, newest first and the newest 20 of them: the run's label (*Run N*, or *Run N ·
+  <column>*), how it ended and when, each opening onto the same timeline. A board task's runs so
+  read as the columns it went through.
 
 What a visit changed and a file's diff are read off the UI thread when opened, from the run's
 worktree, or from its project once the worktree is gone; while they are read the detail says so.
@@ -167,9 +175,11 @@ and the rail count cannot drift apart.
 
 **A next run** is a board's: a task whose issue enters another of its board's workflow columns
 gets a new run of that column's workflow (`TasksDrive::next_run`), on the same place as its last
-run, at the first step, carrying nothing, with the agent, mode, check command and timeout a new
-task takes now. It is driven off screen, and refused on a task at work, on one whose worktree was
-removed, and on work with another branch checked out, as a retry is.
+run, at the first step, carrying nothing but what that last run last answered (`{handover}`), with
+the agent, mode, check command and timeout a new task takes now. It keeps the column's name
+(`Run::column`), which labels it. It is driven off screen, and refused on a task at work, on one
+whose worktree was removed, and on work with another branch checked out, as a retry is. A task's
+runs may so be of different workflows; Retry and Resume read the last one.
 
 | | Resume | Retry |
 |---|---|---|

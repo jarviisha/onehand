@@ -2,10 +2,10 @@
 //! is the tracker's and not kept, and Done, each column's issues in the
 //! person's order.
 //!
-//! This build knows one shape only, the one a board bound to a workflow has
-//! always had: To do, a person's column whose issues move on by themselves
-//! into one column that runs the workflow, and Done. A board in any other
-//! shape was written by a newer onehand and is not read.
+//! Any columns a person defines are read at this version. A board of an
+//! earlier version is read only in the shape it had then: To do, a person's
+//! column whose issues move on by themselves into one column that runs the
+//! workflow, and Done.
 
 use serde::{Deserialize, Serialize};
 
@@ -268,6 +268,17 @@ impl Board {
                     && self.done.len() <= DONE_KEPT
             }
         }
+    }
+
+    /// The board at this version once read: one of version two is one of
+    /// this version in a single shape, its work column's entries already
+    /// naming their tasks, so it changes as any board of this version does.
+    /// One of version one waits for its tasks to be taken up.
+    pub(crate) fn read_up(mut self) -> Board {
+        if self.schema_version == SECOND_VERSION {
+            self.schema_version = SCHEMA_VERSION;
+        }
+        self
     }
 
     /// The board as it stands before its tasks are taken up: what a board
