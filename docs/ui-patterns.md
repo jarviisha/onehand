@@ -251,7 +251,7 @@ large or its list overfull. Each came from a fault seen in the app.
 
 - When: a name of unknown length stands in a row or a bar beside other parts.
 - Then: the name takes the room left (`min_w_0`) and is cut (L-02); the parts beside it do not
-  shrink, grow or move.
+  shrink, grow or move. L-13 says how its whole is still read.
 - Unless: the name is the only part on its line.
 - Checked by: tests `a_long_workspace_name_leaves_the_toggles_in_place`,
   `a_long_page_title_leaves_its_actions_in_place`,
@@ -326,6 +326,17 @@ large or its list overfull. Each came from a fault seen in the app.
 - When: a view decides between side by side and one at a time, or how many boxes a row holds.
 - Then: it measures the container it is given: a narrow dock in a wide window still stacks.
 - Checked by: test `a_list_and_its_detail_share_a_container_only_when_both_fit`.
+
+#### L-13 A name that is cut is said whole in its tooltip
+
+- When: the name of a thing a person can open or pick (a workspace, a project, a session, a
+  file, a task, an issue) is cut, at a count of characters or by the room it has (L-04).
+- Then: its tooltip says the name whole. Where the control's tooltip also says what a press
+  does, the name leads it.
+- Unless: text that is not a name (a description, a line of facts) is cut without one.
+- Checked by: tests `the_workspace_hint_says_the_name_whole_before_what_a_press_does`,
+  `a_projects_hover_carries_every_part_the_row_cut` for the two that build their words apart;
+  picture, with a hover, elsewhere. `docs/known-gaps.md` lists where it does not hold yet.
 
 ### Pages
 
