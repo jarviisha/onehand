@@ -376,3 +376,24 @@ fn pulls_next_only_after_an_end_that_left_the_board() {
     }
     assert!(!pulls_next(None));
 }
+
+/// A task stopped while it was queued has no run left, and still stands on
+/// the board, in the first step's column, so it can be removed.
+#[test]
+fn columns_show_a_task_with_no_run_at_the_first_step() {
+    let template = template(Place::Worktree);
+    let mut never = task("1", "p", 0, None);
+    never.runs.clear();
+    let all = [never];
+    let got = columns(&template, &holding(&[("1", 1)], &[]), all.iter());
+    assert_eq!(ids(&got.steps[0].tasks), ["1"]);
+}
+
+/// Only the work column holds its tasks: one in Done is the person's.
+#[test]
+fn a_board_holds_only_its_work_columns_tasks() {
+    let on = holding(&[("1", 1)], &[("2", 2)]);
+    assert!(on.holds("1"));
+    assert!(!on.holds("2"));
+    assert!(!on.holds("3"));
+}

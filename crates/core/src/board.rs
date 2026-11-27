@@ -119,7 +119,8 @@ pub fn after_end(issue: &LocalIssue, synced: bool, done: bool) -> bool {
 }
 
 /// Whether a board task that ended as `outcome` lets the board start the
-/// next of its To do: one done or that a person stopped left the board. One
+/// next of its To do: one done, or one a person stopped or took over, gave
+/// its place on the team back by a choice. One
 /// that ended without finishing is left for a person to look at and pulls
 /// nothing, deliberately: a cause the tasks share would most likely end the
 /// next the same way, one after another until To do is empty.
@@ -144,7 +145,7 @@ pub fn running<'a>(
     holds: &dyn Fn(&str) -> bool,
 ) -> usize {
     tasks
-        .filter(|task| board.names(task.id()) == Some(model::Place::Work))
+        .filter(|task| board.holds(task.id()))
         .filter(|task| holds(task.id()))
         .count()
 }
@@ -183,7 +184,7 @@ pub fn extends_waiting<'a>(
     asked: &dyn Fn(&str) -> Option<u64>,
 ) -> Vec<String> {
     let mut waiting: Vec<(u64, String)> = tasks
-        .filter(|task| board.names(task.id()) == Some(model::Place::Work))
+        .filter(|task| board.holds(task.id()))
         .filter_map(|task| Some((asked(task.id())?, task.id().to_string())))
         .collect();
     waiting.sort();
@@ -290,7 +291,13 @@ pub fn columns<'a>(
         })
         .collect();
     for task in board.work().iter().filter_map(of) {
-        let Some(at) = task.runs.last().and_then(|run| run.current()) else {
+        // A task stopped while it was queued has no run left: it stands at
+        // the first step, where it would have started.
+        let at = match task.runs.last() {
+            Some(run) => run.current(),
+            None => template.steps.first(),
+        };
+        let Some(at) = at else {
             continue;
         };
         match steps.iter_mut().find(|column| column.step == at.id) {

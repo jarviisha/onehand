@@ -266,7 +266,7 @@ pub(crate) fn extend(approval: onehand_core::task::Approval, cx: &mut App) {
     let way = task(&approval.task, cx).map_or(ExtendWay::Now, |task| {
         let on_board = (task.board_issue())
             .and_then(|(project, _)| boards.board(project))
-            .is_some_and(|board| board.names(task.id()).is_some());
+            .is_some_and(|board| board.holds(task.id()));
         onehand_core::board::extend_way(&task, on_board, holds)
     });
     match way {

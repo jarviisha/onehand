@@ -468,3 +468,52 @@ fn unbind_says_held() {
     let mut d = started(4);
     assert!(said(&d.unbind(&id())).contains(&"held".to_string()));
 }
+
+/// A board not yet adopting its tasks starts nothing: its tasks are not
+/// known yet, and adoption would write over what it started.
+#[test]
+fn a_board_before_its_tasks_are_read_starts_nothing() {
+    let mut boards = HashMap::new();
+    let board = Board::made("builtin:branch".into(), 2, &[4], 1).unadopted();
+    boards.insert(id(), board);
+    let mut d = BoardDrive::new(boards, HashMap::new(), "/data/projects".into());
+    let fx = read(&mut d, issues(&[4], &[]), facts(0));
+    assert!(said(&fx)
+        .iter()
+        .all(|e| !e.starts_with("start") && !e.starts_with("write")));
+    assert_eq!(d.board(&id()).unwrap().todo(), [4]);
+}
+
+/// A start whose write failed while a change of the team waited to be
+/// written: the board still names it, so the team's write carries it, and
+/// it is asked once that lands.
+#[test]
+fn a_start_left_on_the_board_by_a_failed_write_waits_for_the_next() {
+    let mut d = drive(2, &[4]);
+    let first = read(&mut d, issues(&[4], &[]), facts(0));
+    let waits = d.set_team(&id(), 3);
+    let rest = answer(&mut d, first, Err("busy".into()));
+    assert!(said(&rest).iter().all(|e| !e.starts_with("start")));
+    assert_eq!(d.board(&id()).unwrap().work().len(), 1, "still shown");
+    let token = waits
+        .iter()
+        .find_map(|e| match e {
+            Effect::Arm { token, .. } => Some(*token),
+            Effect::Write(_)
+            | Effect::Changed(_)
+            | Effect::Signal(_)
+            | Effect::ReadIssues { .. }
+            | Effect::GivePlace { .. }
+            | Effect::Start { .. }
+            | Effect::CloseIssue { .. }
+            | Effect::Held { .. } => None,
+        })
+        .unwrap();
+    let written = d.handle(Input::Elapsed { token }, now());
+    let rest = land(&mut d, written);
+    let starts = said(&rest)
+        .iter()
+        .filter(|e| e.starts_with("start"))
+        .count();
+    assert_eq!(starts, 1, "{:?}", said(&rest));
+}

@@ -272,6 +272,12 @@ impl Board {
         &self.done
     }
 
+    /// Whether the board holds task `task`: its work column names it. One in
+    /// Done is the person's to take up again.
+    pub fn holds(&self, task: &str) -> bool {
+        self.names(task) == Some(Place::Work)
+    }
+
     /// Where an entry naming `task` stands, if one does.
     pub fn names(&self, task: &str) -> Option<Place> {
         let named = |entries: &[Entry]| entries.iter().any(|e| e.task.as_deref() == Some(task));

@@ -117,8 +117,10 @@ on this machine. A project on a host has none: its issues are not kept here.
 - **A task a person stopped or took over stays in its step's column**, holding its issue, and its
   place on the team frees, so the board pulls. A task that ended without finishing (failed, ran
   out, timed out, or lost its agent or session) stays there too, under *Needs attention*, until the
-  person acts on it. **A task leaves the board only by *Remove from board***, and the board's
-  tasks cannot be dismissed: the Tasks page refuses it, saying to remove it from the board first.
+  person acts on it. **A task leaves the work column only by *Remove from board***, or by being
+  done, and while it stands there it cannot be dismissed: the Tasks page refuses it, saying to
+  remove it from the board first. A task in Done is history like any other: dismissed, or let go
+  of by the history cap, it is no longer drawn there.
 - **A task off the board is the person's.** One removed from it, or one in Done, that a person
   retries or resumes runs as any task: its end moves nothing on the board and closes nothing.
 - **A board task's end, like a schedule's, is unwatched:** it fails without a person looking, so

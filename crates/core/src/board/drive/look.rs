@@ -87,7 +87,9 @@ impl BoardDrive {
         let Ok(template) = facts.template else {
             return fx;
         };
-        if !facts.window || usable(Some(&template)).is_err() {
+        // A board that has not taken its tasks up yet does not know what
+        // works on it, and taking them up would write over what it started.
+        if !facts.window || usable(Some(&template)).is_err() || board.adopts() {
             return fx;
         }
         let decided = pull(

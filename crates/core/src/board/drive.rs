@@ -418,20 +418,25 @@ impl BoardDrive {
                 result,
             } => {
                 let landed = result.is_ok();
-                let mut fx = self.starts_after(&id, seq, landed);
-                let Some(saves) = self.saves.get_mut(&id) else {
-                    return fx;
-                };
-                let Some((why, back)) = saves.landed(pending, result) else {
-                    return fx;
-                };
-                if let Some(board) = back.into_iter().last() {
-                    self.put(&id, board);
+                // Put back first: what a failed write leaves on the board
+                // decides whether its starts wait for the next one.
+                let said =
+                    (self.saves.get_mut(&id)).and_then(|saves| saves.landed(pending, result));
+                let mut fx = Vec::new();
+                if let Some((why, back)) = said {
+                    if let Some(board) = back.into_iter().last() {
+                        self.put(&id, board);
+                    }
+                    fx.push(Effect::Changed(id.clone()));
+                    fx.push(Effect::Signal(Signal::SaveFailed {
+                        id: id.clone(),
+                        why,
+                    }));
+                    fx.push(self.say_held());
                 }
-                fx.push(Effect::Changed(id.clone()));
-                fx.push(Effect::Signal(Signal::SaveFailed { id, why }));
-                fx.push(self.say_held());
-                fx
+                let mut starts = self.starts_after(&id, seq, landed);
+                starts.extend(fx);
+                starts
             }
             Input::Elapsed { token } => {
                 if self.soon != Some(token) {
@@ -537,6 +542,11 @@ impl BoardDrive {
         })))
     }
 
+    /// Whether project `id`'s work column, as shown, names `issue`.
+    fn names_issue(&self, id: &ProjectId, issue: u64) -> bool {
+        (self.boards.board(id)).is_some_and(|b| b.work().iter().any(|e| e.issue == issue))
+    }
+
     /// The starts project `id`'s write `seq` lets go ahead: once it landed,
     /// those it or an older write named. When it failed, a newer write
     /// carries them and they wait for it; with none, they are dropped, no
@@ -556,6 +566,9 @@ impl BoardDrive {
                     seq: newest,
                     ..held
                 }),
+                // The board shown still names it, a change of its own having
+                // kept it there: the next write carries it.
+                (false, false) if self.names_issue(id, held.issue) => self.held.push(held),
                 (false, false) => {
                     if let Some(starting) = self.starting.get_mut(id) {
                         starting.remove(&held.issue);
