@@ -182,39 +182,42 @@ Components that keep geometry of their own, centred in their row rather than siz
 
 All in `onehand_ui::tokens` (`crates/ui/src/tokens.rs`), which the app names
 `crate::tokens`.
+Their values are the code's, listed with every local size and palette slot in
+`crates/app/src/guards/sizes.txt`, which the size census holds: this table says what each is
+for.
 
-| Token | Value | What |
-|---|---|---|
-| `BAR_H` | 2.25rem | every strip along the top of a region: 36px, so a small control stands centred on whole pixels |
-| `MODE_BAR_H` | 1.875rem | a mode's own bar under the Workbench's strip (the editor's tabs, the reader's bar) |
-| `ROW_H` | 1.75rem | a list row (the rail, the composer's popup): 28px |
-| `TREE_ROW_H` | 1.625rem | a Workbench tree's row pitch (Files, Markdown) |
-| `TREE_ROW_FILL` | 1.4375rem | a tree row's fill: 23px, odd so the name centres on a whole pixel |
-| `TREE_ROW_ABOVE`, `TREE_ROW_BELOW` | 0.0625rem, 0.125rem | the room over and under a tree row's fill; between two fills, their sum |
-| `CONTROL_H` | 1.5rem | a small control: `.short()`, and an icon-only `.short_icon()` button |
-| `FIELD_H` | 1.75rem | the tallest control, a step over `.short()`: a page's form (`.tall()`); nothing stands taller |
-| `SCROLLBAR_THUMB`, `SCROLLBAR_THUMB_ACTIVE` | 4px, 6px | a scrollbar's thumb at rest, and hovered or dragged |
-| `CHROME_TEXT` | 0.8125rem | chrome text: a panel's rows, boxes, forms and strips, a page's title, a `.tall()` control's words, a document's reading text |
-| `MICRO_TEXT` | 0.6875rem | a caption inside a small object (an attachment's plate), a badge's words |
-| `CODE_TEXT` | 0.75rem | machine text |
-| `LEADING` | 1.6 | reading text |
-| `LEADING_TIGHT` | 1.4 | a wrapped title |
-| `PAGE_NARROW` | 35rem | a one-column page |
-| `PAGE_PROSE` | 48rem | an editor, or one thing read in full |
-| `PAGE_WIDE` | 64rem | boxes side by side, a table |
-| `BAR_FADE` | 0.75rem | how far a box's fill fades over the content under a bar (the Editor's) or past a field's end (`end_fade`), in place of a line |
-| `TITLE_SEARCH_W` | 24rem | the title bar's palette and the list under it |
-| `WORKSPACE_TILE` | 1.25rem | the workspace's letter tile in the title bar |
-| `SHELL_LIST_W` | 10rem | the terminal's list of shells beside the grid, fixed: neither dragged nor saved |
-| `DIALOG_FORM` | 40rem | a dialog that holds a form (the agent form, one that starts a run), its controls `.tall()`, never wider than the window less its margins |
-| `ROW_INSET` | 1rem | where a tree row's content starts from a dock's edge (Files, Markdown), and a Workbench bar's words |
-| `ROW_GUTTER` | 0.5rem | how far a tree row's fill stands off the dock's side edges, inside `ROW_INSET` |
-| `TREE_INDENT` | 0.875rem | how far each level of a tree steps in |
-| `SCROLLBAR_W` | 16px | room held clear beside what the library's scrollbar scrolls (the transcript's boxes, the Markdown reader, a dialog's scrolling part) |
-| `lift(cx)` | | the floating shadow |
+| Token | What |
+|---|---|
+| `BAR_H` | every strip along the top of a region: 36px, so a small control stands centred on whole pixels |
+| `MODE_BAR_H` | a mode's own bar under the Workbench's strip (the editor's tabs, the reader's bar) |
+| `ROW_H` | a list row (the rail, the composer's popup): 28px |
+| `TREE_ROW_H` | a Workbench tree's row pitch (Files, Markdown) |
+| `TREE_ROW_FILL` | a tree row's fill: 23px, odd so the name centres on a whole pixel |
+| `TREE_ROW_ABOVE`, `TREE_ROW_BELOW` | the room over and under a tree row's fill; between two fills, their sum |
+| `CONTROL_H` | a small control: `.short()`, and an icon-only `.short_icon()` button |
+| `FIELD_H` | the tallest control, a step over `.short()`: a page's form (`.tall()`); nothing stands taller |
+| `SCROLLBAR_THUMB`, `SCROLLBAR_THUMB_ACTIVE` | a scrollbar's thumb at rest, and hovered or dragged |
+| `CHROME_TEXT` | chrome text: a panel's rows, boxes, forms and strips, a page's title, a `.tall()` control's words, a document's reading text |
+| `MICRO_TEXT` | a caption inside a small object (an attachment's plate), a badge's words |
+| `CODE_TEXT` | machine text |
+| `LEADING` | reading text |
+| `LEADING_TIGHT` | a wrapped title |
+| `PAGE_NARROW` | a one-column page |
+| `PAGE_PROSE` | an editor, or one thing read in full |
+| `PAGE_WIDE` | boxes side by side, a table |
+| `BAR_FADE` | how far a box's fill fades over the content under a bar (the Editor's) or past a field's end (`end_fade`), in place of a line |
+| `TITLE_SEARCH_W` | the title bar's palette and the list under it |
+| `WORKSPACE_TILE` | the workspace's letter tile in the title bar |
+| `SHELL_LIST_W` | the terminal's list of shells beside the grid, fixed: neither dragged nor saved |
+| `DIALOG_FORM` | a dialog that holds a form (the agent form, one that starts a run), its controls `.tall()`, never wider than the window less its margins |
+| `ROW_INSET` | where a tree row's content starts from a dock's edge (Files, Markdown), and a Workbench bar's words |
+| `ROW_GUTTER` | how far a tree row's fill stands off the dock's side edges, inside `ROW_INSET` |
+| `TREE_INDENT` | how far each level of a tree steps in |
+| `SCROLLBAR_W` | room held clear beside what the library's scrollbar scrolls (the transcript's boxes, the Markdown reader, a dialog's scrolling part) |
+| `lift(cx)` | the floating shadow |
 
 Equal values kept apart on purpose, each one decision beside its one use: `CHAT_MIN` and
-`NARROW_PANEL` (30rem); `CONTENT_COLUMN` and `COMPOSER_COLUMN` (44rem).
+`NARROW_PANEL`; `CONTENT_COLUMN` and `COMPOSER_COLUMN`.
 
 ## Adding a token
 
