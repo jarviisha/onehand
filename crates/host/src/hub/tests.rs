@@ -1084,11 +1084,19 @@ async fn a_turn_end_in_a_branch_mirror_commits_what_was_left() {
     fake.push(AcpEvent::TurnEnded {
         stop_reason: "end_turn".into(),
     });
+    // Read without git's optional index lock: a plain `status` refreshes
+    // the index and holds its lock, which the hub's own commit then finds
+    // taken, and the turn's end commits nothing.
     let mut moved = false;
-    for _ in 0..100 {
+    for _ in 0..500 {
         settle().await;
         tokio::time::sleep(Duration::from_millis(20)).await;
-        if run_git(&made.path, &["status", "--porcelain"]).is_empty() {
+        if run_git(
+            &made.path,
+            &["--no-optional-locks", "status", "--porcelain"],
+        )
+        .is_empty()
+        {
             moved = true;
             break;
         }

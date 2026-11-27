@@ -8,7 +8,7 @@ use onehand_core::issues::{self, Draft};
 use onehand_core::workbench::KeptIssues;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// A storage folder and a project whose issues file holds issue 1.
 fn kept(name: &str) -> (PathBuf, PathBuf) {
@@ -57,6 +57,22 @@ fn settle(cx: &mut TestAppContext) {
     }
 }
 
+/// Run the app until every write the view asked for has been heard. The
+/// writes run on threads of their own, which a loaded machine can keep far
+/// longer than any fixed wait, so this waits on the thing itself, up to a
+/// bound well past what one write takes.
+fn settle_writes(view: &Entity<IssuesView>, cx: &mut TestAppContext) {
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        cx.run_until_parked();
+        if view.read_with(cx, |view, _| view.asked.is_empty()) {
+            return;
+        }
+        assert!(Instant::now() < deadline, "a write was never heard");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
 fn view(cx: &mut TestAppContext, dir: &Path, project: &Path) -> Entity<IssuesView> {
     cx.executor().allow_parking();
     let view = cx
@@ -90,7 +106,7 @@ fn only_the_newest_write_moves_the_selection(cx: &mut TestAppContext) {
         view.change(create("two"), cx);
         view.change(create("three"), cx);
     });
-    settle(cx);
+    settle_writes(&view, cx);
     assert_eq!(selected(&view, &project, cx), Some(3));
     view.read_with(cx, |view, _| assert!(!view.roots[&project].writing));
     let _ = std::fs::remove_dir_all(&dir);
@@ -105,7 +121,7 @@ fn a_write_landing_after_another_pick_leaves_it(cx: &mut TestAppContext) {
         // The person picks issue 1 before the write lands.
         view.state_mut().unwrap().selected = Some(1);
     });
-    settle(cx);
+    settle_writes(&view, cx);
     assert_eq!(selected(&view, &project, cx), Some(1));
     let _ = std::fs::remove_dir_all(&dir);
 }
