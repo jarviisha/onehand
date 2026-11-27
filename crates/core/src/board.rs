@@ -12,6 +12,7 @@ use std::path::PathBuf;
 
 pub mod drive;
 pub mod file;
+pub(crate) mod flow;
 pub mod model;
 
 pub use model::{Board, Entry, MovesOn, Starts, Work};
