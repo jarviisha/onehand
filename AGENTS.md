@@ -75,7 +75,7 @@ Availability or installation does not authorize a skill's side effects.
 
 | Tool or workflow | Fit for this repository |
 |---|---|
-| `ui` | Any visible change (tokens, controls, layout, states, keys and words) and, before it is finished, the checks, the pictures and the review. |
+| `ui` | Any visible change (tokens, controls, layout, states, keys and words) and, before it is finished, the checks, the pictures and two reviews, one of the pictures and one of the code. |
 | `drive` | Before a visible change is called finished, to picture the view it changed; or when the owner asks to test in the app. It runs onehand in a headless sway session of its own and drives it end to end. Unrelated to a *drive*, the glossary's term. |
 | Matt Pocock review, debugging, domain modeling | Use for the requested concern; keep the existing glossary and document ownership. Tracker/triage workflows publish to this repository's GitHub issues: a spec gets `ready-for-agent`. A proposal under `docs/proposals/` keeps its own table of which step has a spec. |
 | Matt Pocock `setup-pre-commit`, TypeScript setup | Do not apply npm/Husky/Prettier or TypeScript defaults to this Rust workspace. Use the Makefile and Cargo checks. |
@@ -227,7 +227,7 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
 - **Drive what you changed, never the owner's app.** The agent does not open the owner's app or
   desktop, and does drive what it changed in the headless session (`/drive`,
   [.claude/skills/drive/](.claude/skills/drive/)) before it says a visible change is finished;
-  the `ui` skill says how, who reviews the pictures, and which changes skip it.
+  the `ui` skill says how, who reviews the pictures and the code, and which changes skip it.
 
 ## Load-bearing specifics
 

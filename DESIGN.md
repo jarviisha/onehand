@@ -32,7 +32,7 @@ they size.
 | lint | a call banned outside a named place, in `clippy.toml` |
 | guard | a scan of the sources, in `crates/app/src/guards.rs` and `guards/visual.rs` |
 | test | a test named here: a view drawn under strain, a contrast, a value |
-| picture | the changed view driven in the headless session and read by a reviewer that did not write the change (the `ui` skill, *The reviewer*) |
+| picture | the changed view driven in the headless session and read by a reviewer that did not write the change (the `ui` skill, *The reviewers*) |
 | owner | taste: a value, a place for a thing; settled in the running app before the documents |
 | review | a judgment on the whole view, by that same reviewer from the diff and the pictures |
 
