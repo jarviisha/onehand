@@ -15,7 +15,7 @@ reads*); this skill is how to apply them. Read the rules the change touches, not
 | A colour, an ink, type, space, a corner, a line | DESIGN.md `T-01` to `T-27`; the token in [tokens.md](tokens.md) |
 | A control, its variant, its size, an icon | DESIGN.md `C-01` to `C-15`; [UI patterns](../../../docs/ui-patterns.md) *Control sizes*, `C-16` to `C-21`; the builder in [catalog.md](catalog.md) |
 | A page, a panel, a list, a form, a dialog | UI patterns `K-01` to `K-08`, then its pattern's rules among `K-09` to `K-32`; the screen to build from in catalog.md *Patterns* |
-| Anything that lays parts out in a row, a bar or a list | UI patterns *Strips*, `K-09`, and *Under strain*, `L-01` to `L-12` |
+| Anything that lays parts out in a row, a bar or a list | UI patterns *Strips*, `K-09`, and *Under strain*, `L-01` to `L-13` |
 | Waiting, empty, failing, refusing, a toast, a removal | UI patterns `S-01` to `S-13` |
 | A key, focus, a word | UI patterns `W-01` to `W-10`; the wiring in catalog.md *Keys and focus* |
 
