@@ -309,6 +309,12 @@ impl Render for Shell {
                     .is_some()
                     .then(|| crate::dialogs::route(self, window, cx)),
             )
+            // And the board column form, opened from the same page.
+            .children(
+                self.column_draft
+                    .is_some()
+                    .then(|| crate::dialogs::column(self, window, cx)),
+            )
             // And the agent form, opened from Settings' rows, rebuilt every
             // frame.
             .children(
@@ -382,6 +388,7 @@ impl Shell {
             || self.offload_draft.is_some()
             || self.build_host_draft.is_some()
             || self.route_draft.is_some()
+            || self.column_draft.is_some()
             || self.workflow_launcher.is_some()
             || self.agent_form
     }

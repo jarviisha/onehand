@@ -145,12 +145,14 @@ pub(crate) fn hold_place(task: Task, window: AnyWindowHandle, cx: &mut App) {
     cx.update_global::<Tasks, _>(|t, _| {
         let _ = t.drive.add(task);
         let _ = t.drive.request(&id, window);
-        let _ = t.drive.handle(onehand_core::task::tasks::Input::PlaceFound {
-            task: id.clone(),
-            place,
-            window,
-            window_open: true,
-        });
+        let _ = t
+            .drive
+            .handle(onehand_core::task::tasks::Input::PlaceFound {
+                task: id.clone(),
+                place,
+                window,
+                window_open: true,
+            });
     });
 }
 

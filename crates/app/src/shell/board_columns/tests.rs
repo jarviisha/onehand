@@ -7,7 +7,7 @@ use gpui::{BorrowAppContext as _, Entity, TestAppContext, VisualTestContext};
 use onehand_core::board::drive::BoardDrive;
 use onehand_core::board::{Board, Entry, MovesOn, Starts};
 use onehand_core::project::{Project, ProjectId, Projects, ProjectsDrive, Toward};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 const BRANCH: &str = "builtin:branch";
 
@@ -17,7 +17,12 @@ fn rig<'a>(
     seed: u64,
     board: Board,
     cx: &'a mut TestAppContext,
-) -> (Entity<crate::shell::Shell>, PathBuf, ProjectId, &'a mut VisualTestContext) {
+) -> (
+    Entity<crate::shell::Shell>,
+    PathBuf,
+    ProjectId,
+    &'a mut VisualTestContext,
+) {
     let dir = folder(name);
     let (_, shell, cx) = shell(cx, dir.join("tasks"), Vec::new());
     let root = dir.join("project");
@@ -32,7 +37,8 @@ fn rig<'a>(
     cx.update(|_, cx| crate::workflow::offer(vec![branch], cx));
     cx.update(|_, cx| {
         cx.update_global::<Shared, _>(|shared, _| {
-            shared.projects = ProjectsDrive::new(Projects::from_iter([project]), dir.join("projects"));
+            shared.projects =
+                ProjectsDrive::new(Projects::from_iter([project]), dir.join("projects"));
             shared.boards =
                 BoardDrive::new(Default::default(), Default::default(), dir.join("projects"));
             let _ = shared.boards.set_board(&id, Some(board));
@@ -49,12 +55,7 @@ fn board_of(id: &ProjectId, cx: &mut VisualTestContext) -> Board {
 }
 
 /// Fill the open form's name and limit, then save it.
-fn save(
-    shell: &Entity<crate::shell::Shell>,
-    name: &str,
-    limit: &str,
-    cx: &mut VisualTestContext,
-) {
+fn save(shell: &Entity<crate::shell::Shell>, name: &str, limit: &str, cx: &mut VisualTestContext) {
     let (name, limit) = (name.to_string(), limit.to_string());
     cx.update(|window, cx| {
         shell.update(cx, |shell, cx| {
@@ -74,13 +75,15 @@ fn said(shell: &Entity<crate::shell::Shell>, cx: &mut VisualTestContext) -> Opti
 
 fn open(
     shell: &Entity<crate::shell::Shell>,
-    root: &PathBuf,
+    root: &Path,
     editing: Option<&str>,
     cx: &mut VisualTestContext,
 ) {
-    let (root, editing) = (root.clone(), editing.map(String::from));
+    let (root, editing) = (root.to_path_buf(), editing.map(String::from));
     cx.update(|window, cx| {
-        shell.update(cx, |shell, cx| shell.open_column_form(root, editing, window, cx))
+        shell.update(cx, |shell, cx| {
+            shell.open_column_form(root, editing, window, cx)
+        })
     });
 }
 
@@ -97,11 +100,17 @@ fn a_column_is_added_last_with_its_settings(cx: &mut TestAppContext) {
         })
     });
     save(&shell, "Ship", "2", cx);
-    assert!(cx.update(|_, cx| shell.read(cx).column_draft().is_none()), "closed");
+    assert!(
+        cx.update(|_, cx| shell.read(cx).column_draft().is_none()),
+        "closed"
+    );
     let board = board_of(&id, cx);
     let last = board.columns.last().unwrap();
     assert_eq!(last.name, "Ship");
-    assert_eq!((last.starts, last.moves_on, last.limit), (Starts::OnPress, MovesOn::ByPerson, Some(2)));
+    assert_eq!(
+        (last.starts, last.moves_on, last.limit),
+        (Starts::OnPress, MovesOn::ByPerson, Some(2))
+    );
     assert!(last.id.starts_with("col-"));
 }
 
@@ -134,7 +143,10 @@ fn editing_keeps_the_columns_id_and_issues(cx: &mut TestAppContext) {
     open(&shell, &root, Some("todo"), cx);
     save(&shell, "Ready", "", cx);
     let board = board_of(&id, cx);
-    assert_eq!((board.columns[0].id.as_str(), board.columns[0].name.as_str()), ("todo", "Ready"));
+    assert_eq!(
+        (board.columns[0].id.as_str(), board.columns[0].name.as_str()),
+        ("todo", "Ready")
+    );
     assert_eq!(board.todo(), [4]);
 }
 
@@ -176,7 +188,10 @@ fn turning_a_column_to_a_persons_refuses_while_a_task_works_there(cx: &mut TestA
     save(&shell, "Work", "", cx);
     let why = said(&shell, cx);
     let busy = cx.update(|_, cx| crate::task::is_working("busy", cx));
-    assert!(why.as_deref().is_some_and(|why| why.contains("Stop")), "{why:?} busy={busy}");
+    assert!(
+        why.as_deref().is_some_and(|why| why.contains("Stop")),
+        "{why:?} busy={busy}"
+    );
     assert!(board_of(&id, cx).columns[1].entries[0].run.is_some());
 }
 
@@ -195,7 +210,9 @@ fn a_column_removed_while_its_form_is_open_refuses_the_save(cx: &mut TestAppCont
     let (shell, root, id, cx) = rig("col-gone", 106, board, cx);
     open(&shell, &root, Some("review"), cx);
     cx.update(|_, cx| {
-        shell.update(cx, |shell, cx| shell.remove_board_column(root.clone(), "review".into(), cx))
+        shell.update(cx, |shell, cx| {
+            shell.remove_board_column(root.clone(), "review".into(), cx)
+        })
     });
     cx.run_until_parked();
     save(&shell, "Review", "", cx);
@@ -208,22 +225,91 @@ fn move_up_on_the_first_column_writes_nothing(cx: &mut TestAppContext) {
     let (shell, root, id, cx) = rig("col-move", 107, Board::made(BRANCH.into(), 2, &[], 0), cx);
     let before = board_of(&id, cx);
     cx.update(|_, cx| {
-        shell.update(cx, |shell, cx| shell.move_board_column(root.clone(), "todo".into(), Toward::Up, cx))
+        shell.update(cx, |shell, cx| {
+            shell.move_board_column(root.clone(), "todo".into(), Toward::Up, cx)
+        })
     });
     assert_eq!(board_of(&id, cx), before);
     cx.update(|_, cx| {
-        shell.update(cx, |shell, cx| shell.move_board_column(root.clone(), "todo".into(), Toward::Down, cx))
+        shell.update(cx, |shell, cx| {
+            shell.move_board_column(root.clone(), "todo".into(), Toward::Down, cx)
+        })
     });
     assert_eq!(board_of(&id, cx).columns[0].id, "work");
 }
 
 #[gpui::test]
 fn remove_refuses_a_column_with_issues(cx: &mut TestAppContext) {
-    let (shell, root, id, cx) = rig("col-remove", 108, Board::made(BRANCH.into(), 2, &[4], 0), cx);
+    let (shell, root, id, cx) = rig(
+        "col-remove",
+        108,
+        Board::made(BRANCH.into(), 2, &[4], 0),
+        cx,
+    );
     cx.update(|_, cx| {
-        shell.update(cx, |shell, cx| shell.remove_board_column(root.clone(), "todo".into(), cx))
+        shell.update(cx, |shell, cx| {
+            shell.remove_board_column(root.clone(), "todo".into(), cx)
+        })
     });
     assert!(board_of(&id, cx).column("todo").is_some());
     let said = cx.update(|_, cx| shell.read(cx).board_refusal(&root).map(str::to_string));
     assert!(said.is_some_and(|why| why.contains("Move its issue out first")));
+}
+
+/// Open Settings' Projects page on `root`, and draw it.
+fn settings(shell: &Entity<crate::shell::Shell>, root: &Path, cx: &mut VisualTestContext) {
+    let at = root.to_path_buf();
+    cx.update(|window, cx| {
+        shell.update(cx, |shell, cx| shell.show_project_settings(at, window, cx))
+    });
+    cx.run_until_parked();
+    cx.update(|window, _| window.refresh());
+    cx.run_until_parked();
+}
+
+#[gpui::test]
+fn a_board_box_lists_its_columns_and_offers_add(cx: &mut TestAppContext) {
+    let (shell, root, _, cx) = rig("col-box", 109, Board::made(BRANCH.into(), 2, &[], 0), cx);
+    settings(&shell, &root, cx);
+    for selector in [
+        "board-column-row-todo",
+        "board-column-row-work",
+        "board-add-column",
+        "board-remove",
+    ] {
+        assert!(cx.debug_bounds(selector).is_some(), "{selector} drawn");
+    }
+    assert!(
+        cx.debug_bounds("board-workflow-field").is_none(),
+        "no menu once a board is made"
+    );
+}
+
+#[gpui::test]
+fn an_unreadable_board_shows_only_its_reason_and_remove(cx: &mut TestAppContext) {
+    let (shell, root, id, cx) = rig("col-unread", 110, Board::made(BRANCH.into(), 2, &[], 0), cx);
+    let dir = root.parent().unwrap().join("projects");
+    cx.update(|_, cx| {
+        cx.update_global::<Shared, _>(|shared, _| {
+            let unreadable = [(id.clone(), "too new".to_string())].into_iter().collect();
+            shared.boards = BoardDrive::new(Default::default(), unreadable, dir);
+        })
+    });
+    settings(&shell, &root, cx);
+    assert!(cx.debug_bounds("board-unreadable").is_some());
+    assert!(cx.debug_bounds("board-remove").is_some());
+    assert!(cx.debug_bounds("board-add-column").is_none());
+}
+
+#[gpui::test]
+fn remove_the_board_asks_first(cx: &mut TestAppContext) {
+    let (shell, root, id, cx) = rig("col-unbind", 111, Board::made(BRANCH.into(), 2, &[], 0), cx);
+    cx.update(|window, cx| {
+        shell.update(cx, |shell, cx| shell.remove_board(root.clone(), window, cx))
+    });
+    cx.run_until_parked();
+    assert!(
+        board_of(&id, cx).columns.len() == 2,
+        "still there until answered"
+    );
 }

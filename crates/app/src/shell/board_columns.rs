@@ -142,18 +142,21 @@ impl Shell {
             }
             Ok(column)
         });
-        let busy: std::collections::HashSet<String> = (crate::state::Shared::global(cx).boards.board(&id))
-            .into_iter()
-            .flat_map(|board| board.columns.iter())
-            .flat_map(|column| column.entries.iter())
-            .filter_map(|entry| entry.task.clone())
-            .filter(|task| crate::task::is_working(task, cx))
-            .collect();
+        let busy: std::collections::HashSet<String> =
+            (crate::state::Shared::global(cx).boards.board(&id))
+                .into_iter()
+                .flat_map(|board| board.columns.iter())
+                .flat_map(|column| column.entries.iter())
+                .filter_map(|entry| entry.task.clone())
+                .filter(|task| crate::task::is_working(task, cx))
+                .collect();
         let changed = read.and_then(|column| {
             let working = |task: &str| busy.contains(task);
             let ok = |_: &Work| Ok(());
             cx.update_global::<crate::state::Shared, _>(|shared, _| match &editing {
-                Some(editing) => shared.boards.edit_column(&id, editing, column, &working, &ok),
+                Some(editing) => shared
+                    .boards
+                    .edit_column(&id, editing, column, &working, &ok),
                 None => shared.boards.add_column(&id, column, usize::MAX, &ok),
             })
         });
@@ -242,7 +245,10 @@ fn read_column(draft: &ColumnDraft, cx: &gpui::App) -> Result<Column, String> {
         (false, None) => return Err("Pick the workflow it runs".to_string()),
     };
     Ok(Column {
-        id: draft.editing.clone().unwrap_or_else(crate::board::column_id),
+        id: draft
+            .editing
+            .clone()
+            .unwrap_or_else(crate::board::column_id),
         name,
         work,
         starts: draft.starts,
