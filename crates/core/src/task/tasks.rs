@@ -580,6 +580,40 @@ impl<W: Copy> TasksDrive<W> {
             .1
     }
 
+    /// A next run `run` of `template` on task `id`, for the board's column
+    /// `column` it entered, with `current` settings: written, driven off
+    /// screen, and asking for its place from `window`. Refused on a task at
+    /// work and on one whose worktree was removed.
+    pub fn next_run(
+        &mut self,
+        id: &str,
+        run: String,
+        template: Template,
+        current: crate::workflow::Current,
+        column: String,
+        window: W,
+    ) -> Result<Vec<Effect<W>>, String> {
+        let task = self.task(id).ok_or("The task is gone")?;
+        if task.worktree_removed {
+            return Err("Its worktree was removed".to_string());
+        }
+        if self.busy(id) {
+            return Err("It is at work".to_string());
+        }
+        // Before its place is asked for, which may drive it at once.
+        self.drive_off_screen(id);
+        let (made, fx) = self.renew(id, window, |task| {
+            task.next_run(run, template, &current, column).is_some()
+        });
+        match made {
+            true => Ok(fx),
+            false => {
+                self.off_screen.remove(id);
+                Err("It has no run to go on from".to_string())
+            }
+        }
+    }
+
     /// Carry task `id` on from where its last run stopped, from `window`,
     /// unless its preflight `refused` it.
     #[must_use]

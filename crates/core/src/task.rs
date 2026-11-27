@@ -350,6 +350,35 @@ impl Task {
         self.runs.last()
     }
 
+    /// A next run, `id`, of `template` from its first step, for the board's
+    /// column `column` it entered: on the same place as its last run (its
+    /// project, folder, branch and forge), carrying nothing, with the agent,
+    /// mode, check command and timeout a new task takes now (`current`).
+    /// `None` with no run to go on from.
+    pub(crate) fn next_run(
+        &mut self,
+        id: String,
+        mut template: Template,
+        current: &crate::workflow::Current,
+        column: String,
+    ) -> Option<&Run> {
+        let last = self.runs.last()?;
+        if let Some(timeout) = &current.timeout {
+            template.timeout = timeout.clone();
+        }
+        let setup = Setup {
+            agent: current.agent.clone(),
+            mode: current.mode.clone(),
+            check: current.check.clone(),
+            ..last.setup.clone()
+        };
+        let mut next = Run::new(id, template, self.brief.clone(), setup);
+        next.column = Some(column);
+        self.dismissed = false;
+        self.runs.push(next);
+        self.runs.last()
+    }
+
     /// Run it again as run `id` with what Settings say now, as `plan` worked
     /// it out from its last run: its own workflow at its newest version, the
     /// setup a new task of its kind takes, from the step `plan` starts at.
