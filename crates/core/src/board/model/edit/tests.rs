@@ -172,3 +172,19 @@ fn a_name_used_twice_is_refused() {
         .shape()
         .is_err_and(|why| why.contains("Two columns are called")));
 }
+
+/// A copy bound to a board takes the place of the workflow its first
+/// workflow column runs, never a person's column's.
+#[test]
+fn rebound_changes_the_first_workflow_column_only() {
+    let mut board = four();
+    board.columns.swap(1, 2);
+    let board = board.rebound("copy".into());
+    assert_eq!(
+        board.columns[1].work,
+        Work::Person,
+        "a person's column stays one"
+    );
+    assert_eq!(board.columns[2].work, flow("copy"));
+    assert_eq!(board.columns[3].work, flow("b"));
+}

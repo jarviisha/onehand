@@ -666,12 +666,24 @@ commands* with none; then *Add routed command…*: a dialog, *Add a routed comma
 project's folder offers and it does not route yet, each a link that fills *Command* (`Cargo.toml`
 offers *cargo build*, *cargo test* and *cargo clippy*; a `*.sln` or `*.csproj`, *dotnet build* and
 *dotnet test*); *Command*, *Artifacts*, one path a line; *Cancel*, then *Add* or *Save*, and what
-refuses it, the drive's words included, is said in the form. A second box, *Board*: *Workflow*, a
-menu of *No board* and the library's workflows (capped as the Tasks page's menus are, *N more not
-shown*) with *Edit workflow* beside it while the workflow bound is on offer, a workflow a board
-cannot run refused with its reason under the menu and nothing bound;
-and, once one is bound, *Team*, a track of 1 to 8 with *Running tasks finish; no more start until
-fewer than N run.* under its title. With no such project it
+refuses it, the drive's words included, is said in the form. A second box, *Board*. With no board,
+*Workflow*: a menu of the library's workflows (capped as the Tasks page's menus are, *N more not
+shown*); picking one makes a board of To do and a column running it, a workflow a board cannot run
+refused with its reason under the menu and nothing made. With a board, *Columns*, headed
+*Backlog comes first and Done last; issues move left to right*: a row per column, at most 20 and
+*N more not shown* past them, its name over who works it (*A person*, *Runs <workflow>*) and,
+joined by ` · `, *starts on a press*, *moves on by a person*, *holds N* where they apply; at its end
+*Move up* and *Move down* (refusing at the ends), an edit mark, *Edit workflow* on a workflow
+column whose workflow is on offer, and *Remove* in the danger ink, refusing with *Move its N
+issues out first* while it holds issues and removing an empty one without asking; then *Add
+column…*. *Add column…* and the edit mark open the column dialog (*Add a column to <project>*,
+*A column of <project>* for an edit): *Name*, *Work* (*A person*, *A workflow*), *Workflow*, a
+menu, with a workflow, *Starts* (*When it enters*, *When Start is pressed*) with a workflow,
+*Moves on* (*By itself*, *A person moves it*), *Limit*, empty for none; what refuses it above the
+footer in the danger ink; *Cancel*, then *Add* or *Save*. Then *Team*, a track of 1 to 8 with
+*Running tasks finish; no more start until fewer than N run.* under its title, and *Remove the
+board…* in the danger ink, which asks first. A board this build cannot read shows why and *Remove
+the board…* alone. With no such project it
 says *No project here runs on this machine*. A project's dots menu, on the rail and over its page, offers *Project
 settings…* after *Copy project path* for such a project, opening this page on it. Under the
 Agents page's rows, each built-in agent installed on the

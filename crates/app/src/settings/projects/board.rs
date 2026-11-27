@@ -298,7 +298,7 @@ fn columns_field(
                     .short()
                     .secondary()
                     .text_color(crate::theme::status_ink(cx).danger)
-                    .label("Remove…")
+                    .label("Remove")
                     .refuses(why)
                     .on_click(move |_, _, cx| {
                         handle.update(cx, |shell, cx| {
