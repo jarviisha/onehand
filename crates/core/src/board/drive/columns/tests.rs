@@ -244,3 +244,26 @@ fn a_column_gone_is_said_in_words() {
     let why = d.remove_column(&id(), "col-123");
     assert!(why.is_err_and(|why| why == "That column is gone"));
 }
+
+/// An issue whose start is on its way is not taken off the board: the start
+/// would land on an issue no longer on it.
+#[test]
+fn remove_refuses_an_issue_starting() {
+    let mut board = Board::made("a".into(), 1, &[], 1);
+    board.columns[1].starts = Starts::OnPress;
+    board.columns[1].entries.push(Entry {
+        issue: 4,
+        ..Entry::default()
+    });
+    let mut d = drive(board);
+    let flow = crate::workflow::builtin::all()
+        .into_iter()
+        .find(|t| t.id == "builtin:branch")
+        .unwrap();
+    let _ = d
+        .start(&id(), 4, false, vec!["n".into()], Ok(flow))
+        .unwrap();
+    assert!(d
+        .remove(&id(), 4, false)
+        .is_err_and(|why| why.contains("starting")));
+}

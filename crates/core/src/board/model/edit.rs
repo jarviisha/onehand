@@ -106,15 +106,21 @@ impl Board {
             return self.clone();
         }
         let mut board = self.clone();
-        let task = board.take(issue).and_then(|entry| entry.task);
+        let from = board.at(issue).map(|(at, _)| at);
+        let taken = board.take(issue);
+        // Within its own column it keeps what it did there; into another it
+        // starts afresh, its task kept.
+        let entry = match (from == Some(to), taken) {
+            (true, Some(entry)) => entry,
+            (_, taken) => Entry {
+                issue,
+                task: taken.and_then(|entry| entry.task),
+                since: now,
+                ..Entry::default()
+            },
+        };
         let Some(column) = board.columns.get_mut(to) else {
             return self.clone();
-        };
-        let entry = Entry {
-            issue,
-            task,
-            since: now,
-            ..Entry::default()
         };
         let at = (before.and_then(|b| column.entries.iter().position(|e| e.issue == b)))
             .unwrap_or(column.entries.len());

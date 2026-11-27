@@ -216,3 +216,23 @@ fn placed_where_it_stands_changes_nothing() {
     );
     assert_ne!(board.placed(4, 0, None, 50), board, "4 moves after 9");
 }
+
+/// An issue moved within its own column keeps what it did there: its run,
+/// whether that run is done, and when it came.
+#[test]
+fn placed_within_its_column_keeps_its_state() {
+    let mut board = four();
+    board.columns[1]
+        .entries
+        .push(entry(5, Some("t"), Some("r"), true));
+    board.columns[1].entries.push(entry(6, None, None, false));
+    board.columns[1].entries[0].since = 7;
+    let moved = board.placed(5, 1, None, 50);
+    let issues: Vec<u64> = moved.columns[1].entries.iter().map(|e| e.issue).collect();
+    assert_eq!(issues, [6, 5]);
+    let kept = &moved.columns[1].entries[1];
+    assert_eq!(
+        (kept.run.as_deref(), kept.done, kept.since),
+        (Some("r"), true, 7)
+    );
+}

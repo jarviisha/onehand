@@ -12,7 +12,7 @@ use gpui::{
 };
 use gpui_component::ActiveTheme as _;
 use onehand_core::board::line::{EntryAct, Line};
-use onehand_core::board::offers::{Offer, offers};
+use onehand_core::board::offers::{Offer, Standing, offers};
 use onehand_core::board::{BOARD_SHOWN, Board, Entry, Work};
 use onehand_core::project::ProjectId;
 use onehand_ui::RowAct;
@@ -120,6 +120,15 @@ impl BoardPage {
         let now = onehand_core::chat::now_secs();
         let templates = crate::workflow::templates(cx);
         for (at, col) in board.columns.iter().enumerate() {
+            // Why a start in this column would be refused: its workflow gone,
+            // or one a board cannot run.
+            let start = match &col.work {
+                Work::Workflow { id } => match crate::workflow::find(&templates, id) {
+                    None => Some(format!("Its workflow, {id}, is gone")),
+                    Some(t) => onehand_core::board::usable(Some(t)).err(),
+                },
+                Work::Person => None,
+            };
             let gone = match &col.work {
                 Work::Workflow { id } => crate::workflow::find(&templates, id).is_none(),
                 Work::Person => false,
@@ -128,7 +137,8 @@ impl BoardPage {
                 .take(BOARD_SHOWN)
                 .map(|entry| {
                     let title = title_of(entry.issue);
-                    self.entry_row(id, board, &col.id, entry, &view, title, now, cx)
+                    let start = start.clone();
+                    self.entry_row(id, board, &col.id, entry, &view, title, now, start, cx)
                 })
                 .collect();
             let key = ColumnKey::Board(col.id.clone());
@@ -200,6 +210,7 @@ impl BoardPage {
         view: &crate::task::BoardView,
         title: String,
         now: u64,
+        start: Option<String>,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         let issue = entry.issue;
@@ -212,7 +223,12 @@ impl BoardPage {
         let starting = Shared::global(cx).boards.starting(id).any(|n| n == issue);
         let (line, act) =
             onehand_core::board::line::line(board, issue, run_here, working, starting);
-        let offered = offers(board, issue, act.as_ref(), working);
+        let standing = Standing {
+            working,
+            starting,
+            start,
+        };
+        let offered = offers(board, issue, act.as_ref(), &standing);
         let has_task = row.is_some();
         let button = act.as_ref().and_then(|act| {
             let (offer, refused) = offered.iter().find(|(o, _)| is_act(o, act))?.clone();

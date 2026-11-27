@@ -31,13 +31,21 @@ fn board() -> Board {
     board
 }
 
+fn standing(working: bool) -> Standing {
+    Standing {
+        working,
+        starting: false,
+        start: None,
+    }
+}
+
 fn words(offers: &[(Offer, Option<String>)], task: bool) -> Vec<String> {
     offers.iter().map(|(o, _)| o.words(task)).collect()
 }
 
 #[test]
 fn a_person_column_offers_its_moves() {
-    let got = offers(&board(), 9, None, false);
+    let got = offers(&board(), 9, None, &standing(false));
     assert_eq!(
         words(&got, false),
         [
@@ -54,7 +62,7 @@ fn a_person_column_offers_its_moves() {
 #[test]
 fn a_done_entry_offers_move_on_first() {
     let act = EntryAct::MoveTo(Some("review".into()));
-    let got = offers(&board(), 4, Some(&act), false);
+    let got = offers(&board(), 4, Some(&act), &standing(false));
     assert_eq!(
         words(&got, true)[..3],
         ["Move to REVIEW", "Move back to To do", "Move to Done"]
@@ -63,13 +71,13 @@ fn a_done_entry_offers_move_on_first() {
 
 #[test]
 fn start_comes_first_where_it_waits_for_start() {
-    let got = offers(&board(), 4, Some(&EntryAct::Start), false);
+    let got = offers(&board(), 4, Some(&EntryAct::Start), &standing(false));
     assert_eq!(got[0].0, Offer::Start);
 }
 
 #[test]
 fn every_move_refuses_while_it_works() {
-    let got = offers(&board(), 4, None, true);
+    let got = offers(&board(), 4, None, &standing(true));
     assert!(got.iter().all(|(o, why)| match o {
         Offer::Start => true,
         Offer::MoveTo { .. } | Offer::Up | Offer::Down | Offer::Back => {
@@ -86,7 +94,7 @@ fn a_full_column_refuses_the_move_there() {
         issue: 7,
         ..Entry::default()
     });
-    let got = offers(&b, 9, None, false);
+    let got = offers(&b, 9, None, &standing(false));
     let review = got
         .iter()
         .find(|(o, _)| o.words(false) == "Move to REVIEW")
@@ -96,7 +104,7 @@ fn a_full_column_refuses_the_move_there() {
 
 #[test]
 fn up_and_down_refuse_at_the_ends() {
-    let got = offers(&board(), 9, None, false);
+    let got = offers(&board(), 9, None, &standing(false));
     let why = |w: &str| {
         got.iter()
             .find(|(o, _)| o.words(false) == w)
@@ -112,4 +120,26 @@ fn up_and_down_refuse_at_the_ends() {
 fn back_reads_as_removal_with_a_task() {
     assert_eq!(Offer::Back.words(true), "Remove from board");
     assert_eq!(Offer::Back.words(false), "Back to Backlog");
+}
+
+#[test]
+fn start_refuses_where_its_workflow_is_gone() {
+    let gone = Standing {
+        start: Some("Its workflow is gone".into()),
+        ..standing(false)
+    };
+    let got = offers(&board(), 4, Some(&EntryAct::Start), &gone);
+    assert_eq!(got[0], (Offer::Start, Some("Its workflow is gone".into())));
+}
+
+#[test]
+fn every_move_refuses_while_it_starts() {
+    let starting = Standing {
+        starting: true,
+        ..standing(false)
+    };
+    let got = offers(&board(), 4, None, &starting);
+    assert!(got
+        .iter()
+        .all(|(_, why)| why.as_deref() == Some("It is starting: wait for it to start")));
 }

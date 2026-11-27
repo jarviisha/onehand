@@ -5,6 +5,16 @@
 use super::line::EntryAct;
 use super::Board;
 
+/// What the front end knows of where a row's issue stands beside the board:
+/// whether its task works, whether its start is on its way, and why a start
+/// of it would be refused (its column's workflow gone or not able to run).
+#[derive(Debug, Clone, Default)]
+pub struct Standing {
+    pub working: bool,
+    pub starting: bool,
+    pub start: Option<String>,
+}
+
 /// One thing a row offers.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Offer {
@@ -50,13 +60,14 @@ impl Offer {
 }
 
 /// What the row of `issue` on `board` offers, its line's `act` first, each
-/// with why it refuses: every move while its task works (`working`), a move
-/// into a full column, and a move past its column's end.
+/// with why it refuses: every move while its task works or its start is on
+/// its way, a start its column cannot make, a move into a full column, and
+/// a move past its column's end.
 pub fn offers(
     board: &Board,
     issue: u64,
     act: Option<&EntryAct>,
-    working: bool,
+    standing: &Standing,
 ) -> Vec<(Offer, Option<String>)> {
     let Some((at, _)) = board.at(issue) else {
         return Vec::new();
@@ -115,8 +126,15 @@ pub fn offers(
         .into_iter()
         .map(|offer| {
             let why = match &offer {
-                Offer::Start => None,
-                Offer::MoveTo { .. } | Offer::Up | Offer::Down | Offer::Back if working => {
+                Offer::Start => standing.start.clone(),
+                Offer::MoveTo { .. } | Offer::Up | Offer::Down | Offer::Back
+                    if standing.starting =>
+                {
+                    Some("It is starting: wait for it to start".to_string())
+                }
+                Offer::MoveTo { .. } | Offer::Up | Offer::Down | Offer::Back
+                    if standing.working =>
+                {
                     Some("It is at work: Stop it first".to_string())
                 }
                 Offer::MoveTo {
