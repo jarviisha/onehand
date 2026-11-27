@@ -483,10 +483,10 @@ fn say(signal: Signal<AnyWindowHandle>, cx: &mut App) {
         Signal::BoardEnded {
             project,
             issue,
-            task: _,
-            run: _,
+            task,
+            run,
             outcome,
-        } => crate::board::ended(project, issue, outcome, cx),
+        } => crate::board::ended(project, issue, task, run, outcome, cx),
         Signal::DismissFailed { window, why } => {
             toast(window, crate::toast::failed("Dismissing the task", why), cx)
         }

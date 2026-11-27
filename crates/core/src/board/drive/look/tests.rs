@@ -36,20 +36,28 @@ fn drive(team: u8, todo: &[u64]) -> BoardDrive {
     d
 }
 
-/// Land every write among `fx`, and answer the rest.
+/// Land every write among `fx`, and answer the rest, what each landing
+/// answered included.
 fn land(d: &mut BoardDrive, fx: Vec<Effect>) -> Vec<Effect> {
+    answer(d, fx, Ok(()))
+}
+
+/// Answer every write among `fx` with `result`, and give back the rest.
+fn answer(d: &mut BoardDrive, fx: Vec<Effect>, result: Result<(), String>) -> Vec<Effect> {
     let mut rest = Vec::new();
     for e in fx {
         match e {
             Effect::Write(w) => {
-                let _ = d.handle(
+                let more = d.handle(
                     Input::Written {
                         id: w.id,
                         pending: w.pending,
-                        result: Ok(()),
+                        seq: w.seq,
+                        result: result.clone(),
                     },
                     now(),
                 );
+                rest.extend(answer(d, more, result.clone()));
             }
             other @ (Effect::Arm { .. }
             | Effect::Changed(_)
@@ -57,7 +65,8 @@ fn land(d: &mut BoardDrive, fx: Vec<Effect>) -> Vec<Effect> {
             | Effect::ReadIssues { .. }
             | Effect::GivePlace { .. }
             | Effect::Start { .. }
-            | Effect::CloseIssue { .. }) => rest.push(other),
+            | Effect::CloseIssue { .. }
+            | Effect::Held { .. }) => rest.push(other),
         }
     }
     rest
@@ -114,6 +123,7 @@ fn said(fx: &[Effect]) -> Vec<String> {
             Effect::GivePlace { task } => format!("give {task}"),
             Effect::Start { issue, task, .. } => format!("start {issue} as {task}"),
             Effect::CloseIssue { issue, .. } => format!("close {issue}"),
+            Effect::Held { .. } => "held".into(),
         })
         .collect()
 }
@@ -132,8 +142,21 @@ fn issues_read_starts_in_order_in_one_write() {
     let fx = read(&mut d, issues(&[4, 9, 11], &[]), facts(0));
     assert_eq!(
         said(&fx),
-        ["write [11]", "changed", "start 4 as id0", "start 9 as id1"]
+        ["write [11]", "changed", "held"],
+        "nothing starts before its write"
     );
+    assert_eq!(
+        said(&land(&mut d, fx)),
+        ["start 4 as id0", "start 9 as id1", "changed", "held"]
+    );
+    let work: Vec<u64> = d
+        .board(&id())
+        .unwrap()
+        .work()
+        .iter()
+        .map(|e| e.issue)
+        .collect();
+    assert_eq!(work, [4, 9]);
     assert_eq!(d.starting(&id()).collect::<Vec<_>>(), [4, 9]);
 }
 
@@ -141,7 +164,11 @@ fn issues_read_starts_in_order_in_one_write() {
 fn gone_issues_and_started_ones_leave_to_do_in_one_write() {
     let mut d = drive(1, &[3, 4, 9]);
     let fx = read(&mut d, issues(&[4, 9], &[3]), facts(0));
-    assert_eq!(said(&fx), ["write [9]", "changed", "start 4 as id0"]);
+    assert_eq!(said(&fx), ["write [9]", "changed", "held"]);
+    assert_eq!(
+        said(&land(&mut d, fx)),
+        ["start 4 as id0", "changed", "held"]
+    );
 }
 
 #[test]
@@ -222,7 +249,10 @@ fn the_first_steps_room_narrows_a_pull() {
         waiting: 1,
     });
     let fx = read(&mut d, issues(&[2, 7], &[]), f);
-    assert_eq!(said(&fx), ["write [7]", "changed", "start 2 as id0"]);
+    assert_eq!(
+        said(&land(&mut d, fx)),
+        ["start 2 as id0", "changed", "held"]
+    );
 }
 
 fn landed(d: &mut BoardDrive, issue: u64, kept: bool, result: Result<(), String>) -> Vec<Effect> {
@@ -267,21 +297,84 @@ fn refused_after_kept_says_nothing() {
     assert!(landed(&mut d, 4, true, Err("no agent".into())).is_empty());
 }
 
-fn ended(d: &mut BoardDrive, issue: u64, outcome: Outcome) -> Vec<Effect> {
+fn ended(d: &mut BoardDrive, issue: u64, task: &str, outcome: Outcome) -> Vec<Effect> {
     d.handle(
         Input::Ended {
             id: id(),
             issue,
+            task: task.into(),
+            run: Some(task.into()),
             outcome: Some(outcome),
         },
         now(),
     )
 }
 
+/// A drive whose board has started `issue` as task `id0`, landed.
+fn started(issue: u64) -> BoardDrive {
+    let mut d = drive(2, &[issue]);
+    let fx = read(&mut d, issues(&[issue], &[]), facts(0));
+    let _ = land(&mut d, fx);
+    let _ = landed(&mut d, issue, true, Ok(()));
+    d
+}
+
 #[test]
-fn a_done_end_closes_an_own_issue_once() {
-    let mut d = drive(2, &[]);
-    assert_eq!(said(&ended(&mut d, 4, Outcome::Done)), ["read"]);
+fn a_start_waits_for_its_write() {
+    let mut d = drive(2, &[4]);
+    let fx = read(&mut d, issues(&[4], &[]), facts(0));
+    assert!(said(&fx).iter().all(|e| !e.starts_with("start")));
+    assert_eq!(
+        d.starting(&id()).collect::<Vec<_>>(),
+        [4],
+        "counted meanwhile"
+    );
+}
+
+#[test]
+fn a_failed_start_write_puts_the_issue_back_and_starts_nothing() {
+    let mut d = drive(2, &[4]);
+    let fx = read(&mut d, issues(&[4], &[]), facts(0));
+    let rest = answer(&mut d, fx, Err("disk full".into()));
+    assert!(
+        said(&rest).iter().all(|e| !e.starts_with("start")),
+        "{:?}",
+        said(&rest)
+    );
+    assert_eq!(d.board(&id()).unwrap().todo(), [4]);
+    assert!(d.board(&id()).unwrap().work().is_empty());
+    assert_eq!(d.starting(&id()).count(), 0);
+}
+
+#[test]
+fn a_start_carried_by_a_later_write_is_asked_once() {
+    let mut d = drive(2, &[4]);
+    let first = read(&mut d, issues(&[4], &[]), facts(0));
+    let later = d.add_todo(&id(), 9, now());
+    // The first write fails, the later one, which carries the start, lands.
+    let rest = answer(&mut d, first, Err("busy".into()));
+    assert!(said(&rest).iter().all(|e| !e.starts_with("start")));
+    let rest = land(&mut d, later);
+    let starts = said(&rest)
+        .iter()
+        .filter(|e| e.starts_with("start"))
+        .count();
+    assert_eq!(starts, 1, "{:?}", said(&rest));
+    assert_eq!(d.board(&id()).unwrap().work().len(), 1);
+}
+
+#[test]
+fn a_done_end_moves_the_entry_to_done_and_closes_once() {
+    let mut d = started(4);
+    let fx = {
+        let fx = ended(&mut d, 4, "id0", Outcome::Done);
+        land(&mut d, fx)
+    };
+    assert!(said(&fx).contains(&"read".to_string()), "{:?}", said(&fx));
+    assert!(said(&fx).contains(&"held".to_string()));
+    let board = d.board(&id()).unwrap();
+    assert!(board.work().is_empty());
+    assert_eq!(board.done()[0].issue, 4);
     assert_eq!(
         said(&read(&mut d, issues(&[4], &[]), facts(0))),
         ["close 4"]
@@ -291,15 +384,21 @@ fn a_done_end_closes_an_own_issue_once() {
 
 #[test]
 fn a_closed_issue_is_not_closed_again() {
-    let mut d = drive(2, &[]);
-    let _ = ended(&mut d, 4, Outcome::Done);
+    let mut d = started(4);
+    let _ = {
+        let fx = ended(&mut d, 4, "id0", Outcome::Done);
+        land(&mut d, fx)
+    };
     assert!(read(&mut d, issues(&[], &[4]), facts(0)).is_empty());
 }
 
 #[test]
 fn a_synced_issue_is_left_open() {
-    let mut d = drive(2, &[]);
-    let _ = ended(&mut d, 4, Outcome::Done);
+    let mut d = started(4);
+    let _ = {
+        let fx = ended(&mut d, 4, "id0", Outcome::Done);
+        land(&mut d, fx)
+    };
     let mut kept = issues(&[4], &[]);
     kept.sync_with(Some("Forge".into()));
     let forge: &'static dyn crate::connector::Connector =
@@ -320,29 +419,101 @@ fn a_synced_issue_is_left_open() {
 }
 
 #[test]
-fn a_failed_end_pulls_nothing() {
-    let mut d = drive(2, &[4]);
-    assert!(ended(&mut d, 9, Outcome::Failed("no".into())).is_empty());
+fn a_stop_keeps_the_entry_and_looks_again() {
+    let mut d = started(4);
+    let fx = ended(&mut d, 4, "id0", Outcome::Stopped(Stop::ByPerson));
+    assert_eq!(said(&fx), ["read"]);
+    assert_eq!(d.board(&id()).unwrap().work().len(), 1);
 }
 
 #[test]
-fn a_stopped_end_looks_again() {
-    let mut d = drive(2, &[4]);
-    assert_eq!(
-        said(&ended(&mut d, 9, Outcome::Stopped(Stop::ByPerson))),
-        ["read"]
-    );
+fn a_failed_end_keeps_the_entry_and_pulls_nothing() {
+    let mut d = started(4);
+    assert!(ended(&mut d, 4, "id0", Outcome::Failed("no".into())).is_empty());
+    assert_eq!(d.board(&id()).unwrap().work().len(), 1);
 }
 
 #[test]
-fn an_end_after_unbinding_still_closes_but_pulls_nothing() {
-    let mut d = drive(2, &[]);
-    let fx = d.unbind(&id());
-    let _ = land(&mut d, fx);
-    assert_eq!(said(&ended(&mut d, 4, Outcome::Done)), ["read"]);
-    assert_eq!(
-        said(&read(&mut d, issues(&[4], &[]), facts(0))),
-        ["close 4"]
-    );
-    assert!(ended(&mut d, 5, Outcome::Stopped(Stop::ByPerson)).is_empty());
+fn an_end_of_a_task_no_entry_names_does_nothing() {
+    let mut d = started(4);
+    let _ = {
+        let fx = ended(&mut d, 4, "id0", Outcome::Done);
+        land(&mut d, fx)
+    };
+    // Retried from Done by a person: its end is theirs.
+    assert!(ended(&mut d, 4, "id0", Outcome::Done).is_empty());
+    assert!(ended(&mut d, 8, "elsewhere", Outcome::Stopped(Stop::ByPerson)).is_empty());
+}
+
+#[test]
+fn remove_refuses_while_it_works() {
+    let mut d = started(4);
+    assert!(d
+        .remove(&id(), 4, true)
+        .is_err_and(|why| why.contains("Stop")));
+    assert_eq!(d.board(&id()).unwrap().work().len(), 1);
+}
+
+#[test]
+fn remove_gives_the_issue_back_and_says_held() {
+    let mut d = started(4);
+    let fx = d.remove(&id(), 4, false).unwrap();
+    assert!(said(&fx).contains(&"held".to_string()));
+    let board = d.board(&id()).unwrap();
+    assert!(board.work().is_empty() && board.todo().is_empty());
+}
+
+#[test]
+fn unbind_says_held() {
+    let mut d = started(4);
+    assert!(said(&d.unbind(&id())).contains(&"held".to_string()));
+}
+
+/// A board not yet adopting its tasks starts nothing: its tasks are not
+/// known yet, and adoption would write over what it started.
+#[test]
+fn a_board_before_its_tasks_are_read_starts_nothing() {
+    let mut boards = HashMap::new();
+    let board = Board::made("builtin:branch".into(), 2, &[4], 1).unadopted();
+    boards.insert(id(), board);
+    let mut d = BoardDrive::new(boards, HashMap::new(), "/data/projects".into());
+    let fx = read(&mut d, issues(&[4], &[]), facts(0));
+    assert!(said(&fx)
+        .iter()
+        .all(|e| !e.starts_with("start") && !e.starts_with("write")));
+    assert_eq!(d.board(&id()).unwrap().todo(), [4]);
+}
+
+/// A start whose write failed while a change of the team waited to be
+/// written: the board still names it, so the team's write carries it, and
+/// it is asked once that lands.
+#[test]
+fn a_start_left_on_the_board_by_a_failed_write_waits_for_the_next() {
+    let mut d = drive(2, &[4]);
+    let first = read(&mut d, issues(&[4], &[]), facts(0));
+    let waits = d.set_team(&id(), 3);
+    let rest = answer(&mut d, first, Err("busy".into()));
+    assert!(said(&rest).iter().all(|e| !e.starts_with("start")));
+    assert_eq!(d.board(&id()).unwrap().work().len(), 1, "still shown");
+    let token = waits
+        .iter()
+        .find_map(|e| match e {
+            Effect::Arm { token, .. } => Some(*token),
+            Effect::Write(_)
+            | Effect::Changed(_)
+            | Effect::Signal(_)
+            | Effect::ReadIssues { .. }
+            | Effect::GivePlace { .. }
+            | Effect::Start { .. }
+            | Effect::CloseIssue { .. }
+            | Effect::Held { .. } => None,
+        })
+        .unwrap();
+    let written = d.handle(Input::Elapsed { token }, now());
+    let rest = land(&mut d, written);
+    let starts = said(&rest)
+        .iter()
+        .filter(|e| e.starts_with("start"))
+        .count();
+    assert_eq!(starts, 1, "{:?}", said(&rest));
 }

@@ -15,7 +15,8 @@ on this machine. A project on a host has none: its issues are not kept here.
   is said under the menu and nothing is bound
   (`board::usable`). Once bound, *Team* sets how many tasks work at once, 1 to 8, 2 at first.
   Choosing *No board* on a board whose To do is not empty asks first (*Remove the board from
-  <project>?*): its To do goes, the issues stay open in no list, and tasks already started run on.
+  <project>?*): its To do goes, the issues stay open in no list, and tasks already started run on
+  as the person's own; a board bound later starts with none of them.
 - **Editing.** The board's head has *Edit workflow*, and a step's column a `⋯` with *Edit step*:
   both open the Workflows page on the board's workflow, the second with that step open, asking
   first when the form there holds changes not saved. *Settings ▸ Projects ▸ Board* has the same
@@ -32,8 +33,9 @@ on this machine. A project on a host has none: its issues are not kept here.
   them or over their heads, or the scrollbar along the page's foot), and each column scrolls on
   its own: a wheel over a column taller than the page moves only its rows. Each column draws at most `BOARD_SHOWN` rows and says
   how many more it left out. A task's row opens it on the Tasks page, and its `⋯` and right-click
-  offer *Show task* and then what the Tasks page's row offers it (*Open session*, *Stop*, *Resume*,
-  *Retry…*, *Dismiss*, as its state allows). Under its title it says *Needs attention*, *Running*
+  offer *Show task*, then what the Tasks page's row offers it but *Dismiss* (*Open session*,
+  *Stop*, *Resume*, *Retry…*, as its state allows), then, while it does not work, *Remove from
+  board*: its issue goes back to the Backlog and the task stays as history (`BoardDrive::remove`). Under its title it says *Needs attention*, *Running*
   or *Queued* as the Tasks page sorts it, then what it waits on or why it ended in its detail's
   words (*Approving starts <step>*, *The agent asks something in its session*), or *Waiting for
   room at <step>* alone when its step is full.
@@ -46,10 +48,11 @@ on this machine. A project on a host has none: its issues are not kept here.
   To do dropped on a To do row lands just before it, dropped elsewhere on To do lands last, and
   dropped on the Backlog leaves To do (`BoardDrive::place_todo`). A drop that changes nothing
   writes nothing, and the board pulls after one that does. A task's row does not drag.
-- **A step's column** holds the board's tasks at that step: working, or ended and needing
-  attention. A task whose step left the workflow gets a column after the others, named by the
+- **A step's column** holds the tasks the board's work column names that are at that step,
+  however their last run came out: working, ended and needing attention, or stopped. A task whose step left the workflow gets a column after the others, named by the
   step's id. A step with a limit says it in its head, `<label> · <n> of <limit>`, with n the
-  tasks holding room there. **Done** holds finished ones, newest first. A column can run its own
+  tasks holding room there. **Done** holds the finished ones the board keeps, newest first, 50 at
+  most (`DONE_KEPT`). A column can run its own
   agent: the step names one, and its task works that step in a session of that agent. A column
   whose step is a review sends tasks back on its own: its agent approves, or returns the task to
   an earlier column with a note, and the task is drawn there again.
@@ -107,12 +110,19 @@ on this machine. A project on a host has none: its issues are not kept here.
 
 ## When it ends
 
-- **Done closes the issue** when the project's own tracker keeps it. An issue kept in step with a
-  forge is left open: the pull request's merge closes it there (`board::after_end`).
-- **A task a person stopped, took over or dismissed leaves the board**; its issue returns to the
-  Backlog. A task that ended without finishing (failed, ran out, timed out, or lost its agent or
-  session) stays in its step's column, under *Needs attention*, holding its issue until the person
-  acts on it.
+- **A run that ends done moves its task to Done**, and Done closes the issue when the project's
+  own tracker keeps it. An issue kept in step with a forge is left open: the pull request's merge
+  closes it there (`board::after_end`). Nothing closes it again at a later start: a person may have
+  reopened it.
+- **A task a person stopped or took over stays in its step's column**, holding its issue, and its
+  place on the team frees, so the board pulls. A task that ended without finishing (failed, ran
+  out, timed out, or lost its agent or session) stays there too, under *Needs attention*, until the
+  person acts on it. **A task leaves the work column only by *Remove from board***, or by being
+  done, and while it stands there it cannot be dismissed: the Tasks page refuses it, saying to
+  remove it from the board first. A task in Done is history like any other: dismissed, or let go
+  of by the history cap, it is no longer drawn there.
+- **A task off the board is the person's.** One removed from it, or one in Done, that a person
+  retries or resumes runs as any task: its end moves nothing on the board and closes nothing.
 - **A board task's end, like a schedule's, is unwatched:** it fails without a person looking, so
   it says what it came to on the Tasks page and nothing asks for a window.
 - **A done board task closes its session**, as a schedule's does (`Task::closes_session`): nobody
@@ -158,14 +168,25 @@ are never written.
   changed by the track is written once the changing stops, and at quit. *No board* removes the
   file. A file of a newer version, or of a shape this build does not know, is not read: the board
   page and Settings say why, and nothing writes over it.
+- **What is on the board is what its entries name.** The work column's entries name a task and
+  the run the board asked for, Done's the task. A start is written before it is asked: the issue
+  leaves To do for the work column in a write, and its task starts only once that write lands; a
+  write that fails puts the issue back and starts nothing. At start an entry naming a task that is
+  not there, and whose start is not on its way, is dropped, its issue back in the Backlog.
 - **A board task** is an ordinary task with `Origin::Board { project, issue }`, kept like any
-  other. Where it stands comes from its last run and the app's view of whether it works
-  (`board::columns`, `board::taken`, `board::running`).
+  other. Where it stands in the work column comes from its last run (`board::columns`). The
+  tasks the work column names are held: the history cap passes over them, the cap applied as the
+  tasks are read included (`TasksDrive::held`, told by the board's drive, `Effect::Held`).
+- **A board written before its columns named their tasks** (version 1) takes them up the first
+  time the tasks are read: those on it in the work column, oldest first, the done ones in Done,
+  newest first (`BoardDrive`'s `TasksRead`), and is written as version 2. The Backlog leaves out
+  the issues its entries name and those of its done tasks no longer in Done, until they are
+  dismissed or capped.
 
-**Changing the workflow** (*No board*, then another workflow, or another picked over it) leaves
-the tasks the old one started as they are: they still hold their issues out of the Backlog, count
-as running against the team, and stand in columns named by their step's id when the new workflow
-has no such step, until they end and a person dismisses them.
+**Changing the workflow** for another leaves the tasks the old one started on the board: they
+still hold their issues out of the Backlog, count as running against the team, and stand in
+columns named by their step's id when the new workflow has no such step, until they end and a
+person removes them from the board. *No board* lets them go.
 
 **A restart** keeps To do, which only holds numbers, and pulls it again once the tasks and the
 library are read. A task that had started comes back cut off, under *Needs attention*, for the

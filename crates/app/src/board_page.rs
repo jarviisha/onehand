@@ -514,6 +514,7 @@ impl BoardPage {
         };
         let open = open_task(&row.id, cx);
         let page = cx.entity().downgrade();
+        let remove = removal(&row.id, cx);
         let acts: Rc<[RowAct]> = task_offers(&row)
             .into_iter()
             .map(|act| match act {
@@ -528,6 +529,7 @@ impl BoardPage {
                     RowAct::new(act.label(), press)
                 }
             })
+            .chain(remove)
             .collect();
         self.row(
             RowKey::Task(row.id.clone()),
@@ -709,13 +711,40 @@ fn task_line(row: &Row, column: &str) -> String {
 /// What a board task's row offers: the task itself (`None`), then what the
 /// Tasks page's row offers it.
 fn task_offers(row: &Row) -> Vec<Option<crate::tasks_page::TaskAct>> {
+    use crate::tasks_page::TaskAct;
+    // A task the board holds is let go of from the board, never dismissed.
+    let kept = |act: &TaskAct| match act {
+        TaskAct::Dismiss => false,
+        TaskAct::Extend
+        | TaskAct::OpenSession
+        | TaskAct::Stop
+        | TaskAct::Resume
+        | TaskAct::Retry => true,
+    };
     std::iter::once(None)
         .chain(
             crate::tasks_page::task_acts(row, false)
                 .into_iter()
+                .filter(kept)
                 .map(Some),
         )
         .collect()
+}
+
+/// *Remove from board* for task `id`, while it does not work: its issue goes
+/// back to the Backlog and the task stays as history.
+fn removal(id: &str, cx: &Context<BoardPage>) -> Option<RowAct> {
+    if crate::task::is_working(id, cx) {
+        return None;
+    }
+    let (project, issue) = crate::task::task(id, cx)?
+        .board_issue()
+        .map(|(project, issue)| (project.clone(), issue))?;
+    let id = id.to_string();
+    let press: onehand_ui::Press = Rc::new(move |_, window, cx| {
+        crate::board::remove(&project, issue, Some(&id), window, cx);
+    });
+    Some(RowAct::new("Remove from board", press))
 }
 
 /// A row's acts, from their words and presses.

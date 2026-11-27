@@ -192,8 +192,8 @@ now. The held tasks (step 2) go to `TasksDrive`, held on the same `Shared`, thro
 - **Every boot** drops an entry naming no task with no start on its way: its issue is back in the
   Backlog, as a crash after a pull leaves it today. (Kept and offered *Start* again from step 3.)
 - **The end rule** (above): a done run in a column moving on by itself moves on, so in step 2's one
-  shape to Done. The issue is closed when an entry enters Done, by `after_end`'s rule, and again at
-  boot for an entry in Done whose issue is the project's own and still open.
+  shape to Done. The issue is closed when an entry enters Done, by `after_end`'s rule, and not
+  again at boot: a person may have reopened it on purpose.
 - **Stop and take over keep the entry** in its column; its team place frees, so the board looks
   again (a stopped run pulls, as a done one does).
 - **Remove from board**, a `BoardDrive` command refused while the task works: the entry goes, the

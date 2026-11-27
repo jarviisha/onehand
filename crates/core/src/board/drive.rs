@@ -25,7 +25,7 @@ use crate::saving::{Pending, Saves};
 use crate::workflow::Outcome;
 use crate::workflow::Template;
 use crate::Now;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::ops::Deref;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -57,6 +57,13 @@ impl Boards {
         self.boards.contains_key(id) || self.unreadable.contains_key(id)
     }
 
+    /// The tasks every board holds: those its work column's entries name.
+    pub fn held(&self) -> HashSet<String> {
+        (self.boards.values())
+            .flat_map(|board| board.work().iter().filter_map(|e| e.task.clone()))
+            .collect()
+    }
+
     /// The projects with a board this build can read.
     pub fn ids(&self) -> impl Iterator<Item = &ProjectId> {
         self.boards.keys()
@@ -70,6 +77,9 @@ pub struct BoardWrite {
     pub pending: Pending<(), Option<Board>>,
     pub board: Option<Board>,
     pub dir: PathBuf,
+    /// Which write of the drive it is, counted from 1, so its answer says
+    /// which starts it lets go ahead.
+    pub seq: u64,
 }
 
 /// What a person is told.
@@ -126,6 +136,11 @@ pub enum Effect {
         id: ProjectId,
         issue: u64,
     },
+    /// The tasks the boards hold now, every one of them: none of them is let
+    /// go of as history, nor dismissed.
+    Held {
+        tasks: HashSet<String>,
+    },
 }
 
 /// What the front end reports back.
@@ -134,6 +149,7 @@ pub enum Input {
     Written {
         id: ProjectId,
         pending: Pending<(), Option<Board>>,
+        seq: u64,
         result: Result<(), String>,
     },
     /// The wait [`Effect::Arm`] asked for ran out.
@@ -159,8 +175,20 @@ pub enum Input {
     Ended {
         id: ProjectId,
         issue: u64,
+        task: String,
+        run: Option<String>,
         outcome: Option<Outcome>,
     },
+    /// The tasks were read, each board task as the boards see it.
+    TasksRead { tasks: Vec<Seen> },
+}
+
+/// A start waiting for the write that names it: project, write, issue.
+struct Held {
+    id: ProjectId,
+    seq: u64,
+    issue: u64,
+    start: Effect,
 }
 
 /// Every board's drive. See the module header.
@@ -180,6 +208,13 @@ pub struct BoardDrive {
     /// The issues whose board task ended done, waiting for their tracker to
     /// be read to tell whether to close them.
     closing: HashMap<ProjectId, BTreeSet<u64>>,
+    /// The writes made, counted.
+    seq: u64,
+    /// Each board's newest write.
+    newest: HashMap<ProjectId, u64>,
+    /// The starts waiting for the write that names them: asked once a write
+    /// at least that new lands, dropped when it fails and none newer was made.
+    held: Vec<Held>,
 }
 
 impl Deref for BoardDrive {
@@ -206,6 +241,9 @@ impl BoardDrive {
             minted: 0,
             starting: HashMap::new(),
             closing: HashMap::new(),
+            seq: 0,
+            newest: HashMap::new(),
+            held: Vec::new(),
         }
     }
 
@@ -255,7 +293,29 @@ impl BoardDrive {
     /// Take project `id`'s board away: its file goes.
     #[must_use = "its effects are to be carried"]
     pub fn unbind(&mut self, id: &ProjectId) -> Vec<Effect> {
-        self.set_board(id, None)
+        let mut fx = self.set_board(id, None);
+        if !fx.is_empty() {
+            fx.push(self.say_held());
+        }
+        fx
+    }
+
+    /// Take `issue` off project `id`'s board, back to the Backlog: its task
+    /// stays as history. Refused while its task works (`working`).
+    pub fn remove(
+        &mut self,
+        id: &ProjectId,
+        issue: u64,
+        working: bool,
+    ) -> Result<Vec<Effect>, String> {
+        if working {
+            return Err("It is at work: Stop it first".to_string());
+        }
+        let mut fx = self.edit(id, false, |board| board.map(|b| b.removed(issue)));
+        if !fx.is_empty() {
+            fx.push(self.say_held());
+        }
+        Ok(fx)
     }
 
     /// Whether taking project `id`'s board away asks a person first: its To
@@ -354,21 +414,29 @@ impl BoardDrive {
             Input::Written {
                 id,
                 pending,
+                seq,
                 result,
             } => {
-                let Some(saves) = self.saves.get_mut(&id) else {
-                    return Vec::new();
-                };
-                let Some((why, back)) = saves.landed(pending, result) else {
-                    return Vec::new();
-                };
-                if let Some(board) = back.into_iter().last() {
-                    self.put(&id, board);
+                let landed = result.is_ok();
+                // Put back first: what a failed write leaves on the board
+                // decides whether its starts wait for the next one.
+                let said =
+                    (self.saves.get_mut(&id)).and_then(|saves| saves.landed(pending, result));
+                let mut fx = Vec::new();
+                if let Some((why, back)) = said {
+                    if let Some(board) = back.into_iter().last() {
+                        self.put(&id, board);
+                    }
+                    fx.push(Effect::Changed(id.clone()));
+                    fx.push(Effect::Signal(Signal::SaveFailed {
+                        id: id.clone(),
+                        why,
+                    }));
+                    fx.push(self.say_held());
                 }
-                vec![
-                    Effect::Changed(id.clone()),
-                    Effect::Signal(Signal::SaveFailed { id, why }),
-                ]
+                let mut starts = self.starts_after(&id, seq, landed);
+                starts.extend(fx);
+                starts
             }
             Input::Elapsed { token } => {
                 if self.soon != Some(token) {
@@ -384,7 +452,14 @@ impl BoardDrive {
                 kept,
                 result,
             } => self.landed(&id, issue, kept, result),
-            Input::Ended { id, issue, outcome } => self.ended(&id, issue, outcome.as_ref()),
+            Input::Ended {
+                id,
+                issue,
+                task,
+                run: _,
+                outcome,
+            } => self.ended(&id, issue, &task, outcome.as_ref(), now),
+            Input::TasksRead { tasks } => self.tasks_read(&tasks, now),
         }
     }
 
@@ -456,12 +531,52 @@ impl BoardDrive {
     fn write(&mut self, id: &ProjectId) -> Option<Effect> {
         self.waiting.remove(id);
         let pending = self.saves.get_mut(id)?.write_all();
+        self.seq += 1;
+        self.newest.insert(id.clone(), self.seq);
         Some(Effect::Write(Box::new(BoardWrite {
             id: id.clone(),
             pending,
             board: self.boards.boards.get(id).cloned(),
             dir: self.dir.join(id.as_str()),
+            seq: self.seq,
         })))
+    }
+
+    /// Whether project `id`'s work column, as shown, names `issue`.
+    fn names_issue(&self, id: &ProjectId, issue: u64) -> bool {
+        (self.boards.board(id)).is_some_and(|b| b.work().iter().any(|e| e.issue == issue))
+    }
+
+    /// The starts project `id`'s write `seq` lets go ahead: once it landed,
+    /// those it or an older write named. When it failed, a newer write
+    /// carries them and they wait for it; with none, they are dropped, no
+    /// longer starting, the board having been put back without them.
+    fn starts_after(&mut self, id: &ProjectId, seq: u64, landed: bool) -> Vec<Effect> {
+        let newest = self.newest.get(id).copied().unwrap_or(seq);
+        let held = std::mem::take(&mut self.held);
+        let mut fx = Vec::new();
+        for held in held {
+            if held.id != *id || held.seq > seq {
+                self.held.push(held);
+                continue;
+            }
+            match (landed, newest > seq) {
+                (true, _) => fx.push(held.start),
+                (false, true) => self.held.push(Held {
+                    seq: newest,
+                    ..held
+                }),
+                // The board shown still names it, a change of its own having
+                // kept it there: the next write carries it.
+                (false, false) if self.names_issue(id, held.issue) => self.held.push(held),
+                (false, false) => {
+                    if let Some(starting) = self.starting.get_mut(id) {
+                        starting.remove(&held.issue);
+                    }
+                }
+            }
+        }
+        fx
     }
 }
 
@@ -478,7 +593,9 @@ fn place_before(todo: &[u64], dragged: u64, target: u64) -> Option<usize> {
 }
 
 mod look;
+mod seen;
 pub use look::Facts;
+pub use seen::Seen;
 
 #[cfg(test)]
 mod tests;

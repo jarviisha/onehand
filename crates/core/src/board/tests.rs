@@ -166,6 +166,20 @@ fn ids(tasks: &[&Task]) -> Vec<String> {
     tasks.iter().map(|t| t.id().to_string()).collect()
 }
 
+/// A board whose work column names `work` and whose Done names `done`.
+fn holding(work: &[(&str, u64)], done: &[(&str, u64)]) -> Board {
+    let entry = |&(task, issue): &(&str, u64)| Entry {
+        issue,
+        task: Some(task.into()),
+        run: Some(task.into()),
+        since: 0,
+    };
+    board(2, &[]).upgraded(
+        work.iter().map(entry).collect(),
+        done.iter().map(entry).collect(),
+    )
+}
+
 #[test]
 fn columns_place_by_current_step() {
     let template = template(Place::Worktree);
@@ -177,75 +191,57 @@ fn columns_place_by_current_step() {
         task("1", "p", 0, None),
         task("2", "p", 1, None),
         task("3", "p", 1, Some(Outcome::Done)),
-        task("4", "p", 0, Some(Outcome::Stopped(Stop::ByPerson))),
         at_lost,
+        task("9", "p", 0, None),
     ];
-    let working = |id: &str| (id == "1" || id == "2" || id == "5").then_some(Working::Running);
-    let got = columns(&template, all.iter(), &working);
+    let on = holding(&[("1", 1), ("2", 2), ("5", 5)], &[("3", 3)]);
+    let got = columns(&template, &on, all.iter());
     assert_eq!(got.steps.len(), template.steps.len() + 1);
     assert_eq!(ids(&got.steps[0].tasks), ["1"]);
     assert_eq!(ids(&got.steps[1].tasks), ["2"]);
     assert_eq!(ids(&got.done), ["3"]);
     let last = got.steps.last().unwrap();
     assert_eq!((last.step.as_str(), last.label.as_str()), ("gone", "gone"));
-    assert_eq!(ids(&last.tasks), ["5"]);
+    assert_eq!(
+        ids(&last.tasks),
+        ["5"],
+        "a task no entry names is not drawn"
+    );
 }
 
 #[test]
-fn columns_order_done_newest_first() {
+fn columns_order_done_as_the_board_keeps_it() {
     let template = template(Place::Worktree);
     let all = [
-        task("1000000000000", "p", 0, Some(Outcome::Done)),
-        task("2000000000000", "p", 0, Some(Outcome::Done)),
+        task("1", "p", 0, Some(Outcome::Done)),
+        task("2", "p", 0, Some(Outcome::Done)),
     ];
-    let got = columns(&template, all.iter(), &|_| None);
-    assert_eq!(ids(&got.done), ["2000000000000", "1000000000000"]);
+    let got = columns(&template, &holding(&[], &[("2", 2), ("1", 1)]), all.iter());
+    assert_eq!(ids(&got.done), ["2", "1"]);
 }
 
 #[test]
-fn columns_leave_out_dismissed_and_taken_over() {
-    let template = template(Place::Worktree);
-    let mut dismissed = task("1", "p", 0, Some(Outcome::Failed("x".into())));
-    dismissed.dismissed = true;
-    let all = [
-        dismissed,
-        task("2", "p", 0, Some(Outcome::Stopped(Stop::TakenOver))),
-    ];
-    let got = columns(&template, all.iter(), &|_| None);
-    assert!(got.steps.iter().all(|c| c.tasks.is_empty()));
-    assert!(got.done.is_empty());
-}
-
-#[test]
-fn columns_keep_needs_attention_in_their_step() {
+fn columns_show_a_stopped_task_in_its_step() {
     let template = template(Place::Worktree);
     let all = [
-        task("1", "p", 1, Some(Outcome::Failed("x".into()))),
-        task("2", "p", 0, None),
+        task("1", "p", 1, Some(Outcome::Stopped(Stop::ByPerson))),
+        task("2", "p", 0, Some(Outcome::Failed("x".into()))),
     ];
-    let got = columns(&template, all.iter(), &|_| None);
+    let got = columns(&template, &holding(&[("1", 1), ("2", 2)], &[]), all.iter());
     assert_eq!(ids(&got.steps[0].tasks), ["2"]);
     assert_eq!(ids(&got.steps[1].tasks), ["1"]);
 }
 
 #[test]
-fn cut_off_task_not_counted() {
+fn running_counts_only_entries_tasks() {
     let tasks = [
         task("1", "p", 0, None),
         task("2", "p", 0, None),
-        task("3", "q", 0, None),
+        task("3", "p", 0, None),
     ];
-    let project: ProjectId = serde_json::from_str("\"p\"").unwrap();
+    let on = holding(&[("1", 1), ("2", 2)], &[]);
     let holds = |id: &str| id == "1" || id == "3";
-    assert_eq!(running(tasks.iter(), &project, &holds), 1);
-}
-
-/// A board task out of time at rest, or waiting for a place, holds none.
-#[test]
-fn a_board_task_that_gives_its_place_is_not_running() {
-    let tasks = [task("1", "p", 0, None), task("2", "p", 0, None)];
-    let project: ProjectId = serde_json::from_str("\"p\"").unwrap();
-    assert_eq!(running(tasks.iter(), &project, &|id| id == "1"), 1);
+    assert_eq!(running(tasks.iter(), &on, &holds), 1);
 }
 
 /// Places go to extends waiting, the one that asked first first, never past
@@ -258,23 +254,23 @@ fn extends_waiting_take_places_oldest_first() {
     assert!(extends_given(&board(2, &[]), 2, &waiting).is_empty());
 }
 
-/// The waiting extends of a project's board, by when each asked.
+/// The waiting extends of a board, by when each asked.
 #[test]
 fn extends_waiting_are_listed_by_when_they_asked() {
     let tasks = [
         task("1", "p", 0, None),
         task("2", "p", 0, None),
-        task("3", "q", 0, None),
+        task("3", "p", 0, None),
         task("4", "p", 0, None),
     ];
-    let project: ProjectId = serde_json::from_str("\"p\"").unwrap();
     let asked = |id: &str| match id {
         "1" => Some(20),
         "2" => Some(10),
         "3" => Some(5),
         _ => None,
     };
-    assert_eq!(extends_waiting(tasks.iter(), &project, &asked), ["2", "1"]);
+    let on = holding(&[("1", 1), ("2", 2), ("4", 4)], &[]);
+    assert_eq!(extends_waiting(tasks.iter(), &on, &asked), ["2", "1"]);
 }
 
 #[test]
@@ -297,7 +293,7 @@ fn done_closes_only_local_issue() {
 }
 
 #[test]
-fn taken_holds_the_issues_of_tasks_on_the_board() {
+fn taken_holds_the_issues_entries_name_and_done_ones_off_it() {
     let with = |id: &str, project: &str, issue: u64, outcome: Option<Outcome>| {
         let mut t = task(id, project, 0, outcome);
         t.origin = Some(Origin::Board {
@@ -306,19 +302,24 @@ fn taken_holds_the_issues_of_tasks_on_the_board() {
         });
         t
     };
-    let mut dismissed = with("6", "p", 6, Some(Outcome::Failed("x".into())));
+    let mut dismissed = with("6", "p", 6, Some(Outcome::Done));
     dismissed.dismissed = true;
     let tasks = [
         with("1", "p", 1, None),
         with("2", "p", 2, Some(Outcome::Done)),
-        with("3", "p", 3, Some(Outcome::Failed("x".into()))),
         with("4", "p", 4, Some(Outcome::Stopped(Stop::ByPerson))),
-        with("5", "q", 5, None),
+        with("5", "q", 5, Some(Outcome::Done)),
+        with("7", "p", 7, Some(Outcome::Failed("x".into()))),
         dismissed,
     ];
     let project: ProjectId = serde_json::from_str("\"p\"").unwrap();
-    let got = taken(tasks.iter(), &project, &|_| None);
-    assert_eq!(got, HashSet::from([1, 2, 3]));
+    let on = holding(&[("1", 1), ("4", 4)], &[("8", 8)]);
+    let got = taken(&on, tasks.iter(), &project);
+    assert_eq!(
+        got,
+        HashSet::from([1, 4, 8, 2]),
+        "a done issue fallen off Done stays out of the Backlog; one removed does not"
+    );
 }
 
 #[test]
@@ -335,17 +336,21 @@ fn a_board_works_only_on_a_project_here() {
 }
 
 /// A board's task out of time at rest waits for a place; one still holding
-/// its place, or of no board, or whose project has no board now, goes on.
+/// its place, or off its board, goes on.
 #[test]
 fn an_extend_waits_for_a_place_only_on_a_board_and_at_rest() {
     let on_board = task("1", "p", 0, None);
     let project: ProjectId = serde_json::from_str("\"p\"").unwrap();
     assert_eq!(
-        extend_way(&on_board, &|_| true, false),
+        extend_way(&on_board, true, false),
         ExtendWay::WaitForPlace(project)
     );
-    assert_eq!(extend_way(&on_board, &|_| true, true), ExtendWay::Now);
-    assert_eq!(extend_way(&on_board, &|_| false, false), ExtendWay::Now);
+    assert_eq!(extend_way(&on_board, true, true), ExtendWay::Now);
+    assert_eq!(
+        extend_way(&on_board, false, false),
+        ExtendWay::Now,
+        "off the board"
+    );
 }
 
 /// Only an end that left the board pulls the next, done or stopped by a
@@ -370,4 +375,25 @@ fn pulls_next_only_after_an_end_that_left_the_board() {
         assert_eq!(pulls_next(Some(&outcome)), pull, "{outcome:?}");
     }
     assert!(!pulls_next(None));
+}
+
+/// A task stopped while it was queued has no run left, and still stands on
+/// the board, in the first step's column, so it can be removed.
+#[test]
+fn columns_show_a_task_with_no_run_at_the_first_step() {
+    let template = template(Place::Worktree);
+    let mut never = task("1", "p", 0, None);
+    never.runs.clear();
+    let all = [never];
+    let got = columns(&template, &holding(&[("1", 1)], &[]), all.iter());
+    assert_eq!(ids(&got.steps[0].tasks), ["1"]);
+}
+
+/// Only the work column holds its tasks: one in Done is the person's.
+#[test]
+fn a_board_holds_only_its_work_columns_tasks() {
+    let on = holding(&[("1", 1)], &[("2", 2)]);
+    assert!(on.holds("1"));
+    assert!(!on.holds("2"));
+    assert!(!on.holds("3"));
 }

@@ -74,3 +74,102 @@ fn shape_refuses_what_step_one_does_not_know() {
     newer.schema_version = SCHEMA_VERSION + 1;
     assert!(newer.shape().is_err());
 }
+
+fn work(issue: u64, task: &str) -> Entry {
+    Entry {
+        issue,
+        task: Some(task.into()),
+        run: Some(task.into()),
+        since: 5,
+    }
+}
+
+fn done(issue: u64, task: &str) -> Entry {
+    Entry {
+        run: None,
+        ..work(issue, task)
+    }
+}
+
+#[test]
+fn version_one_is_read_and_adopts() {
+    let mut board = made();
+    board.schema_version = 1;
+    assert!(board.shape().is_ok());
+    assert!(board.adopts());
+    assert!(!made().adopts());
+}
+
+#[test]
+fn version_two_with_work_and_done_is_read() {
+    let board = made().upgraded(vec![work(4, "a")], vec![done(7, "b")]);
+    assert_eq!(board.schema_version, SCHEMA_VERSION);
+    assert!(board.shape().is_ok(), "{:?}", board.shape());
+    assert_eq!(board.work().len(), 1);
+    assert_eq!(board.done().len(), 1);
+}
+
+#[test]
+fn a_work_entry_without_a_task_is_refused() {
+    let mut board = made();
+    board.columns[1].entries.push(Entry {
+        issue: 3,
+        task: None,
+        run: None,
+        since: 0,
+    });
+    assert!(board.shape().is_err());
+}
+
+#[test]
+fn upgraded_moves_to_do_issues_that_tasks_hold_and_caps_done() {
+    let mut old = made();
+    old.schema_version = 1;
+    let many: Vec<Entry> = (100..160).map(|n| done(n, &n.to_string())).collect();
+    let board = old.upgraded(vec![work(4, "a")], many);
+    assert_eq!(board.todo(), [9]);
+    assert_eq!(board.done().len(), DONE_KEPT);
+    assert_eq!(board.done()[0].issue, 100, "newest first, as handed");
+    assert_eq!(board.schema_version, SCHEMA_VERSION);
+}
+
+#[test]
+fn started_moves_an_issue_from_to_do_to_work() {
+    let board = made().started(4, "t1", 50);
+    assert_eq!(board.todo(), [9]);
+    assert_eq!(
+        board.work(),
+        [work(4, "t1")].map(|e| Entry { since: 50, ..e })
+    );
+}
+
+#[test]
+fn finished_puts_the_newest_first() {
+    let board = made()
+        .upgraded(vec![work(4, "a"), work(5, "b")], vec![done(7, "c")])
+        .finished("b", 60);
+    assert_eq!(board.work().len(), 1);
+    let order: Vec<u64> = board.done().iter().map(|e| e.issue).collect();
+    assert_eq!(order, [5, 7]);
+    assert_eq!(board.done()[0].since, 60);
+    assert!(board.done()[0].run.is_none());
+}
+
+#[test]
+fn removed_leaves_no_trace() {
+    let board = made()
+        .upgraded(vec![work(5, "a")], vec![done(7, "c")])
+        .removed(5)
+        .removed(7)
+        .removed(9);
+    assert!(board.work().is_empty() && board.done().is_empty());
+    assert_eq!(board.todo(), [4]);
+}
+
+#[test]
+fn names_tells_work_from_done() {
+    let board = made().upgraded(vec![work(5, "a")], vec![done(7, "c")]);
+    assert_eq!(board.names("a"), Some(Place::Work));
+    assert_eq!(board.names("c"), Some(Place::Done));
+    assert_eq!(board.names("z"), None);
+}

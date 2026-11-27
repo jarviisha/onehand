@@ -116,7 +116,7 @@ pub fn migrate_blocking(projects_dir: &Path) -> Vec<String> {
             }
             BoardLoad::Missing => {
                 let since = modified_secs(&dir.join(crate::project::file::FILE));
-                let board = Board::made(old.workflow, old.team, &old.todo, since);
+                let board = Board::made(old.workflow, old.team, &old.todo, since).unadopted();
                 if let Err(why) = save_blocking(&dir, Some(&board)) {
                     let at = dir.join(FILE);
                     problems.push(format!("{}: the board was not moved: {why}", at.display()));

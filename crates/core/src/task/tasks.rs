@@ -297,6 +297,9 @@ pub struct TasksDrive<W> {
     /// What a person pressed on each task that is still being done, so its
     /// button waits.
     acting: HashMap<String, Act>,
+    /// The tasks a board holds, as its drive last told: never let go of as
+    /// history, nor dismissed.
+    held: HashSet<String>,
 }
 
 impl<W> Default for TasksDrive<W> {
@@ -312,6 +315,7 @@ impl<W> Default for TasksDrive<W> {
             off_screen: HashSet::new(),
             save_failed: false,
             acting: HashMap::new(),
+            held: HashSet::new(),
         }
     }
 }
@@ -402,11 +406,18 @@ impl<W: Copy> TasksDrive<W> {
             .cloned()
     }
 
+    /// The tasks the boards hold now, as their drive says.
+    pub fn set_held(&mut self, held: HashSet<String>) {
+        self.held = held;
+    }
+
     /// The tasks read at boot, `read`, joined by those added while they were
-    /// read. Oldest first, as everything that looks for the newest task of an
+    /// read, the boards holding `held`, which the cap applied at once passes
+    /// over. Oldest first, as everything that looks for the newest task of an
     /// issue reads them: what was read is older than anything added meanwhile,
     /// and a task added then may have been written in time to be read too.
-    pub fn loaded(&mut self, read: Vec<Task>) -> Vec<Effect<W>> {
+    pub fn loaded(&mut self, read: Vec<Task>, held: HashSet<String>) -> Vec<Effect<W>> {
+        self.held = held;
         let added = std::mem::replace(&mut self.tasks, read);
         self.tasks
             .retain(|task| added.iter().all(|a| a.id != task.id));
@@ -504,6 +515,10 @@ impl<W: Copy> TasksDrive<W> {
     pub fn dismiss(&mut self, id: &str, window: W) -> Vec<Effect<W>> {
         if self.busy(id) {
             return Vec::new();
+        }
+        if self.held.contains(id) {
+            let why = "It is on its board; remove it from the board first".to_string();
+            return vec![Effect::Signal(Signal::DismissFailed { window, why })];
         }
         let Some(task) = self.task_mut(id) else {
             return Vec::new();
@@ -605,7 +620,7 @@ impl<W: Copy> TasksDrive<W> {
             .iter()
             .map(|task| (task, task.group(self.working(&task.id))))
             .collect();
-        let gone = history::over_cap(&listed);
+        let gone = history::over_cap(&listed, &self.held);
         let mut fx = Vec::new();
         if gone.is_empty() {
             return fx;
