@@ -222,8 +222,8 @@ pub(crate) fn about(text: &'static str) -> Option<AnyElement> {
 }
 
 /// A page's head: what the page governs, as a badge, and one line saying what
-/// it is about. No title: the nav row beside it names the page, and the
-/// head over the nav names Settings.
+/// it is about. No title: the nav row beside it names the page, or, shown
+/// alone, the line over it beside the way back; the head names Settings.
 ///
 /// **The scope is said on every page, in the same place.** What is in here
 /// belongs to different reaches -- the app as a whole, or the one workspace
@@ -504,14 +504,21 @@ const NAV_W: gpui::Rems = gpui::rems(13.5);
 ///
 /// **A page, not a modal.** It is somewhere to be: opened by its rail row and
 /// its key, left by a session, another page, a key or a dock, as every page is,
-/// and found again as it was. Esc does nothing on it; inside a field, Esc is
-/// the field's.
+/// and found again as it was. Esc does nothing on it, the page shown alone
+/// included: that is a place on the page, not a layer over it. Inside a field,
+/// Esc is the field's.
 ///
 /// **A nav column and a page, not one scroll.** What is in here belongs to
 /// three different scopes -- the theme is app-wide, the name and the storage
 /// binding are this workspace's, the agent list is every workspace's -- and
 /// stacked in one column the only thing saying so was a row of `text_xs`
 /// labels. A page per scope is the shape that says it without a sentence.
+///
+/// **Side by side only while there is room for both.** The nav is a list and
+/// the page its detail: where the room under the head cannot hold the nav
+/// beside a readable page, one shows at a time, the page under a way back
+/// naming Settings. The room is measured, never the window: the rail and the
+/// pane's zoom take from it apart from the window.
 ///
 /// **There is no footer, and no control here sits away from what it acts on.**
 /// Settings apply as they are made, and a write that fails says so in a toast.
@@ -522,24 +529,76 @@ const NAV_W: gpui::Rems = gpui::rems(13.5);
 /// is a panic. A child view renders after the shell's render has returned.
 pub struct SettingsView {
     shell: gpui::WeakEntity<Shell>,
+    /// The width under the head as last laid out, in rems. Infinite until
+    /// measured, so the first frame draws the two side by side.
+    width: onehand_ui::Measured,
+    /// Where the nav and the page show one at a time, whether the page shows
+    /// rather than the nav. Which half shows at a width is the view's alone;
+    /// which page is picked is the shell's, kept in both layouts.
+    page_alone: bool,
 }
 
 impl SettingsView {
     pub fn new(shell: gpui::WeakEntity<Shell>) -> Self {
-        Self { shell }
+        Self {
+            shell,
+            width: onehand_ui::unmeasured(),
+            page_alone: false,
+        }
+    }
+
+    /// A page was picked, so where only one half shows, it is the page.
+    pub(crate) fn show_page(&mut self, cx: &mut Context<Self>) {
+        self.page_alone = true;
+        cx.notify();
     }
 }
 
 impl gpui::Render for SettingsView {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        match self.shell.upgrade() {
-            Some(handle) => settings(&handle, cx),
-            None => div().into_any_element(),
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let Some(handle) = self.shell.upgrade() else {
+            return div().into_any_element();
+        };
+        let side_by_side = onehand_ui::fits_beside(NAV_W, self.width.get());
+        // Falling to one at a time with the keyboard inside the page keeps
+        // the page: drawing the nav instead would take what holds the
+        // keyboard out of the frame, and the keyboard out of Settings with
+        // it. The nav holds nothing that takes focus, so focus inside
+        // Settings but not on its own handle is inside the page, as the
+        // last frame drew it.
+        let focus = handle.read(cx).settings_focus();
+        if !side_by_side
+            && !self.page_alone
+            && focus.contains_focused(window, cx)
+            && !focus.is_focused(window)
+        {
+            self.page_alone = true;
         }
+        let shown = match (side_by_side, self.page_alone) {
+            (true, _) => Halves::Both,
+            (false, true) => Halves::Page,
+            (false, false) => Halves::Nav,
+        };
+        let view = cx.entity();
+        let measure = onehand_ui::measure_width(self.width.clone(), view.downgrade());
+        settings(&handle, &view, shown, measure, cx)
     }
 }
 
-fn settings(handle: &Entity<Shell>, cx: &App) -> AnyElement {
+/// Which of the nav and the page are drawn.
+enum Halves {
+    Both,
+    Nav,
+    Page,
+}
+
+fn settings(
+    handle: &Entity<Shell>,
+    view: &Entity<SettingsView>,
+    shown: Halves,
+    measure: impl IntoElement,
+    cx: &App,
+) -> AnyElement {
     let handle = handle.clone();
     let current = handle.read(cx).settings_page();
     let focus = handle.read(cx).settings_focus();
@@ -547,7 +606,7 @@ fn settings(handle: &Entity<Shell>, cx: &App) -> AnyElement {
         .into_iter()
         .map(|page| nav_row(page, current, &handle, cx).into_any_element())
         .collect::<Vec<_>>();
-    let page = match current {
+    let page = || match current {
         SettingsPage::Appearance => appearance_page(&handle, cx),
         SettingsPage::Workspace => workspace_page(&handle, cx),
         SettingsPage::Agents => agents_page(&handle, cx),
@@ -556,12 +615,60 @@ fn settings(handle: &Entity<Shell>, cx: &App) -> AnyElement {
         SettingsPage::Connections => connections_page(&handle, cx),
         SettingsPage::Shortcuts => handle.read(cx).keymap_editor().into_any_element(),
     };
+    let halves = match shown {
+        Halves::Both => div()
+            .size_full()
+            .h_flex()
+            .items_start()
+            .child(settings_nav(nav, false, cx))
+            .child(settings_body(page(), None)),
+        Halves::Nav => div().size_full().child(settings_nav(nav, true, cx)),
+        Halves::Page => {
+            let (view, back_to) = (view.clone(), focus.clone());
+            let back = onehand_ui::back_link("settings-back", "Settings", cx).on_click(
+                move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
+                    view.update(cx, |view, cx| {
+                        view.page_alone = false;
+                        cx.notify();
+                    });
+                    // The link goes with the page it led: the keyboard stays
+                    // on Settings rather than on what is no longer drawn.
+                    back_to.focus(window, cx);
+                },
+            );
+            // Beside the nav, its row named the page; shown alone, the way
+            // back leads and the page's name follows it.
+            let named = div()
+                .debug_selector(|| "settings-back".into())
+                .h_flex()
+                .items_center()
+                .gap_2()
+                .child(back)
+                .child(
+                    div()
+                        .min_w_0()
+                        .truncate()
+                        .text_size(crate::tokens::CHROME_TEXT)
+                        .font_semibold()
+                        .child(current.label()),
+                );
+            div()
+                .size_full()
+                .flex()
+                .child(settings_body(page(), Some(named)))
+        }
+    };
 
     div()
         // A command acting on a region this page hides (the Workbench editor's
         // save) excludes it, so a key typed here never reaches what is not on
         // screen.
         .key_context("Settings")
+        // The keyboard lands here when Settings opens: on the whole page, not
+        // its nav, which is not drawn while the page shows alone. The handle
+        // is the shell's because this is rebuilt every frame -- one made here
+        // would be a new handle each time.
+        .track_focus(&focus)
         .size_full()
         .v_flex()
         // Named in its own head, as every other page is, the pane's header
@@ -577,35 +684,37 @@ fn settings(handle: &Entity<Shell>, cx: &App) -> AnyElement {
             )
             .into_any_element()],
         ))
+        // The room the two share, measured whatever it holds: its width is
+        // the pane's, never its content's.
         .child(
             div()
+                .debug_selector(|| "settings-room".into())
+                .relative()
                 .flex_1()
                 .min_h_0()
-                .h_flex()
-                .items_start()
-                .child(settings_nav(nav, &focus, cx))
-                .child(settings_body(page)),
+                .w_full()
+                .child(measure)
+                .child(halves),
         )
         .into_any_element()
 }
 
-/// The nav column: a row per page, and the build at its foot.
-fn settings_nav(nav: Vec<AnyElement>, focus: &gpui::FocusHandle, cx: &App) -> impl IntoElement {
+/// The nav column: a row per page, and the build at its foot. `alone`, it
+/// takes the whole room, as a list shown without its detail does.
+fn settings_nav(nav: Vec<AnyElement>, alone: bool, cx: &App) -> impl IntoElement {
     let muted = cx.theme().muted_foreground;
     div()
         .id("settings-nav")
-        // The keyboard lands here when Settings opens. The handle is
-        // the shell's because this is rebuilt every frame -- one made
-        // here would be a new handle each time.
-        .track_focus(focus)
+        .debug_selector(|| "settings-nav".into())
         .v_flex()
         .gap_0p5()
         .flex_none()
-        .w(NAV_W)
         .h_full()
-        .px_8()
         .py_6()
-        .pr_0()
+        .map(|nav| match alone {
+            true => nav.w_full().px_8(),
+            false => nav.w(NAV_W).pl_8(),
+        })
         .children(nav)
         // The build, at the foot of the nav: it is about the app
         // rather than about any one page.
@@ -619,29 +728,45 @@ fn settings_nav(nav: Vec<AnyElement>, focus: &gpui::FocusHandle, cx: &App) -> im
         )
 }
 
-/// The page beside the nav.
-fn settings_body(page: AnyElement) -> impl IntoElement {
-    // The page scrolls, not the frame: the nav has to stay reachable
-    // from the bottom of a long page, and the keymap is longer than
-    // any window.
+/// The page beside the nav, or in its place under `named`, the way back.
+fn settings_body(page: AnyElement, named: Option<Div>) -> impl IntoElement {
+    // A reading measure, so a wide window does not stretch a field across
+    // it, centred in whatever room is left.
+    let measure = |child: AnyElement| {
+        div().h_flex().justify_center().w_full().child(
+            div()
+                .v_flex()
+                .w_full()
+                .max_w(crate::tokens::PAGE_PROSE)
+                .child(child),
+        )
+    };
+    let alone = named.is_some();
     div()
-        .id("settings-page")
         .flex_1()
         .min_w_0()
         .h_full()
-        .overflow_y_scroll()
-        .px_8()
-        .py_6()
+        .v_flex()
+        // The way back stands over the scroll, as the nav stands beside it:
+        // reachable from the bottom of a long page.
+        .when_some(named, |body, named| {
+            body.child(div().px_8().pt_6().child(measure(named.into_any_element())))
+        })
         .child(
-            // A reading measure, so a wide window does not stretch a
-            // field across it, centred in whatever room is left.
-            div().h_flex().justify_center().w_full().child(
-                div()
-                    .v_flex()
-                    .w_full()
-                    .max_w(crate::tokens::PAGE_PROSE)
-                    .child(page),
-            ),
+            // The page scrolls, not the frame: the keymap is longer than
+            // any window.
+            div()
+                .id("settings-page")
+                .debug_selector(|| "settings-page".into())
+                .flex_1()
+                .min_h_0()
+                .overflow_y_scroll()
+                .px_8()
+                .map(|scroll| match alone {
+                    true => scroll.pt_4().pb_6(),
+                    false => scroll.py_6(),
+                })
+                .child(measure(page)),
         )
 }
 

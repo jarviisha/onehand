@@ -22,7 +22,7 @@ impl Shell {
     }
 
     /// Show Settings in the agent pane, on the page it was left on, with the
-    /// keyboard on its nav. The docks go aside as for every page.
+    /// keyboard on Settings. The docks go aside as for every page.
     ///
     /// **A page, so nothing guards leaving it.** What it holds saves as it
     /// changes; the agent form is a dialog, so the page is not left while it
@@ -113,7 +113,7 @@ impl Shell {
         cx: &mut Context<Self>,
     ) {
         self.pick_settings_project(root, window, cx);
-        self.settings_page = SettingsPage::Projects;
+        self.show_settings_page(SettingsPage::Projects, cx);
         self.open_settings(window, cx);
     }
 
@@ -129,8 +129,11 @@ impl Shell {
         }
     }
 
+    /// Pick `page`: where Settings shows its nav and its page one at a time,
+    /// the page is what shows.
     pub fn show_settings_page(&mut self, page: SettingsPage, cx: &mut Context<Self>) {
         self.settings_page = page;
+        self.settings_view.update(cx, |view, cx| view.show_page(cx));
         cx.notify();
     }
 

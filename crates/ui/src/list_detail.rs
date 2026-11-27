@@ -105,6 +105,13 @@ fn detail_range(list: Range<f32>, container: f32) -> Range<f32> {
     }
 }
 
+/// Whether a list `list` wide and its detail fit side by side in a container
+/// `container` wide, for a list nobody drags: [`list_detail`]'s decision
+/// without its split.
+pub fn fits_beside(list: Rems, container: Rems) -> bool {
+    container.0 >= list.0 + DETAIL_MIN.0
+}
+
 /// The arithmetic of [`list_detail`], in rems: whether the two fit side by
 /// side, and how wide a drag may take the list.
 fn fit(dragged: Option<f32>, widths: &ListWidths, container: f32) -> (bool, f32) {
@@ -113,7 +120,7 @@ fn fit(dragged: Option<f32>, widths: &ListWidths, container: f32) -> (bool, f32)
         .filter(|w| (min..=max).contains(w))
         .unwrap_or(widths.start.0);
     (
-        container >= list + DETAIL_MIN.0,
+        fits_beside(gpui::rems(list), gpui::rems(container)),
         (container - DETAIL_MIN.0).clamp(min, max),
     )
 }

@@ -4,8 +4,8 @@ use crate::controls::Short as _;
 use crate::shell::Shell;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    AnyElement, App, ClickEvent, Entity, IntoElement, ParentElement, SharedString, Styled, Window,
-    div,
+    AnyElement, App, ClickEvent, Entity, InteractiveElement as _, IntoElement, ParentElement,
+    SharedString, Styled, Window, div,
 };
 use gpui_component::button::ButtonVariants;
 use gpui_component::{ActiveTheme, Icon, StyledExt};
@@ -125,6 +125,7 @@ fn agent_row(shell: &Entity<Shell>, idx: usize, spec: &AgentSpec, cx: &App) -> i
         .gap_0p5()
         .child(
             div()
+                .debug_selector(move || format!("agent-line-{idx}"))
                 .font_family(cx.theme().mono_font_family.clone())
                 .text_xs()
                 .child(line),
@@ -150,6 +151,7 @@ fn agent_row(shell: &Entity<Shell>, idx: usize, spec: &AgentSpec, cx: &App) -> i
         spec.name.clone(),
         Some(about),
         div()
+            .debug_selector(move || format!("agent-controls-{idx}"))
             .h_flex()
             .items_center()
             .gap_2()
@@ -299,6 +301,7 @@ pub(super) fn agents_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
         .collect::<Vec<_>>();
 
     let list = section(None, None, cx)
+        .debug_selector(|| "agents-box".into())
         .gap_3()
         .when(!rows.is_empty(), |list| list.child(list_rows(rows, cx)))
         .children(offered)

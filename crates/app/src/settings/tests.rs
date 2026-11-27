@@ -371,3 +371,161 @@ fn a_routed_command_row_says_what_comes_back() {
     );
     assert_eq!(line(&route(&[])), "Brings nothing back");
 }
+
+mod strain {
+    use crate::settings::SettingsPage;
+    use crate::shell::Shell;
+    use crate::shell::rig::strain::{
+        NARROWEST, SHORT, SLACK, TO_150, WIDE, assert_inside, bounds, long, unbroken, width,
+    };
+    use crate::shell::rig::{folder, shell, zoom_pane};
+    use gpui::{Entity, Modifiers, Pixels, TestAppContext, VisualTestContext, point, px};
+    use onehand_core::config::AgentSpec;
+
+    fn agent(name: String, command: String) -> AgentSpec {
+        AgentSpec {
+            name,
+            command,
+            ..Default::default()
+        }
+    }
+
+    /// Settings open at `w`, drawn again once it has measured the room it
+    /// was given.
+    fn at(shell: &Entity<Shell>, w: Pixels, cx: &mut VisualTestContext) {
+        width(cx, w);
+        if !cx.update(|_, cx| shell.read(cx).settings_shown(cx)) {
+            cx.update(|window, cx| shell.update(cx, |shell, cx| shell.open_settings(window, cx)));
+        }
+        for _ in 0..3 {
+            cx.update(|window, _| window.refresh());
+            cx.run_until_parked();
+        }
+    }
+
+    fn drawn(cx: &mut VisualTestContext, sel: &'static str) -> bool {
+        cx.debug_bounds(sel).is_some()
+    }
+
+    fn pick(shell: &Entity<Shell>, page: SettingsPage, cx: &mut VisualTestContext) {
+        cx.update(|_, cx| shell.update(cx, |shell, cx| shell.show_settings_page(page, cx)));
+        cx.run_until_parked();
+    }
+
+    #[gpui::test]
+    fn the_nav_and_the_page_show_one_at_a_time_where_both_do_not_fit(cx: &mut TestAppContext) {
+        let dir = folder("strain-settings-halves");
+        let (_, shell, cx) = shell(cx, dir.join("tasks"), Vec::new());
+        at(&shell, WIDE, cx);
+        assert!(drawn(cx, "settings-nav") && drawn(cx, "settings-page"));
+        assert!(!drawn(cx, "settings-back"), "no way back beside the nav");
+
+        // Narrow, Settings opens on its nav; picking a page shows it alone.
+        at(&shell, NARROWEST, cx);
+        assert!(drawn(cx, "settings-nav") && !drawn(cx, "settings-page"));
+        pick(&shell, SettingsPage::Agents, cx);
+        assert!(!drawn(cx, "settings-nav") && drawn(cx, "settings-page"));
+        // The way back stands over the page's scroll, never in it.
+        let named = bounds(cx, "settings-back");
+        assert!(named.bottom() <= bounds(cx, "settings-page").top() + SLACK);
+
+        // Back goes to the nav, the page still the one picked, and the
+        // keyboard still on Settings.
+        let link = point(named.left() + px(8.), named.center().y);
+        cx.simulate_click(link, Modifiers::none());
+        cx.run_until_parked();
+        assert!(drawn(cx, "settings-nav") && !drawn(cx, "settings-page"));
+        cx.update(|window, cx| {
+            let shell = shell.read(cx);
+            assert_eq!(shell.settings_page(), SettingsPage::Agents);
+            assert!(shell.settings_focus().contains_focused(window, cx));
+        });
+
+        // Wide again, both stand side by side, the page the one picked.
+        at(&shell, WIDE, cx);
+        assert!(drawn(cx, "settings-nav") && drawn(cx, "settings-page"));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// The least window that holds the nav beside the page, found from the
+    /// room Settings is given at the narrowest and the rule that splits it.
+    fn least_side_by_side(shell: &Entity<Shell>, cx: &mut VisualTestContext) -> Pixels {
+        at(shell, NARROWEST, cx);
+        let room = bounds(cx, "settings-room").size.width;
+        let rem = cx.update(|window, _| window.rem_size());
+        let mut need = room;
+        while !onehand_ui::fits_beside(super::super::NAV_W, gpui::rems(need / rem)) {
+            need += px(1.);
+        }
+        NARROWEST + (need - room)
+    }
+
+    /// Narrowing with the keyboard inside the page keeps the page, rather
+    /// than falling to the nav and taking the keyboard out of Settings.
+    #[gpui::test]
+    fn narrowing_with_the_keyboard_in_the_page_keeps_the_page(cx: &mut TestAppContext) {
+        let dir = folder("strain-settings-focus");
+        let (_, shell, cx) = shell(cx, dir.join("tasks"), Vec::new());
+        // Wide on Workspace, the nav the half last chosen.
+        at(&shell, NARROWEST, cx);
+        pick(&shell, SettingsPage::Workspace, cx);
+        let named = bounds(cx, "settings-back");
+        let link = point(named.left() + px(8.), named.center().y);
+        cx.simulate_click(link, Modifiers::none());
+        at(&shell, NARROWEST, cx);
+        assert!(drawn(cx, "settings-nav") && !drawn(cx, "settings-page"));
+        at(&shell, WIDE, cx);
+        assert!(drawn(cx, "settings-nav") && drawn(cx, "settings-page"));
+        cx.update(|window, cx| {
+            let field = shell.read(cx).workspace_name_input().clone();
+            gpui::Focusable::focus_handle(field.read(cx), cx).focus(window, cx);
+        });
+        cx.run_until_parked();
+        at(&shell, NARROWEST, cx);
+        assert!(!drawn(cx, "settings-nav") && drawn(cx, "settings-page"));
+        cx.update(|window, cx| {
+            assert!(shell.read(cx).settings_focus().contains_focused(window, cx));
+        });
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[gpui::test]
+    fn an_agents_command_and_its_actions_stay_inside_its_box(cx: &mut TestAppContext) {
+        let dir = folder("strain-settings-agents");
+        let path = format!("/opt/{}/bin/agent", unbroken());
+        let agents = vec![
+            agent(SHORT.to_string(), path.clone()),
+            agent(long(), format!("{path} {}", long())),
+            agent(unbroken(), path),
+        ];
+        let (_, shell, cx) = shell(cx, dir.join("tasks"), agents);
+        let edge = least_side_by_side(&shell, cx);
+        at(&shell, edge, cx);
+        assert!(drawn(cx, "settings-nav") && drawn(cx, "settings-page"));
+        // Zoomed in the narrowest window, a row's actions outrun its box: a
+        // known gap until the least needed go behind a menu.
+        let zooms: [(usize, &[Pixels]); 2] = [(0, &[NARROWEST, edge, WIDE]), (TO_150, &[WIDE])];
+        for (steps, widths) in zooms {
+            zoom_pane(&shell, steps, cx);
+            for &w in widths {
+                at(&shell, w, cx);
+                pick(&shell, SettingsPage::Agents, cx);
+                let page = bounds(cx, "settings-page");
+                let list = bounds(cx, "agents-box");
+                let what = format!("at {w:?}, zoomed {steps}");
+                // Across only: the page scrolls, so the box runs past its foot.
+                assert!(
+                    list.left() >= page.left() && list.right() <= page.right() + SLACK,
+                    "the agents' box {what}: {list:?} stands past {page:?}"
+                );
+                for i in 0..3 {
+                    for part in ["controls", "line"] {
+                        let sel = crate::shell::rig::strain::selector(format!("agent-{part}-{i}"));
+                        assert_inside(bounds(cx, sel), list, &format!("agent {i}'s {part} {what}"));
+                    }
+                }
+            }
+        }
+        let _ = std::fs::remove_dir_all(dir);
+    }
+}
