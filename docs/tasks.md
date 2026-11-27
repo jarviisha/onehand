@@ -301,7 +301,8 @@ task::marks     (commit objects + refs)
   one primary action and the secondary ones in their order, so no caller picks its own. It matches
   the groups, `Outcome` and `Stop` exhaustively.
 - **The history cap is pure** (`task::history::over_cap`): the ids of the *Finished* tasks past the
-  newest `KEPT` (200) of each project a task was started from (`setup.repo`, never a worktree).
+  newest `KEPT` (200) of each project a task was started from (`setup.repo`, never a worktree),
+  leaving out the tasks a board holds (`TasksDrive::held`), which a person cannot dismiss either.
   Recency is the latest move across a task's runs, then its id, which is the nanos it was made at.
 - **What happens to every task is the tasks' drive's** (`task::tasks::TasksDrive`), beside the
   runs' (`task::drive::RunDrive`): a request for a place, a start queued or begun

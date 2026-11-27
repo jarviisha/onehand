@@ -14,6 +14,10 @@ minor bump may break any of them.
 - A project's board is kept in a file of its own, `projects/<id>/board.toml`, beside its
   `project.toml`. At the first start of this build each board is moved there, and the `board` key
   leaves `project.toml` once the file is written; an older build then sees no board.
+- A board's tasks stay on it until a person removes them with *Remove from board*: a stop or a
+  take over leaves the issue in its column, and the board's tasks cannot be dismissed. A task off
+  the board that a person retries is theirs, and *No board* lets the board's tasks go. The board
+  file moves to version 2, naming its tasks, at the first start; an earlier build cannot read it.
 - A conversation records the project it belongs to. At the first start of this build each kept
   conversation is given its project, found by its folder, through git for a worktree, or through
   the task that ran there for one since removed; an older build still reads it, and a save made

@@ -481,8 +481,8 @@ the ones that exist. What workflows and tasks do not do is listed at the end of
   room ledger still holds, so the extra task waits for room; it is not run over the limit.
 - **A board's old workflow's tasks still count after it is changed.** Bound to another workflow,
   the board keeps the tasks the old one started: they hold their issues, count against the team
-  and stand in columns named by step ids the new workflow may not have, until they end and are
-  dismissed. Leaving them out would mean keeping the workflow on each task and comparing.
+  and stand in columns named by step ids the new workflow may not have, until a person removes
+  them from the board. Leaving them out would mean keeping the workflow on each task and comparing.
 - **Only a copy of a built-in workflow rebinds the board it was opened from.** A copy of the
   person's own workflow, saved from the board's *Edit workflow*, leaves the board on the original;
   it is bound in *Settings ▸ Projects ▸ Board*. Their own is edited in place, so a copy of it is
