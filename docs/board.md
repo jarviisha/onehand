@@ -171,17 +171,32 @@ are never written.
 - **What is on the board is what its entries name.** The work column's entries name a task and
   the run the board asked for, Done's the task. A start is written before it is asked: the issue
   leaves To do for the work column in a write, and its task starts only once that write lands; a
-  write that fails puts the issue back and starts nothing. At start an entry naming a task that is
-  not there, and whose start is not on its way, is dropped, its issue back in the Backlog.
+  write that fails puts the issue back and starts nothing. An entry naming a task that is not
+  there, and whose start is not on its way, is kept, to read as a start that did not land: a
+  person starts it again, and nothing starts it by itself.
 - **A board task** is an ordinary task with `Origin::Board { project, issue }`, kept like any
   other. Where it stands in the work column comes from its last run (`board::columns`). The
   tasks the work column names are held: the history cap passes over them, the cap applied as the
   tasks are read included (`TasksDrive::held`, told by the board's drive, `Effect::Held`).
 - **A board written before its columns named their tasks** (version 1) takes them up the first
   time the tasks are read: those on it in the work column, oldest first, the done ones in Done,
-  newest first (`BoardDrive`'s `TasksRead`), and is written as version 2. The Backlog leaves out
+  newest first (`BoardDrive`'s `TasksRead`), and is written as version 3. The Backlog leaves out
   the issues its entries name and those of its done tasks no longer in Done, until they are
   dismissed or capped.
+
+**Columns of any shape** are kept and decided in core, though the page and Settings still show
+the one shape a bound board has (version 3; versions 1 and 2 read as they were). A column is a
+person's or runs a workflow; a workflow column starts on entry or on a press, and a column moves
+an issue ready to leave it on by itself or waits for a person; it may hold a limit. An issue is
+ready in a person's column at once, and in a workflow column once its run there ended done
+(`Entry::done`). A look (`board::flow::look`) drops the closed issues no task works, moves the
+ready ones on, from the last column to the first, into a column with room (one that starts on
+entry only with a place on the team and room at its workflow's first step), and starts what waits
+in a column that starts on entry, within the same room. An issue entering a workflow column with
+a task already working it gets a next run of that task (`TasksDrive::next_run`); one with none,
+a new task. A start pressed goes ahead past a full team, which caps only what the board starts by
+itself. A run that ends done marks its entry done, and the look its read brings moves it on;
+entering Done closes the issue. Each row's line is core's (`board::line`).
 
 **Changing the workflow** for another leaves the tasks the old one started on the board: they
 still hold their issues out of the Backlog, count as running against the team, and stand in
