@@ -44,7 +44,7 @@ on this machine. A project on a host has none: its issues are not kept here.
   it, or back to the Backlog.
 - **Dragging** does what the row menus do, which stay for the keyboard: an issue of the Backlog or
   To do dropped on a To do row lands just before it, dropped elsewhere on To do lands last, and
-  dropped on the Backlog leaves To do (`ProjectsDrive::place_todo`). A drop that changes nothing
+  dropped on the Backlog leaves To do (`BoardDrive::place_todo`). A drop that changes nothing
   writes nothing, and the board pulls after one that does. A task's row does not drag.
 - **A step's column** holds the board's tasks at that step: working, or ended and needing
   attention. A task whose step left the workflow gets a column after the others, named by the
@@ -69,8 +69,8 @@ on this machine. A project on a host has none: its issues are not kept here.
 - **Extend on a board task waits for a team place** when the team is full: the task reads *Waiting
   for a team place* and is queued, not needing attention. Places go to waiting extends first, the
   one asked first first, and **no To do issue starts while one waits** (`board::extends_given`,
-  `board::extends_waiting`, `ProjectsDrive::extends_given`, which counts starts on their way, and
-  the reservation in `ProjectsDrive::pull`). Given a place, it asks
+  `board::extends_waiting`, the look's `GivePlace`, which counts starts on their way, and
+  the reservation in `BoardDrive`'s look). Given a place, it asks
   room at a limited step again, then carries on in the same session. An Extend pressed before the
   run rests goes on at once, in the team place and the step's room it still holds, and so does one
   whose project no longer has a board (`board::extend_way`).
@@ -146,14 +146,18 @@ A run waiting for room still counts toward the team: it holds a worktree and a p
 only narrow the pull, never raise the team size.
 
 The starts on their way, issues taken out of To do whose task is not yet kept, are counted as
-running so the team is not overfilled. They live in `ProjectsDrive` (`start_todo`, `landed`) and
+running so the team is not overfilled. They live in `BoardDrive` (`BoardDrive::starting`, let go of as each lands) and
 are never written.
 
 ## What is kept
 
-- **`project.toml`** holds the board with the project: `workflow`, `team` and `todo`, the issue
-  numbers in order (`project::Board`, edited by `ProjectsDrive::{set_board, set_team, add_todo,
-  move_todo, take_todo}`). A team size changed by the track is written once the changing stops.
+- **`board.toml`**, beside the project's `project.toml` in its folder, holds the board, written
+  whole: its `schema_version`, `team`, and its columns, To do holding the issue numbers in order
+  and the work column the workflow's id (`board::Board`, read by `board::file`, edited by
+  `BoardDrive::{bind, unbind, set_team, add_todo, move_todo, place_todo, drop_todo}`). A team size
+  changed by the track is written once the changing stops, and at quit. *No board* removes the
+  file. A file of a newer version, or of a shape this build does not know, is not read: the board
+  page and Settings say why, and nothing writes over it.
 - **A board task** is an ordinary task with `Origin::Board { project, issue }`, kept like any
   other. Where it stands comes from its last run and the app's view of whether it works
   (`board::columns`, `board::taken`, `board::running`).
@@ -169,6 +173,12 @@ person's Resume; it is not counted as running, so the team has room for another.
 
 ## An older build
 
-A build that does not know the board drops `board` from `project.toml` the next time it writes the
-project, and skips the file of a board task it cannot read (`Origin::Board` is unknown to it). The
+A board an earlier build kept in `project.toml` is moved into `board.toml` at the first start of
+this build, before any project is read (`board::file::migrate_blocking`): the file is written
+first, and the key dropped only then, so a move that fails keeps the key, which every write of the
+project keeps until the next start tries again. A board file already there wins, and the key goes.
+
+An older build that knows the board sees none once the key is gone, and never touches
+`board.toml`; To do changed in it meanwhile is lost to this build. A build that does not know the
+board at all skips the file of a board task it cannot read (`Origin::Board` is unknown to it). The
 issues, which are the project's own, are untouched.

@@ -11,6 +11,9 @@ minor bump may break any of them.
 
 ### Breaking
 
+- A project's board is kept in a file of its own, `projects/<id>/board.toml`, beside its
+  `project.toml`. At the first start of this build each board is moved there, and the `board` key
+  leaves `project.toml` once the file is written; an older build then sees no board.
 - A conversation records the project it belongs to. At the first start of this build each kept
   conversation is given its project, found by its folder, through git for a worktree, or through
   the task that ran there for one since removed; an older build still reads it, and a save made
