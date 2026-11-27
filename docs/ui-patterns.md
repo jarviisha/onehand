@@ -1,37 +1,48 @@
 # UI patterns
 
 The patterns every screen repeats, in the app and its feature crates: how a screen is put
-together, and how it behaves while it waits, fails, refuses or removes something. `DESIGN.md`
-owns the window's frame and the visual rules these patterns are drawn with, `docs/screens.md`
-what each region holds, and a feature's own document its screens' detail. Code never cites this
-file.
+together, how it holds under strain, and how it behaves while it waits, fails, refuses or
+removes something. `DESIGN.md` owns the window's frame and the visual rules these patterns are
+drawn with (its rules `T` and `C`, and how a rule reads), `docs/screens.md` what each region
+holds, and a feature's own document its screens' detail. Code never cites this file.
 
 ## Layout
 
 ### Choose the container
 
-Choose by the content's role before choosing its decoration. These rules apply to app pages and
-feature crate views alike; the feature contract still decides what content and actions exist.
+#### K-01 The container follows the content's role
 
 | Content | Container | Separation |
 |---|---|---|
-| Related settings (Settings) | Box | The setting page's group: one edge, its heading inside at the top |
+| Related settings | Box | The settings group: one edge, its heading inside at the top |
 | A group inside a form | Plain section | Heading, shared text axis and section gap |
-| A group on a page: one thing's facts, a list, a status, what a project is set to | Box | One outer edge in a control's edge, no fill; no nested boxes for its fields |
+| A group on a page: one thing's facts, a list, a status, what a thing is set to | Box | One outer edge in a control's edge, no fill; no nested boxes for its fields |
 | Repeated items to scan or pick | List or table | Stable columns and row states; table hairlines |
-| Repeated items opened one at a time, each with actions of its own (Workflows) | Grid of boxes | A gap; a box's edge raised on hover, never a fill |
+| Repeated items opened one at a time, each with actions of its own | Grid of boxes | A gap; a box's edge raised on hover, never a fill |
 | Code, output or a diff | Well | Quiet fill; overflow stays inside it |
 | One selected item read in full | Detail | Title, metadata, content; no extra enclosing card |
 | A temporary choice or confirmation | Menu, popover or dialog | Floating surface and lift |
 
-The transcript and composer keep their specific treatments in `DESIGN.md`. On a page each group
-stands in a box, so what belongs together reads as one object rather than as text loose on the
-page; what groups inside a box (a form's fields, a box's rows) takes the plain treatments, never
-a box of its own.
+- When: content is given a container, in an app page or a feature crate's view alike.
+- Then: choose by the content's role before its decoration, in the least decorated container
+  that says each relationship. Never add a card, a badge, an icon or a fill to look finished.
+- Unless: the transcript and the input surface keep the treatments `DESIGN.md` and
+  `docs/screens.md` give them.
+- Checked by: review.
+
+#### K-02 On a page each group stands in a box, and nothing inside it is boxed again
+
+- When: a page holds several groups.
+- Then: each stands in a box, so what belongs together reads as one object rather than as
+  text loose on the page; what groups inside a box (a form's fields, a box's rows) takes the
+  plain treatments.
+- Checked by: picture.
 
 ### Hierarchy
 
-The neutral inks of `DESIGN.md` (*Type, space and shape*), applied on a neutral surface:
+#### K-03 Each part of a row, a box or a strip takes its ink
+
+The neutral inks of T-04, on a neutral surface:
 
 | Where | Full ink | Middle ink | Muted ink |
 |---|---|---|---|
@@ -41,59 +52,79 @@ The neutral inks of `DESIGN.md` (*Type, space and shape*), applied on a neutral 
 | A page's head | its name, semibold at the chrome size | none | its line under it, at the meta size: what the page is for, then its facts |
 | A strip | what it names | none | a count beside the name |
 
-Text on a fill, and text that carries meaning, takes the ink `DESIGN.md` names for it (*Type,
-space and shape*). A row's hover and selected fills are steps from the surface under it
-(`DESIGN.md`, *Colour and state*).
+- Checked by: picture.
 
-Hover changes a list row's fill, never its inks or its layout; a line row answers by its ink
-instead (*Line rows*). Weight follows the role (`DESIGN.md`,
-*Type, space and shape*), never a row's urgency: what needs the person says so in its state's ink
-and a word.
+#### K-04 Hover changes a fill, never an ink or a layout
+
+- When: the pointer is over a list row.
+- Then: its fill changes (T-22); its inks and its layout do not. Weight follows the role
+  (T-02), never a row's urgency: what needs the person says so in its state's ink and a word.
+- Unless: a line row answers by its ink instead (K-23).
+- Checked by: picture.
 
 ### Spacing and density
 
+#### K-05 A gap follows the relationship
+
 | Relationship | Default |
 |---|---|
-| Compact metadata or a tightly coupled mark and label | `gap_1` |
+| Compact metadata, or a tightly coupled mark and label | `gap_1` |
 | Icon and label in a row the app draws; adjacent controls; parts within a box | `gap_2` |
 | Row inset | `px_2` |
 | Strip inset; box padding | `px_3`, inside the Workbench `tokens::ROW_INSET` (a tab bar's tabs stand a step in from its ends and apart, so their fills never touch); `p_3` |
-| A box whose body scrolls inside it (a pinned card) | `p_4`, a step more so the scrollbar's thumb has room beside the text |
+| A box whose body scrolls inside it | `p_4`, a step more so the scrollbar's thumb has room beside the text |
 | Form fields | `gap_4` |
 | Page sections; page outer padding | `gap_6`; `px_8` `py_6` |
 | A list page's inset | `px_6` |
 | A tree row's inset; its fill off the dock's sides; its pitch, fill and room around the fill; its step per level | `tokens::ROW_INSET`; `tokens::ROW_GUTTER`; `tokens::TREE_ROW_H`, `TREE_ROW_FILL`, `TREE_ROW_ABOVE`/`BELOW`; `tokens::TREE_INDENT` |
-| A live grid (the terminal, Neovim) | `px_3` `py_2` |
-| Anything beside a scrollbar | a lane of its own on the scrolling side, so the thumb never lies over content (words, a control, a row's fill), drawn over the region though it is: `tokens::SCROLLBAR_W`, or the box's own inset (`p_3` at least) where the scroll's frame reaches back through it to the box's edge |
+| A live grid (a terminal) | `px_3` `py_2` |
+| Inside the Workbench: the parts of one group; groups | `gap_3`; `gap_6` |
+| Entries of a chrome list (an activity log, a list of skills) | `gap_2` at least |
 
-Smaller steps are for component internals; the largest step is for a deliberate major grouping,
-not a second page-padding convention. Use the named pattern's defaults before another legal step.
-Equal relationships keep equal gaps across screens. Space between groups exceeds space within
-them; align titles, row labels and field labels to consistent text axes. Marks down one column
-(icons, state dots) share one centre line, each in a slot of one width, so the
-labels after them start on one edge. A number or a time in a column takes a fixed-width slot, so a
-longer value does not push its neighbours.
+- When: two parts are spaced.
+- Then: the named pattern's default before another legal step (T-09). Smaller steps are for a
+  component's internals; the largest is for a deliberate major grouping, not a second
+  page-padding convention.
+- Checked by: tests `tree_row_fill_is_odd_and_rows_stack_at_the_pitch`,
+  `words_stand_inside_the_fill` for the tree's; review.
 
-Density follows the task: chrome and lists are compact, forms leave room for labels, and prose
-keeps its reading size and line height. Chrome breathes; reading text stays dense:
+#### K-06 Equal relationships keep equal gaps, and parts share their axes
 
-- A line that is itself content (an activity entry, a conflict, a fact's value, a row's
-  description) takes `CHROME_TEXT`; `.text_xs()` is for meta beside something (a time, a count,
-  a hint, the label over a run of rows).
-- Inside the Workbench, the parts of one group stand `gap_3` apart and groups `gap_6`, so an
-  issue's head reads as one thing and what follows it as the next.
-- Entries of a chrome list (an issue's activity, a plugin's skills) stand at least `gap_2` apart.
-- Reading text (an issue's description, Markdown, code) keeps the reading size on `LEADING`. Do not make a crowded panel fit by shrinking its font,
-icons or hit targets. Use the existing overflow, wrapping and list/detail patterns instead. A
-list page's rows are a density of their own, not a shrunk panel (*List pages*).
-Same-role peers keep the same control size (*Control sizes*). A single-line row is `ROW_H` tall; a
-row with a second line takes `ROW_H` as its minimum and grows to fit its lines at shared padding
-and leading, rather than clipping to that height.
+- When: a view is laid out.
+- Then: equal relationships keep equal gaps across screens; space between groups exceeds space
+  within them. Titles, row labels and field labels sit on consistent text axes, and text
+  below a title shares its axis. Marks down one column (icons, state dots) share one centre
+  line, each in a slot of one width. A number or a time in a column takes a fixed-width slot,
+  so a longer value does not push its neighbours.
+- Checked by: picture.
+
+#### K-07 Density follows the task
+
+- When: text is sized or a panel is crowded.
+- Then: chrome and lists are compact, forms leave room for labels, and prose keeps its reading
+  size and line height (`LEADING`). A line that is itself content (an activity entry, a fact's
+  value, a row's description) takes `CHROME_TEXT`; `.text_xs()` is for meta beside something
+  (a time, a count, a hint, the label over a run of rows). A crowded panel is never made to
+  fit by shrinking its font, icons or hit targets: it uses overflow, wrapping and the
+  list-and-detail pattern.
+- Unless: a list page's rows are a density of their own (K-16).
+- Checked by: picture.
+
+#### K-08 A row is `ROW_H`, and grows for a second line
+
+- When: a row is drawn.
+- Then: a single-line row is `ROW_H` tall; a row with a second line takes `ROW_H` as its
+  minimum and grows to fit its lines at shared padding and leading, never clipping to that
+  height. Multi-line variants align their primary labels and second lines across peers.
+- Checked by: tests `a_project_row_stays_inside_the_rail`,
+  `every_history_row_keeps_its_height_and_its_trailing_slot` for one height; picture for a
+  second line.
 
 ### Control sizes
 
-A size names a role (`DESIGN.md`, *Components*). Each role, the component that serves it, and the
-size it takes; `.claude/skills/ui/tokens.md` holds what each size measures in each component.
+#### C-16 Each role takes its component and its size
+
+`.claude/skills/ui/tokens.md` holds what each size measures in each component.
 
 | Role | Component | Size |
 |---|---|---|
@@ -101,443 +132,710 @@ size it takes; `.claude/skills/ui/tokens.md` holds what each size measures in ea
 | An icon-only button in a page's head | Button | `.short_icon()`, square at `CONTROL_H` |
 | An icon-only button in a page's form | Button | `.tall_icon()`, square at `FIELD_H` |
 | A page's form: its fields, its pickers, its switch and its buttons; a form's *Save* and *Cancel* standing in its head take the head's size | Button, Input | `.tall()` |
-| A form in a dialog at `DIALOG_FORM` (the agent form, the workflow launcher, the issue picker): its fields, its pickers and its footer | Button, Input | `.tall()` |
-| A dialog that asks one thing (a rename, a worktree): its fields and footer; a dock's filter bar, its search, choices and pickers | Button, Input | `.short()` |
-| Every other button with words: a strip's, a box's, a row's, a secondary action inside dense content (a line of meta text, a transcript block, a chip), a tab, a fold toggle, a pinned card's answers | Button | `.short()`, under a row, so the controls never outweigh what they act on |
-| Every other icon-only button: a strip's, a row's, a copy control, a split action's caret beside `.short()`, the composer's send | Button | `.short_icon()`, square at `CONTROL_H`, so an icon alone is as tall as a worded peer beside it |
-| A field in a strip, the rail or the title bar (the search) | Input | `.short()`, as tall as the buttons beside it |
-| The rail's *New session*, the one action the rail is opened for | drawn by the app, a row as a page's | `ROW_H`; its chevron a row's icon-only button, so it reads as the first of the rail's rows, set apart by its weight |
+| A form in a dialog at `DIALOG_FORM`: its fields, its pickers and its footer | Button, Input | `.tall()` |
+| A dialog that asks one thing: its fields and footer; a dock's filter bar, its search, choices and pickers | Button, Input | `.short()` |
+| Every other button with words: a strip's, a box's, a row's, a secondary action inside dense content, a tab, a fold toggle, a pinned card's answers | Button | `.short()` |
+| Every other icon-only button: a strip's, a row's, a copy control, a split action's caret beside `.short()`, a send button | Button | `.short_icon()`, square at `CONTROL_H` |
+| A field in a strip, the rail or the title bar | Input | `.short()`, as tall as the buttons beside it |
 | An icon in a button | Icon | the button's own, as the library sizes it for the button's size |
 | An icon leading a label the app draws: a row, a menu item | Icon | `.small()` |
-| A state's mark leading a row's label (a session's) | Icon | `.xsmall()`, a step under the label |
-| A mark inside a line of meta text | Icon | `.xsmall()` |
-| A badge: a tag standing on its own (a state, a count, *Default*) | Tag | micro words on a slim inset, edged in its own hue |
-| A label inside a line of meta text (an issue row's) | text | its kind's ink (`label_tint`), the one part of the line that truncates; the row's quieter ink on the selected fill |
+| A state's mark leading a row's label; a mark inside a line of meta text | Icon | `.xsmall()`, a step under the label |
+| A badge: a tag standing on its own | Tag | micro words on a slim inset, edged in its own hue (T-14) |
+| A label inside a line of meta text | text | its kind's ink (`label_tint`), the one part of the line that truncates; the row's quieter ink on the selected fill |
 | A checkbox, a switch | Checkbox, Switch | `.small()` beside chrome text, at the library's own geometry |
-| A single-line row; a row with a second line | drawn by the app | `ROW_H`; at least `ROW_H` |
-| A strip along the top of a region | `strip` (`onehand_ui`) | `BAR_H` |
-| A mode's own bar under the Workbench's strip | `mode_strip` | `MODE_BAR_H` |
+| A single-line row; a row with a second line | drawn by the app | `ROW_H`; at least `ROW_H` (K-08) |
+| A strip along the top of a region | `strip` | `BAR_H` |
+| A mode's own bar under a dock's strip | `mode_strip` | `MODE_BAR_H` |
 
-- **`.tall()` is the ceiling.** No control stands taller than `FIELD_H`; a page gives a field
-  room by its size, never by a larger control.
-- **One size, one measure.** A button's `.short()` is the library's extra small held at
-  `CONTROL_H` and its `.tall()` the library's small held at `FIELD_H`, a step over it, its words at
-  `CHROME_TEXT`; a field takes the library's small at both heights, its words at `CHROME_TEXT`; their icons and insets the
-  library's. A size a component gets wrong is corrected in its shared
-  wrapper, never at the call site. An icon-only button beside `.short()` is `.short_icon()`: the
-  library's small icon, held square at `CONTROL_H`, the same height as `.short()`; the library's
-  own small icon button stands a step taller. `.xsmall()` is no field's or worded button's size: an icon
-  takes it, and an icon-only button inside a small object (an attachment's plate), which scales
-  with the object it sits on.
-- **One row of actions, one height.** Every control standing in one row of actions (a button, both
-  halves of a split action, a field, a picker, a choice, an icon alone) takes the same size, so
-  their tops and bottoms meet on one line. The row takes the size its leading role takes, and
-  every other control in it follows; a control whose role elsewhere takes another size takes
-  the row's here. Only the components that keep their own geometry (below) stand apart, centred.
-- **The hit area is not the icon.** A worded `.short()` button carries the extra small icon
-  beside its words; an icon alone at `.short_icon()` takes the small one, its box no larger than a
-  worded peer's. Nothing is enlarged to fill its box.
-- **Some components keep their own geometry**: a badge, a checkbox, a switch, a key cap. Centre
-  them in their row (`items_center`); never stretch them to the height of the controls beside
-  them.
-- **Spacing inside a library control is the library's** (a small button's icon and label sit
-  `gap_1` apart). The table above governs the space between controls, `gap_2` between two.
-- **Zoom.** What the app draws is in rems and follows per-panel zoom. Some library sizes are
-  pixels (a switch's track and thumb, a field's inner padding, the library's table rows), so a
-  part equal to one of them at 100% parts from it at another zoom: line such parts up by centring
-  them, never by matching a number.
+- When: a control is sized (C-11).
+- Then: the size its role takes here. `.tall()` is the ceiling: no control stands taller than
+  `FIELD_H`; a page gives a field room by its size, never by a larger control.
+- Checked by: test `the_sizes_are_the_listed_ones` for the heights; review for the role.
+
+#### C-17 One size, one measure, corrected in its wrapper
+
+- When: a component's size comes out wrong.
+- Then: it is corrected in its shared wrapper (`Short`, `Tall`), never at the call site. A
+  button's `.short()` is the library's extra small held at `CONTROL_H` and its `.tall()` the
+  library's small held at `FIELD_H`, its words at `CHROME_TEXT`; a field takes the library's
+  small at both heights. An icon-only button beside `.short()` is `.short_icon()`: the
+  library's small icon, held square at `CONTROL_H`.
+- Checked by: review.
+
+#### C-18 One row of actions, one height
+
+- When: controls stand in one row of actions (a button, both halves of a split action, a
+  field, a picker, a choice, an icon alone).
+- Then: every one takes the same size, so their tops and bottoms meet on one line. The row
+  takes the size its leading role takes, and a control whose role elsewhere takes another
+  size takes the row's here.
+- Unless: the components that keep their own geometry (C-20) stand apart, centred.
+- Checked by: tests `the_title_bar_controls_share_one_height`,
+  `a_page_heads_actions_share_one_height_and_one_line`.
+
+#### C-19 The hit area is not the icon
+
+- When: a button holds an icon.
+- Then: a worded `.short()` button carries the extra small icon beside its words; an icon
+  alone at `.short_icon()` takes the small one, its box no larger than a worded peer's.
+  Nothing is enlarged to fill its box.
+- Checked by: review.
+
+#### C-20 Some components keep their own geometry
+
+- When: a badge, a checkbox, a switch or a key cap stands in a row of controls.
+- Then: it is centred in the row (`items_center`), never stretched to the height of the
+  controls beside it. Spacing inside a library control is the library's; the gap between two
+  controls is `gap_2`.
+- Checked by: picture.
+
+#### C-21 Under zoom, parts line up by centring, never by matching a number
+
+- When: a part the app draws in rems stands beside a library part sized in pixels (a switch's
+  track and thumb, a field's inner padding, the library's table rows).
+- Then: line them up by centring them; a part equal to one of those at 100% parts from it at
+  another zoom.
+- Checked by: picture, at a zoom other than 100%.
 
 ### Window
 
-The window keeps the rail's minimum beside the conversation's: it is never smaller than 720 by
-480 pixels. Its regions are `DESIGN.md`'s.
+#### L-01 The window is never smaller than 720 by 480
+
+- When: the window is sized.
+- Then: it keeps the rail's minimum beside the conversation's (`WINDOW_MIN`). Its regions are
+  `DESIGN.md`'s.
+- Checked by: test `the_sizes_are_the_listed_ones`.
 
 ### Strips
 
-A strip along the top of a region is `BAR_H` tall and padded `px_3`, its parts `gap_2` apart,
-at the chrome size (`strip`): what it names at the start, in full ink, its controls at the end as
-ghost buttons at their control sizes (`strip_control` for an icon alone). An icon-only control is named through `.named(..)`: its
-tooltip, and the same words as its accessible name.
-Keep identity at the leading edge and actions at the trailing edge in every equivalent strip; a control that
-shows a region the strip's own panel hid may lead (the way back to a list, a list's toggle).
-Filters belong below the region header with the content they filter. Reserve the action group's
-width while labels truncate; showing hover actions must not move the text beside them.
+#### K-09 A strip names at its start and acts at its end
 
-The Workbench's strip, the terminal's and the Editor's are tab panel bars (`tab_bar`), the
-Editor's at `tokens::MODE_BAR_H`: no fill, a line under the bar, the open tab a rounded
-`secondary` fill. The Editor's names only the file open now, as a `tab_select` dropping down the
-project's tree, and has no line: the file under it fades out beneath it instead. Any other bar
-inside the Workbench is a `workbench_strip`, padded `tokens::ROW_INSET` so its words and the tree
-rows' names read down one edge, with the line under it: the reader's bar is a `mode_strip`,
-`MODE_BAR_H` tall, a step under the strip over it, and an issue's trail is one too. Every other
-bar inside a region's box draws a line where it ends; the conversation's header draws none and
-keeps `px_3`.
+- When: a strip stands along the top of a region.
+- Then: `strip`: `BAR_H` tall, padded `px_3`, its parts `gap_2` apart, at the chrome size. What
+  it names stands at the start in full ink; its controls stand at the end as ghost buttons at
+  their control sizes (`strip_control` for an icon alone); an icon-only control is named
+  through `.named(..)`, its tooltip and the same words as its accessible name. Filters belong
+  below the region's header, with the content they filter. Every bar inside a region's box
+  draws a line where it ends.
+- Unless: a control that shows a region the strip's own panel hid may lead (the way back to a
+  list, a list's toggle). A bar whose content fades out under it draws no line, nor does the
+  conversation's header.
+- Checked by: picture.
 
 ### Cuts
 
-What runs past its room is cut by a fade: a gradient from the clear surface to the solid one
-over its end, which says something is cut. It serves a rail name too long for its row, a long
-command folded in the transcript, a long prompt cut in its bubble, the conversation where it runs under the composer, and the
-staged files beside *Show all N*. Text inside a row that has no fade truncates on an ellipsis.
-Nothing else is drawn see-through.
+#### L-02 What runs past its room is cut, and the cut says so
+
+- When: content is longer than the room it is given.
+- Then: a block of reading content that is folded or bounded, a name too long for its
+  navigation row, and content that runs under a pinned surface are cut by a fade: a gradient
+  from the clear surface to the solid one over its end. Text inside a row that has no fade
+  truncates on an ellipsis. Nothing else is drawn see-through.
+- Checked by: tests `a_long_workspace_name_stays_inside_its_slot`,
+  `a_long_project_name_truncates_and_its_tail_keeps_its_width` for the bound; picture for the
+  fade or the ellipsis itself.
+
+### Under strain
+
+These rules hold a view together when its content is long, its container narrow, its zoom
+large or its list overfull. Each came from a fault seen in the app.
+
+#### L-03 A control's words stay on one line
+
+- When: a control holds words.
+- Then: they never wrap; a control that cannot hold them truncates them or gives way as L-07 says.
+- Checked by: test `a_page_heads_actions_share_one_height_and_one_line` for one height on the
+  test platform's text; picture, since only the real font shows where a line would break.
+
+#### L-04 A long name never moves its neighbours
+
+- When: a name of unknown length stands in a row or a bar beside other parts.
+- Then: the name takes the room left (`min_w_0`) and is cut (L-02); the parts beside it do not
+  shrink, grow or move.
+- Unless: the name is the only part on its line.
+- Checked by: tests `a_long_workspace_name_leaves_the_toggles_in_place`,
+  `a_long_page_title_leaves_its_actions_in_place`,
+  `a_long_project_name_truncates_and_its_tail_keeps_its_width`,
+  `a_long_task_title_stays_inside_its_column`.
+
+#### L-05 A control with a fixed place keeps it
+
+- When: a control's place is part of what a person learns (a bar's toggles, a centred search).
+- Then: its bounds are the same whatever stands beside it, at every width the window allows,
+  and it stays inside the window.
+- Checked by: tests `a_long_workspace_name_leaves_the_toggles_in_place`,
+  `the_palette_stays_at_the_centre_whatever_the_name`.
+
+#### L-06 A row's trailing slot keeps its width
+
+- When: a row holds a name and trailing facts or actions.
+- Then: the trailing slot keeps its width while the name truncates, and showing a row's hover
+  actions moves nothing beside them: where a row has trailing facts its hover actions are laid
+  over them, hiding them while they show; a row without them keeps its actions in a held slot.
+- Checked by: tests `one_history_row_keeps_its_height_and_its_trailing_slot`,
+  `every_history_row_keeps_its_height_and_its_trailing_slot`,
+  `a_long_project_name_truncates_and_its_tail_keeps_its_width`.
+
+#### L-07 A row of actions stays on one line
+
+- When: a row of actions is short of room.
+- Then: its words shorten, or the least needed actions go behind a menu; the row does not
+  break onto a second line.
+- Unless: where a cut label would hide what a press grants (a pinned card's answers), the
+  answers wrap onto a second line whole before a label is cut.
+- Checked by: tests `a_cards_answers_as_worded_stand_on_one_line`,
+  `a_question_cards_answers_as_worded_stand_on_one_line`; for the exception,
+  `answers_that_do_not_fit_wrap_whole`, `answers_worded_long_wrap_whole`.
+
+#### L-08 The last item stands off its container's end
+
+- When: a list or a column ends inside a box or a region.
+- Then: its last item stands off the end by the list's own inset, as its first stands off the
+  start.
+- Checked by: test `the_last_row_stands_off_the_end_of_its_box`.
+
+#### L-09 What scrolls keeps a lane beside its scrollbar, and its rows their height
+
+- When: content scrolls.
+- Then: a lane on the scrolling side stays clear, so the thumb never lies over words, a
+  control or a row's fill: `tokens::SCROLLBAR_W`, or the box's own inset (`p_3` at least)
+  where the scroll's frame reaches back through it to the box's edge. Rows keep their height
+  and are scrolled, never squeezed: a scrolling box is a plain box with the column inside it,
+  never itself a flex column.
+- Checked by: guard `a_scrolling_box_is_not_a_flex_column`; tests
+  `rows_in_a_scrolling_box_keep_a_lane_beside_its_scrollbar`,
+  `every_history_row_keeps_its_height_and_its_trailing_slot`.
+
+#### L-10 Content wider than its container scrolls or reflows, never clips silently
+
+- When: columns or content are wider than the container.
+- Then: the container scrolls sideways with every column at its own width, or the content
+  reflows, as its pattern says. Nothing is cut off with no way to reach it.
+- Checked by: test `columns_past_the_width_scroll_sideways_and_keep_their_width`; picture at
+  the narrowest window.
+
+#### L-11 A popup never covers the field it serves
+
+- When: a list or a menu opens for a field or a control.
+- Then: it opens beside it (under a field, just above a control at the window's foot) and
+  leaves the field in view.
+- Checked by: test `the_palettes_list_opens_below_its_field`; picture.
+
+#### L-12 A split or a stack reads its container, never the window
+
+- When: a view decides between side by side and one at a time, or how many boxes a row holds.
+- Then: it measures the container it is given: a narrow dock in a wide window still stacks.
+- Checked by: test `a_list_and_its_detail_share_a_container_only_when_both_fit`.
 
 ### Pages
 
-A page takes the agent pane. Every page names itself in its head, in the body (`page_head`): its
-name semibold at the chrome size, one line under it at the meta size in the muted ink (what the page
-is for, then its facts where it has them), its actions at the end, and a hairline under the whole
-that says where the page's own content starts; the pane's header above it carries chrome alone.
-Weight, not size, sets the name apart, so every page's head letters as the chrome around it. A box's
-heading identifies its own content. A page is one of two kinds, chosen by what it holds, and the
-kind decides its width and its density, never its head:
+#### K-10 Every page names itself in its head
 
-- a **column page** holds fields, boxes or one thing read in full (a project's page, the
-  overview, Tasks, Schedules, a task, Settings, Workflows' grid of cards); a workflow opened from
-  it takes a page of three columns of its own;
-- a **list page** holds one long list to scan, filter and pick from (Issues).
+- When: a page takes the agent pane.
+- Then: `page_head`, in the body: its name semibold at the chrome size, one line under it at
+  the meta size in the muted ink (what the page is for, then its facts where it has them), its
+  actions at the end, and a hairline under the whole that says where the page's own content
+  starts. The pane's header above it carries chrome alone. Weight, not size, sets the name
+  apart. A box's heading identifies its own content.
+- Checked by: tests `a_long_page_title_leaves_its_actions_in_place`,
+  `a_page_head_with_no_actions_gives_the_title_the_row`.
+
+#### K-11 A page is a column page or a list page, by what it holds
+
+- When: a page is laid out.
+- Then: a **column page** holds fields, boxes or one thing read in full; a **list page** holds
+  one long list to scan, filter and pick from. The kind decides its width and its density,
+  never its head.
+- Checked by: review.
 
 ### The top of a page
 
-A workspace-wide page (the overview, Tasks, Issues, Workflows, Schedules) and Settings keep their
-top in place while the rest scrolls under it (`page_top`): the head, then, where the page has them,
-a row of its search and its filters. The top is inset `px_8` and `pt_4`, its parts `gap_3` apart,
-in the same column as the body under it (the whole pane on a list page, and on Settings, whose
-name starts on its nav column's edge). The head's hairline parts it from what the page holds; the
-body's own top inset stands what scrolls clear of the top.
+#### K-12 A page's top stays while the rest scrolls under it
 
-- **The head.** Its actions are `.short()`, at one height; its icon-only ghost buttons
-  (*Refresh*) stand before its creating action. The creating action (a project page's Send, Workflows'
-  *New*, *New schedule*, *New issue*) is the view's one primary, stepping down to `secondary`
-  while a form it opened, or an item floating over the list, is open and holds it. A page that
-  only sets values (Settings) holds no primary, every button on it secondary, and stands its many
-  peer groups each in a box, its heading inside.
-- **The row under it.** The search first (`page_search`: `.short()`, as wide as its cap and
-  narrower only when the row runs short), then the filter bar's choices and filters (*Filter
-  bars*), kept to the row's end; the row wraps when narrow. A page with filters and no search
-  keeps them at the row's end all the same.
-- A table's column names, where a page has them, head its rows and scroll with them.
+- When: a workspace-wide page (one the rail's own navigation rows open) or the settings page
+  is drawn.
+- Then: `page_top`: the head, then, where the page has them, a row of its search and its
+  filters, inset `px_8` and `pt_4`, its parts `gap_3` apart, in the same column as the body
+  under it (the whole pane on a list page, and on the settings page, whose name starts on its
+  nav column's edge). The head's hairline parts it from what the page holds; the body's own top inset
+  stands what scrolls clear of the top. A table's column names head its rows and scroll with
+  them.
+- Unless: a page reached from one of these (one thing's own page, a form, a project's page)
+  scrolls as one column under its trail back.
+- Checked by: picture.
 
-A page reached from one of these (a task, a schedule's form, a project's page) scrolls as one
-column under its trail back.
+#### K-13 A page's head holds its actions in one order
+
+- When: a page's head holds actions.
+- Then: all `.short()`, at one height; icon-only ghost buttons stand before the creating
+  action. The creating action is the view's one primary (T-25), stepping down to `secondary`
+  while a form it opened, or an item floating over the list, is open and holds it.
+- Unless: a page that only sets values holds no primary, every button on it secondary, and
+  stands its peer groups each in a box, its heading inside.
+- Checked by: test `a_page_heads_actions_share_one_height_and_one_line`; review.
+
+#### K-14 The row under a page's head is its search, then its filters
+
+- When: a page has a search or filters.
+- Then: the search first (`page_search`: `.short()`, as wide as its cap and narrower only when
+  the row runs short), then the filter bar's choices and filters (K-18), kept to the row's
+  end; the row wraps when narrow. A page with filters and no search keeps them at the row's
+  end all the same.
+- Checked by: picture at the narrowest window.
 
 ### Column pages
 
-The body scrolls as one column centred in the pane, padded `px_8` at its sides and `py_6` at its
-ends, its sections `gap_6` apart, as wide as one of these:
+#### K-15 A column page takes one of three widths
 
-- `PAGE_NARROW`: one column of fields or rows;
-- `PAGE_PROSE`: an editor, or one thing read in full (a workflow, an issue, a task, a project);
-- `PAGE_WIDE`: boxes side by side, or a workspace-wide list in a box (the overview, Tasks,
-  Workflows' cards, Schedules).
-
-The pane header is inset `px_8`, as the body is. A page holding sections of its own (Settings)
-puts their nav column at its start. Reuse the same column width for the same kind of page.
+- When: a column page is laid out.
+- Then: the body scrolls as one column centred in the pane, padded `px_8` at its sides and
+  `py_6` at its ends, its sections `gap_6` apart, as wide as `PAGE_NARROW` (one column of
+  fields or rows), `PAGE_PROSE` (an editor, or one thing read in full) or `PAGE_WIDE` (boxes
+  side by side, or a list in a box). The pane header is inset `px_8`, as the body is. A page
+  holding sections of its own puts their nav column at its start. The same kind of page takes
+  the same width.
+- Checked by: test `the_sizes_are_the_listed_ones` for the widths; review.
 
 ### List pages
 
-The list takes the pane's whole width, a whole list scanned at a glance; its top is every page's.
+#### K-16 A list page takes the pane's whole width
 
-- **Edges.** Inset `px_6`, its rows' fills on that edge and their words on the top's `px_8`. The
-  foot is parted from the list by a `faint_rule` line the pane's whole width, so the edge-to-edge
-  list reads as one surface.
-- **Rows** on one line at `.text_xs()`, no lines between them: the name and the column read down
-  the list (the age) in `font_medium`, carried by weight and ink rather than size; the rest at the
-  regular weight. Trailing slots drop, least needed first, where the pane is too narrow to leave
-  the name room. Rows keep their place while a person reads.
-- **Keys.** The arrow keys move the selection itself, so the selected fill marks where the keys
-  are and no ring is drawn.
-- **The foot**: *Showing N of M <things>*.
-- **The detail.** Nothing is open on arrival. A picked item floats over the list's right side,
-  its width dragged for the session, leaving focus on the list so ↑ and ↓ keep stepping it; `×`
-  and Esc close it.
-- The filters, the search, the selection, the open item and the scroll are kept while the page is
-  left and shown again.
+- When: a list page is laid out.
+- Then: its top is every page's (K-12). The list is inset `px_6`, its rows' fills on that edge
+  and their words on the top's `px_8`. Its rows are on one line at `.text_xs()` with no lines
+  between them: the name and the column read down the list in `font_medium`, carried by weight
+  and ink rather than size, the rest at the regular weight. Trailing slots drop, least needed first, where the pane is too narrow to
+  leave the name room. Rows keep their place while a person reads. The foot, parted from the
+  list by a `faint_rule` line the pane's whole width, says *Showing N of M <things>*.
+- Checked by: picture.
+
+#### K-17 A list page's keys move the selection itself
+
+- When: a list page holds the keyboard.
+- Then: the arrow keys move the selection, so the selected fill marks where the keys are and
+  no ring is drawn (T-24). Nothing is open on arrival. A picked item floats over the list's
+  right side, its width dragged for the session, leaving focus on the list so the arrows keep
+  stepping it; its close control and Esc close it. The filters, the search, the selection, the
+  open item and the scroll are kept while the page is left and shown again.
+- Checked by: review.
 
 ### Filter bars
 
-Whatever filters its content draws its filters in one order. On a page they stand in the row under
-its head, after the search, at `.short()` as the search is, so the row keeps one height. In a dock, which is dense chrome with no head, the bar leads with its
-search and takes the same order, all at `.short()` (the Plugins mode's marketplaces as choices). A
-dock's bar that stands over a list and its detail both (the Issues tab) leaves the choices out:
-they split the list, so they stand over its rows, under the bar's line.
+#### K-18 Filters stand in one order
 
-- where the content splits into a few states that each count (*Open*, *Closed*), those first,
-  each a `choice` at the bar's size, the shown one filled, its count a `badge` after its word in
-  the hue of that state (neutral at zero, which has nothing to draw the eye to);
-- the filters, kept to the row's end after the choices, wrapping under them when narrow (a dock's
-  bar never wraps: its search shrinks instead). Each is a
-  `picker` at the bar's size with its caret, its label naming what it is set to: a ghost in the muted
-  ink while it is where it starts, on the secondary fill in that fill's ink once it narrows the
-  content;
-- after them, where more than one thing narrows the content and only while one is set, *Clear
-  filters*: a ghost at the bar's size on a page, on the secondary fill in a dock's bar, that
-  puts the search and every filter back (a choice is not a filter); last in its group, so nothing
-  moves as it comes and goes.
-
-The content's foot says how many it shows of how many match. A filter's choice and the search are
-kept while the page is left and shown again.
+- When: something filters its content.
+- Then: on a page the filters stand in the row under its head, after the search (K-14); in a
+  dock, which is dense chrome with no head, the bar leads with its search. All at `.short()`,
+  in this order:
+  - where the content splits into a few states that each count, those first, each a `choice`,
+    the shown one filled, its count a `badge` after its word in the hue of that state (neutral
+    at zero);
+  - the filters, kept to the row's end after the choices, each a `picker` with its caret, its
+    label naming what it is set to: a ghost in the muted ink while it is where it starts, on
+    the secondary fill once it narrows the content;
+  - after them, where more than one thing narrows the content and only while one is set,
+    *Clear filters*, a ghost on a page and on the secondary fill in a dock's bar, which puts
+    the search and every filter back (a choice is not a filter); last in its group, so nothing
+    moves as it comes and goes.
+  A page's row wraps under the choices when narrow; a dock's bar never wraps, its search
+  shrinks instead. A dock's bar that stands over a list and its detail both leaves the choices
+  out: they split the list, so they stand over its rows, under the bar's line. The content's foot says how many it shows of how many match, and a
+  filter's choice and the search are kept while the view is left and shown again.
+- Checked by: picture.
 
 ### Boxes
 
-A box groups one thing on a page: edged in a control's edge (`input`) at `radius_lg`, on no fill,
-padded `p_3`, its parts `gap_2` apart (`card_box`). Every fill under a page read as a slab too
-heavy for it or swallowed the fields and lines drawn on it, and the hairline is too faint to
-group anything. Its title row (`card_title`) holds the title in semibold, a
-muted count, and at most one control at the end, at a fixed height so boxes side by side line up.
-Boxes sit side by side while the measured column holds two, and stack when it does not. A box
-that opens what it shows (a card in a grid) is pressed on its body: it takes the pointer, raises
-its edge on hover to the muted ink rather than filling, and rings on focus, Enter opening it. Its
-actions stand in its foot, since its title row holds at most one control, and a press on them
-stays theirs. Cards in a grid stand in rows of as many as the measured column holds at their
-least width, up to four, a short last row keeping the column's width.
+#### K-19 A box groups one thing on a page
+
+- When: a group stands on a page (K-02).
+- Then: `card_box`: edged in a control's edge (`input`) at `radius_lg`, on no fill, padded
+  `p_3`, its parts `gap_2` apart. Its title row (`card_title`) holds the title in semibold, a
+  muted count, and at most one control at the end, at a fixed height so boxes side by side
+  line up. Boxes sit side by side while the measured column holds two, and stack when it does
+  not (L-12).
+- Checked by: picture.
+
+#### K-20 A box that opens what it shows is pressed on its body
+
+- When: a box in a grid opens the thing it shows.
+- Then: it takes the pointer, raises its edge on hover to the muted ink rather than filling,
+  and rings on focus, Enter opening it. Its actions stand in its foot, and a press on them
+  stays theirs. Cards stand in rows of as many as the measured column holds at their least
+  width, up to four, a short last row keeping the column's width.
+- Checked by: picture.
 
 ### Lists
 
-A single-line row is `ROW_H` tall, padded `px_2` with `gap_2`, at `radius`. Hover fills it with
-`list_hover`, the selected row with `chosen_fill` in `chosen_ink`. A row standing on a region's bare surface, with no
-frame of its own around the list, keeps those fills off that region's edges: a tree in a dock by
-`tokens::ROW_GUTTER`, any other list in a dock by its own padding, a list page by its inset. In a
-list where a row can be selected, two fills never touch: a hovered row beside the selected one
-stays parted from it, a tree's fills by `tokens::ROW_GUTTER` inside the row's pitch, any other
-list by a gap between its rows; a switch's choices likewise (`switch` draws a filled, edgeless track at the role's height, holds its choices in 3px from its rim and
-parts its choices `gap_0p5`). A list nothing in it is ever selected (Plugins) may run its hover
-fills together. Rows
-inside a box are the box's parts: their fills run to its edge, as the hairlines between them do. A row's own actions are ghost buttons at their control sizes, shown
-on hover, on the selected row, on keyboard focus and while their action runs. Every list has a named cap. Its last line, in meta
-text, says why the list is short: a list the cap cut says how many more there are (*N more*); a
-list a search or a filter narrows says how many it shows of how many there are (*Showing N of
-M*). A table in a box is rows split by hairlines, each with one under it, under a head row in
-meta text on the page's own surface, its rows square `row`s at the row inset; a list page's table
-keeps the list page's rows, with no lines between them.
-Rows in a box are parted by a hairline (`ruled`), drawn on a wrapper of the row's own so its
-focus ring moves nothing; so are a Settings group's list rows (`list_rows`), inside their group's box. A row's trailing facts reach the box's edge; where a row has them, its
-hover actions are laid over them, hiding them while they show, rather than holding a slot beside
-them. A row without trailing facts keeps its actions in a held slot. Keep metadata and actions in
-stable trailing slots. Multi-line row variants align their primary
-labels and secondary lines across peers. A hovered selected row remains recognizably selected;
-keyboard focus remains separately visible, but on a list page, whose arrow keys move the
-selection itself (*List pages*). Hover actions are also available on keyboard focus, so
-a row whose actions hide at rest is a tab stop; a focus a click leaves does not show them.
+#### K-21 A row is drawn by the row builder, and its fills stand off the edges
 
-A row's actions sit behind a `⋯` (`row_more`), shown on hover, on the keyboard's row and always
-on the current one, and the same items open on a right-click (`row_menu_items`), one list for
-both, a removal last in the danger ink. A row's own press is offered there by name too. A row's actions follow what the person must do next. A row waiting on the person (*Needs
-attention*) keeps its actions drawn as buttons beside its `⋯`, since they are its point. The keys passing a row whose
-content is open on screen, already holding those actions, lay none, so a row the keys only pass
-through stays still.
+- When: a list row is drawn.
+- Then: `row`: `ROW_H` tall (K-08), padded `px_2` with `gap_2`, at `radius`, hovered and chosen
+  as T-22 and T-23 say. A row standing on a region's bare surface keeps its fills off that
+  region's edges: a tree in a dock by `tokens::ROW_GUTTER`, any other list in a dock by its
+  own padding, a list page by its inset.
+- Unless: rows inside a box are the box's parts: their fills run to its edge, as the hairlines
+  between them do (K-25).
+- Checked by: test `a_project_row_stays_inside_the_rail` for one height and staying inside;
+  picture for the fills.
 
-### Line rows
+#### K-22 Two fills never touch
 
-Rows inside reading content (a fold line, an activity row in the transcript) are lines, not list
-rows: as tall as their text, taking no focus, they answer the pointer by raising their ink rather
-than with a fill, which would break the reading column into tiles. Their actions are the block's
-(one copy control, one show-more control).
+- When: a row in a list can be selected, or choices stand in a pick-one track.
+- Then: a hovered row beside the selected one stays parted from it: a tree's fills by
+  `tokens::ROW_GUTTER` inside the row's pitch, any other list by a gap between its rows; a
+  track's choices likewise (`switch` draws a filled, edgeless track at the role's height, holds
+  its choices in 3px from its rim and parts them `gap_0p5`).
+- Unless: a list in which nothing is ever selected may run its hover fills together.
+- Checked by: test `tree_row_fill_is_odd_and_rows_stack_at_the_pitch`; picture.
+
+#### K-23 A row inside reading content is a line, not a list row
+
+- When: a row stands inside reading content (a fold line, an activity row).
+- Then: it is as tall as its text, takes no focus, and answers the pointer by raising its ink
+  rather than with a fill, which would break the reading column into tiles. Its actions are
+  the block's (one copy control, one show-more control).
+- Checked by: picture.
+
+#### K-24 A row's actions show when the row is the one in hand
+
+- When: a row has actions of its own.
+- Then: a row's actions follow what the person must do next. They are ghost buttons at their
+  control sizes, shown on hover, on the selected row, on keyboard
+  focus and while their action runs; a focus a click leaves does not show them. They sit
+  behind a `⋯` (`row_more`), shown on hover, on the keyboard's row and always on the current
+  one, and the same items open on a right-click (`row_menu_items`), one list for both, a
+  removal last in the danger ink; a row's own press is offered there by name too. A row whose
+  actions hide at rest is a tab stop.
+- Unless: a row waiting on the person keeps its actions drawn as buttons beside its `⋯`, since
+  they are its point; a row the keys only pass through, whose content is open on screen
+  already holding those actions, lays none.
+- Checked by: picture, with a hover and with the keyboard on the row.
+
+#### K-25 Rows in a box are parted by hairlines
+
+- When: rows stand inside a box.
+- Then: each is parted from the next by a hairline (`ruled`), drawn on a wrapper of the row's
+  own so its focus ring moves nothing; so are a settings group's list rows (`list_rows`),
+  inside their group's box. A table in a box is rows split by hairlines, each with one under
+  it, under a head row in meta text on the page's own surface, its rows square at the row
+  inset. A row's trailing facts
+  reach the box's edge.
+- Unless: a list page's table keeps the list page's rows, with no lines between them (K-16).
+- Checked by: picture.
+
+#### K-26 Every list has a named cap, and says why it is short
+
+- When: a list is drawn.
+- Then: it stops at a named cap. Its last line, in meta text, says why it is short: a list
+  the cap cut says how many more there are (*N more*); a list a search or a filter narrows
+  says how many it shows of how many there are (*Showing N of M*).
+- Checked by: tests `past_the_cap_the_page_says_how_many_more`,
+  `a_group_past_the_cap_says_how_many_more_until_shown_whole`; review for a new list.
 
 ### List and detail
 
-`list_detail` sets a list beside its detail while the measured container holds both widths; else
-it shows one at a time, the detail under a `back_link` naming the list. Picking shows the detail;
-going back keeps the list's place. A detail read as prose (an issue, a Markdown document) is a
-column up to `PAGE_PROSE`, centred with equal gutters, so hiding the list widens it rather than
-leaving the freed width empty; its scroll spans the detail, the scrollbar on the detail's edge.
+#### K-27 A list stands beside its detail only while the container holds both
+
+- When: a list and the detail of the item picked share a view.
+- Then: `list_detail` sets them side by side while the measured container holds both widths;
+  else it shows one at a time, the detail under a `back_link` naming the list. Picking shows
+  the detail; going back keeps the list's place. A detail read as prose is a column up to
+  `PAGE_PROSE`, centred with equal gutters, so hiding the list widens it rather than leaving
+  the freed width empty; its scroll spans the detail, the scrollbar on the detail's edge.
+- Checked by: tests `a_list_and_its_detail_share_a_container_only_when_both_fit`,
+  `the_detail_mirrors_the_lists_range_across_the_container`,
+  `a_drag_never_takes_the_detail_under_its_minimum`.
 
 ### Forms
 
-Each input is a `field`: its title in chrome text, an optional hint under it in meta text, `gap_2`
-to the control. Fields stand `gap_4` apart. An input is built with `text_input`, at a control's
-corner and the size of the place it stands in: `.tall()` in a page's form and in a dialog at
-`DIALOG_FORM`, `.short()` in a dialog that asks one thing; its buttons, pickers and switch take the
-same. Problems stand above the submit button in the danger
-ink; in a page's form, in one box on the danger tint's fill led by the warning mark, each a
-sentence. A page form whose submit stands in the page's head (the workflow editor, whose columns
-leave no one place above it) sets them instead in a bar along the page's foot, the page's whole
-width, on its kind's tint led by its mark: the problems on the danger tint with the warning mark,
-a standing note (read-only) on the accent's tint with the info mark. A new form nobody has changed yet shows none: its submit refuses, its tooltip saying
-the first, until the first change; one opened on something (a file, a copy, an import) says them
-at once. The submit is the form's one primary action; while the form cannot be sent it refuses, its
-tooltip saying why.
+#### K-28 A form's input is a `field`
+
+- When: a form holds an input.
+- Then: a `field`: its title in chrome text, an optional hint under it in meta text, `gap_2` to
+  the control. Fields stand `gap_4` apart. The input is built with `text_input`, at a
+  control's corner and the size of the place it stands in (C-16); its buttons, pickers and
+  switch take the same.
+- Checked by: review.
+
+#### K-29 A form says what blocks it, beside its submit
+
+- When: a form cannot be sent.
+- Then: its submit, the form's one primary action, refuses, its tooltip saying why (C-05).
+  The problems stand above the submit in the danger ink; in a page's form, in one box on the
+  danger tint's fill led by the warning mark, each a sentence. A new form nobody has changed
+  yet shows none until the first change; one opened on something (a file, a copy, an import)
+  says them at once.
+- Unless: a page form whose submit stands in the page's head sets them in a bar along the
+  page's foot, the page's whole width, on its kind's tint led by its mark: the problems on the
+  danger tint with the warning mark, a standing note on the accent's tint with the info mark.
+- Checked by: review.
 
 ### Dialogs
 
-A dialog is the library's `Dialog` at its own width, titled through `title_row` (`DIALOG_TITLE`, a step
-over the chrome and a step under the library's own title), its ✕ muted and
-named in its tooltip, over a backdrop that dims the window. Its fields are `field`s, `gap_4`
-apart; what blocks it stands above the footer in the danger ink. Its footer (`footer_row`) sits
-on the right: the dismissing button first, then the one primary action or the danger word, at
-its fields' size. The size follows the dialog: one that asks one thing (a rename, a worktree)
-stands at its own width with `.short()` controls; one that holds a form (the agent form, the
-workflow launcher, the issue picker) stands at `DIALOG_FORM` with `.tall()` ones. A third action (*Use the automatic title*, *Put it somewhere else…*) stands at the
-footer's start, apart from the two that close it, on the secondary fill, as it starts its line. It opens with focus on its first field and
-closes on Esc. A question without fields (a retry, a removal) is an alert
-dialog, as the confirmation below is, never a dialog of its own; a start that fails is said once,
-in an error toast.
+#### K-30 A dialog is the library's, titled and footed by the shared builders
 
-A dialog that starts a run (the workflow launcher, the issue picker) says what the run is before
-its fields, so it stands at `DIALOG_FORM` and parts its sections (what runs, where it works, what
-stands in the way, what the person adds) with a hairline (`sections`). The branch it cuts stands
-in a well beside its branch mark. Each thing the preflight found leads with its state's mark: a
-warning in the danger ink when it blocks the start, an information mark in meta ink when it only
-tells; an action beside one takes the secondary fill.
+- When: a dialog holds fields.
+- Then: the library's `Dialog` at its own width over a backdrop that dims the window, titled
+  through `title_row` (`DIALOG_TITLE`, a step over the chrome and a step under the library's
+  own title), its close mark muted and named in its tooltip. Its
+  fields are `field`s, `gap_4` apart; what blocks it stands above the footer in the danger
+  ink. Its footer (`footer_row`) sits on the right: the dismissing button first, then the one
+  primary action or the danger word, at its fields' size. A third action stands at the
+  footer's start, apart from the two that close it, on the secondary fill, as it starts its
+  line (C-06). One that asks one thing stands at its own width with `.short()` controls; one
+  that holds a form stands at `DIALOG_FORM` with `.tall()` ones.
+- Unless: a question without fields (a retry, a removal) is an alert dialog (S-13), never a
+  dialog of its own; a start that fails is said once, in an error toast.
+- Checked by: review.
+
+#### K-31 A dialog that starts a run says what the run is before its fields
+
+- When: a dialog starts a run.
+- Then: it stands at `DIALOG_FORM` and parts its sections (what runs, where it works, what
+  stands in the way, what the person adds) with a hairline (`sections`). The branch it cuts
+  stands in a well beside its branch mark. Each thing found before the start leads with its
+  state's mark: a warning in the danger ink when it blocks the start, an information mark in
+  meta ink when it only tells; an action beside one takes the secondary fill (C-07).
+- Checked by: review.
 
 ### Details
 
-A detail shows one thing in full (an issue, a task): a trail naming where it sits, with its
-actions beside it (one primary, one other, `⋯`; an issue's next one secondary and the other a
-ghost, since *New issue* holds its view's primary); its title in `text_lg` semibold; one line of
-facts in meta text; what it waits on; then its tabs.
+#### K-32 A detail shows one thing in full
+
+- When: one thing is read in full.
+- Then: a trail naming where it sits, with its actions beside it (one primary, one other, `⋯`);
+  its title in `text_lg` semibold; one line of facts in meta text; what it waits on; then its
+  tabs. No enclosing card (K-01).
+- Unless: where another control of the view already holds its primary, the detail's next
+  action is secondary and its other a ghost.
+- Checked by: review.
 
 ## Behaviour
 
 ### Waiting
 
-State changes keep the surrounding layout stable: retain titles, content axes and action slots.
-Feedback belongs to the affected content or action; it does not restyle the whole page. Status
-uses a word or recognizable mark as well as colour. A quieter state must still be readable.
+#### S-01 A state change keeps the layout around it
 
-- **Content on its way** is one meta line where the content will appear, naming the work and
-  ending on an ellipsis: *Reading the workflows…*. A panel never sits blank while a read runs.
-- **An action in flight** shows on the button that started it, `.loading(true)`, which refuses a
-  second press; its label stays.
-- A `Spinner` stands only inside a line or a control already on screen.
+- When: a view changes state (waiting, loaded, empty, failed).
+- Then: titles, content axes and action slots stay where they were. Feedback belongs to the
+  affected content or action; it does not restyle the whole page. A state is said by a word
+  or a recognisable mark as well as colour, and a quieter state is still readable.
+- Checked by: picture of both states.
+
+#### S-02 Content on its way is one meta line
+
+- When: a read runs before content can show.
+- Then: one meta line where the content will appear, naming the work and ending on an
+  ellipsis: *Reading the workflows…*. A panel never sits blank while a read runs.
+- Checked by: review.
+
+#### S-03 An action in flight shows on the button that started it
+
+- When: a press starts work that is still running.
+- Then: `.loading(true)` on that button, which refuses a second press; its label stays. A
+  `Spinner` stands only inside a line or a control already on screen.
+- Checked by: review.
 
 ### Immediate feedback
 
-- **A change a person can take back** (a rename, a pin, a fold, a reorder, a filter, a pick)
-  shows in the frame it is made; saving it runs after, off the UI thread.
-- **Saves of one thing run one at a time, in the order its changes were made**, so an older save
-  never lands over a newer one.
-- **A save that fails** matters only while no later save carries that thing: the screen goes
-  back to the last value known saved, not the one before the change, and says so once, as an
-  `error` toast (*Renaming the session failed: <why>*). A later save that carries it supersedes
-  the failure, and that save decides what the screen shows.
-- **What goes back is the one change, not the file**: one write of a file can carry several
-  things (the pin, the order, the theme), and each goes back alone to its own last saved value.
-  A write that carries a thing and lands moves its saved value forward.
-- **A save that is an act rather than a value** (closing an issue, adding a comment, a write that
-  runs a step on the file as it then stands) is superseded by nothing: a newer act does not carry
-  the older one, so each failure is said once, and the screen reloads what the file holds.
-- **A pick the agent applies** (a mode, a model, an effort, *Fast*) shows at once. The agent
-  refusing it is its failed save: back to the value the agent last confirmed, one toast.
-- **A dragged size and a dock's open state** are saved but never put back, since the layout would
-  move under the pointer; a failed save still says so once.
-- **A rename and a shortcut show at once; a form that writes a file** (a workflow, an issue, an
-  agent) waits on its *Save*.
-- **The rule lives in core** (`onehand_core::saving`): a writer per file that runs saves in the
-  order sent, `Saving` for one value and `Saves` for several things in one file, tested without
-  a GUI. The app keeps the spawn and the toast.
-- **Nothing queued is lost on leaving**: a closing window's last workspace save and the settings
-  saves still queued at quit go through the same ordered writer, waited for up to a bound.
-- **Work that leaves the machine or takes its time** (git, the network, an agent) is never drawn
-  as done before it is: it waits on the button that started it, as *Waiting* says.
+#### S-04 A change a person can take back shows in the frame it is made
+
+- When: a person renames, pins, folds, reorders, filters or picks.
+- Then: the screen shows it at once; saving it runs after, off the UI thread. A rename and a
+  shortcut show at once too.
+- Unless: a form that writes a file waits on its *Save*.
+- Checked by: review.
+
+#### S-05 Saves of one thing run one at a time, in the order made
+
+- When: several changes to one thing are saved.
+- Then: a writer per file runs them in the order sent, so an older save never lands over a
+  newer one; a closing window's last save and the saves still queued at quit go through the
+  same writer, waited for up to a bound. The rule lives in core (`onehand_core::saving`:
+  `Saving` for one value, `Saves` for several things in one file); the app keeps the spawn and
+  the toast.
+- Checked by: the tests of `onehand_core::saving`.
+
+#### S-06 A save that fails puts back the one change, and says so once
+
+- When: a save fails and no later save carries that thing.
+- Then: the screen goes back to the last value known saved, not the one before the change,
+  and says so once, as an `error` toast (*Renaming the session failed: <why>*). What goes back
+  is the one change, not the file: each thing a write carried goes back alone to its own last
+  saved value, and a write that carries a thing and lands moves its saved value forward. A pick the agent applies (a mode, a model) is the same: the agent refusing it
+  is its failed save.
+- Unless: a later save that carries the thing supersedes the failure. A save that is an act
+  rather than a value (closing an issue, adding a comment) is superseded by nothing: each
+  failure is said once, and the screen reloads what the file holds. A dragged size and a
+  dock's open state are saved but never put back, since the layout would move under the
+  pointer; a failed save still says so once.
+- Checked by: the tests of `onehand_core::saving`; review.
+
+#### S-07 Work that leaves the machine is never drawn as done before it is
+
+- When: an action reaches git, the network or an agent, or takes its time.
+- Then: it waits on the button that started it (S-03) until it has answered.
+- Checked by: review.
 
 ### Motion
 
-- A hover, a selection, a fold or a new state lands in the frame it happens in.
-- The motions are a `Spinner` on work still running, where *Waiting* puts it, and in the
-  transcript the band of brighter ink that crosses the words of what runs, in its place. The library's own
-  overlays (dialogs, popovers, toasts) and controls (a switch's thumb) keep what they do
-  themselves.
-- A size or a position never animates, and nothing pulses or slides to call for the person (a
-  field's caret blinks on its own): a state that needs them says so in ink and a word, never in
-  motion. The band over the words of what runs marks work going on by itself, and asks for
-  nothing.
+#### S-08 Nothing moves for show
+
+- When: a state changes.
+- Then: a hover, a selection, a fold or a new state lands in the frame it happens in. A size
+  or a position never animates, and nothing pulses or slides to call for the person: a state
+  that needs them says so in ink and a word.
+- Unless: a `Spinner` on work still running (S-03); the band of brighter ink that crosses the
+  words of what runs in the transcript, which marks work going on by itself and asks for
+  nothing; what the library's own overlays and controls do themselves; a field's caret.
+- Checked by: review.
 
 ### Nothing to show
 
-One meta line, in sentence case, without a period: at the list's place, left-aligned, inside a
-list; centred (`hint`) when it fills the whole panel. *No <things> yet* when there have never been
-any; *No <things> match* when a search or a filter hides them all; *Nothing <state>* for a status
-box (*Nothing needs you*). An empty state that blocks every action in the window (no agent set up)
-may carry, under its line, what fixes it: commands in the code face and one secondary button to
-the place it is fixed, all centred in one column.
+#### S-09 An empty view says so in one meta line
+
+- When: a list, a box or a panel has nothing to show.
+- Then: one meta line, in sentence case, without a period: at the list's place and
+  left-aligned inside a list; centred (`hint`) when it fills the whole panel. *No <things>
+  yet* when there have never been any; *No <things> match* when a search or a filter hides
+  them all; *Nothing <state>* for a status box.
+- Unless: an empty state that blocks every action in the window may carry, under its line,
+  what fixes it: commands in the code face and one secondary button to the place it is fixed,
+  all centred in one column.
+- Checked by: test `a_flat_list_names_no_projects_and_says_when_nothing_matches` for one
+  list; review.
 
 ### Failing and refusing
 
-- **An action a person started that failed** is an `error` toast: *<What> failed: <why>*.
-- **A condition that stands until something answers it** (a save refused because the file changed
-  on disk, an editor that would not start) is a `status_line` under the view, in the ink of its
-  state, cleared by whatever answers it.
-- One failure is said once: a toast or a line, never both.
-- **A press that cannot act yet** refuses (`.refuses(Some(why))`), its tooltip saying why, and
-  says nothing else.
-- Every failure of something a person started reaches the screen; a log line alone is not enough.
+#### S-10 A failure of something a person started reaches the screen, once
+
+- When: an action a person started fails.
+- Then: an `error` toast: *<What> failed: <why>*. One failure is said once: a toast or a
+  line, never both, and a log line alone is not enough.
+- Unless: a condition that stands until something answers it (a save refused because the
+  file changed on disk, an editor that would not start) is a `status_line` under the view, in
+  the ink of its state, cleared by whatever answers it.
+- Checked by: review.
+
+#### S-11 A press that cannot act yet refuses, and says nothing else
+
+- When: a control cannot act now.
+- Then: it refuses with its reason as its tooltip (C-05). No toast, no line.
+- Checked by: lint (C-05); review.
 
 ### Toasts
 
-Transient news goes in a toast, `window.push_notification` with a notification built by
-the UI crate's `toast`, `crate::toast` in the app (which gives a failure its form and trims
-the period), its kind chosen by what it
-means:
+#### S-12 A toast's kind is what it means
 
-- `error`: an action failed;
-- `warning`: done only in part, or something now needs the person;
-- `success`: a long or background action finished, which the screen does not already show;
-- `info`: news that asks for nothing.
-
-A toast is one sentence without a trailing period.
+- When: transient news is shown.
+- Then: `window.push_notification` with a notification built by the UI crate's `toast`
+  (`crate::toast` in the app, which gives a failure its form and trims the period),
+  one sentence without a trailing period: `error` when an action failed; `warning` when it was
+  done only in part, or something now needs the person; `success` when a long or background
+  action finished that the screen does not already show; `info` for news that asks for nothing.
+- Checked by: test `a_toast_is_one_sentence_without_its_period`; review for the kind.
 
 ### Confirming a removal
 
-A removal that cannot be undone asks first: data taken off disk, a process ended, unsaved work
-thrown away. It asks through `Confirm` (`crates/ui/src/confirm.rs`), the same question
-in the app and in a feature crate:
+#### S-13 A removal that cannot be undone asks first
 
-- the title asks the question naming the thing: *Remove <name> from the workspace?*;
-- the description says what goes and what stays;
-- the buttons read *Keep*, then the danger word, the same verb as the control that asked.
-- a removal with a lesser way ahead puts that one, secondary, between them: closing a lead reads
-  *Keep*, *Close the lead only*, *Close all*. Enter answers the danger word there, the one it is
-  asked for; a question with only that word keeps Enter closing it.
-
-What can be undone or resumed goes ahead without asking: stopping a task that offers *Resume*,
-taking an item off the queue, unbinding a key, closing an issue. Closing an issue a run is working
-on asks (*Close <title>?*), since it ends that run too. The control starting a removal is a word in the
-danger tint.
+- When: an action takes data off disk, ends a process or throws unsaved work away.
+- Then: it asks through `Confirm` (`crates/ui/src/confirm.rs`), the same question in the app
+  and in a feature crate: the title asks the question naming the thing (*Remove <name> from
+  the workspace?*); the description says what goes and what stays; the buttons read *Keep*,
+  then the danger word, the same verb as the control that asked. A lesser way ahead stands
+  between them, secondary (closing a lead reads *Keep*, *Close the lead only*, *Close all*),
+  and then Enter answers the danger word; a question with only that word keeps Enter closing
+  it. The control starting a removal is a word in the danger tint
+  (C-09).
+- Unless: what can be undone or resumed goes ahead without asking (stopping what offers
+  *Resume*, taking an item off a queue, unbinding a key, closing what can be opened again),
+  except where it also ends something that cannot be: closing an issue a run is working on
+  asks (*Close <title>?*), since it ends that run too.
+- Checked by: review.
 
 ### Keys and focus
 
-- **Every key that does something is a command** in the keymap (`crates/app/src/keymap.rs`), so
-  it can be rebound; `on_key_down` is for typing only.
-- **A control bound to a command shows its key** in its tooltip (a `Kbd`); a field shows it as a
-  `Kbd` at its end. A label's text never spells a key; a pinned card's answers carry theirs beside
-  their words, in the button's own ink, since those keys reach the card from the composer.
-- **A tooltip stands for what is under the pointer, one at a time.** A key, a press, or a dialog
-  or sheet opening or closing puts it away; the control just pressed shows none again until the
-  pointer moves from where it was pressed, so none stands over the menu it opened. What a row's
-  hover actions lie over shows no tooltip while the pointer is on them.
-- **Keyboard focus shows the ring**, only when the keyboard moved it there. A field is the
-  exception: edged in `input` and unchanged by focus, its caret saying where the typing goes.
-- A dialog, a popup or a floating panel opens with focus on its first field, or on its primary
-  action when it has none. A panel floating beside the list it was picked from (the Issues
-  page's issue) leaves focus on the list, so ↑ and ↓ keep stepping it. Each closes on Esc, asking first when a form in it holds unsaved
-  changes. On closing, focus goes back to what opened it, or to the conversation when that is gone.
-- Esc closes the innermost layer only. A page is a place, not a layer: Esc leaves it where it is.
-- Enter in a dialog's one-line field presses its primary action, and does nothing while that
-  refuses or works; the dialog stays when what was typed is refused, saying why. A field of
-  several lines keeps Enter for a new line, and Enter on a focused button presses nothing.
-- A key with no modifier that a region handles never fires while a field inside it holds the
-  caret. A field inside a region hands the keys back to that region on Esc.
-- **A card pinned over the composer** (a permission, a question) takes the keyboard once, as it is
-  pinned, and only from nowhere, an empty composer (no words, no staged files) or the card answered
-  before it; never from a prompt being put together. A question's choices answer to their number on the card and to Alt with the
-  number anywhere in the conversation, and each row's `Kbd` names the Alt one, which works
-  wherever the caret is. The footer's answers answer to Alt anywhere in the conversation too: a permission's
-  Alt+Y once, Alt+A always, Alt+N deny (refusing once where the agent offers both refusals,
-  and only that button carries the key); a question's Alt+Enter on, Alt+S skip.
-  A question's forward answer (*Next*, *Submit* on the last) refuses until the question showing
-  has an answer. On a multi-select none is an answer: moving on with nothing picked sends an empty
-  list, where *Skip* sends no answer for it. A card asking one pick-one question answers on the
-  pick, so its footer holds *Skip* alone, and *Submit* beside it once an answer is typed; every
-  question card carries *Skip*, so passing on one never takes *Stop*.
+Keyboard focus and its ring are T-24.
+
+#### W-01 Every key that does something is a command
+
+- When: a key acts.
+- Then: it is a command in the keymap (`crates/app/src/keymap.rs`), so it can be rebound;
+  `on_key_down` is for typing only.
+- Checked by: test `every_menu_item_is_a_command` for a menu's items; review for a key.
+
+#### W-02 A control bound to a command shows its key
+
+- When: a control dispatches a command that has a key.
+- Then: its tooltip shows the key (a `Kbd`); a field shows it as a `Kbd` at its end. A
+  label's text never spells a key.
+- Unless: answers whose keys reach them from elsewhere carry theirs beside their words, in
+  the button's own ink.
+- Checked by: picture, with a hover.
+
+#### W-03 A tooltip stands for what is under the pointer, one at a time
+
+- When: a tooltip could show.
+- Then: a key, a press, or a dialog or sheet opening or closing puts it away; the control
+  just pressed shows none again until the pointer moves from where it was pressed, so none
+  stands over the menu it opened. What a row's hover actions lie over shows no tooltip while
+  the pointer is on them.
+- Checked by: picture, with a hover after a press.
+
+#### W-04 A layer opens with focus inside it, and gives it back
+
+- When: a dialog, a popup or a floating panel opens or closes.
+- Then: it opens with focus on its first field, or on its primary action when it has none.
+  Esc closes the innermost layer only, asking first when a form in it holds unsaved changes;
+  on closing, focus goes back to what opened it, or to the conversation when that is gone.
+  Focus is never left on what is no longer drawn.
+- Unless: a panel floating beside the list it was picked from leaves focus on the list
+  (K-17). A page is a place, not a layer: Esc leaves it where it is.
+- Checked by: review.
+
+#### W-05 Enter in a dialog's one-line field presses its primary action
+
+- When: Enter is pressed in a dialog.
+- Then: in a one-line field it presses the primary action, and does nothing while that
+  refuses or works; the dialog stays when what was typed is refused, saying why.
+- Unless: a field of several lines keeps Enter for a new line, and Enter on a focused button
+  presses nothing.
+- Checked by: review.
+
+#### W-06 A plain key never fires while a field holds the caret
+
+- When: a region handles a key with no modifier.
+- Then: the key never fires while a field inside the region holds the caret, and a field
+  hands the keys back to its region on Esc.
+- Checked by: review.
 
 ### Words
 
-- Sentence case everywhere.
-- A label ends on an ellipsis when its action asks something before it acts: a dialog, a
-  confirmation, a picker or a form (*Retry…*, *Delete conversation…*).
-- *Delete* takes a thing off disk; *Remove* takes it out of a list and leaves it; *Uninstall* is
-  for a plugin; *Discard* throws away unsaved changes.
-- *Keep* dismisses a confirmation; *Cancel* leaves a form or a dialog; *Close* puts a panel away.
-- A command reads as a plain sentence, its article kept: *Restart the agent*, *Hide the Workbench*.
-- Hints, empty lines and toasts end without a period; a dialog's description is whole sentences.
-- On-screen words are the glossary's (`CONTEXT.md`), never its _Avoid_ words.
+#### W-07 Sentence case, and no period on a short line
+
+- When: words are put on screen.
+- Then: sentence case everywhere. Hints, empty lines and toasts end without a period; a
+  dialog's description is whole sentences. A command reads as a plain sentence, its article
+  kept: *Restart the agent*, *Hide the Workbench*.
+- Checked by: test `a_toast_is_one_sentence_without_its_period` for a toast; review.
+
+#### W-08 A label ends on an ellipsis when its action asks first
+
+- When: an action opens a dialog, a confirmation, a picker or a form before it acts.
+- Then: its label ends on an ellipsis: *Retry…*, *Delete conversation…*.
+- Checked by: review.
+
+#### W-09 Each verb says what goes
+
+- When: a control removes, leaves or dismisses.
+- Then: *Delete* takes a thing off disk; *Remove* takes it out of a list and leaves it;
+  *Uninstall* is for a plugin; *Discard* throws away unsaved changes. *Keep* dismisses a
+  confirmation; *Cancel* leaves a form or a dialog; *Close* puts a panel away.
+- Checked by: review.
+
+#### W-10 On-screen words are the glossary's
+
+- When: a thing is named on screen.
+- Then: by its term in `CONTEXT.md`, never by one of its _Avoid_ words.
+- Checked by: review.
