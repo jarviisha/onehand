@@ -279,6 +279,29 @@ advertises a `clear` of its own, the row is not offered and `/clear` goes to the
 *Run a workflow…* (the `+` menu, the keymap, the Workflows page's *Run…*) opens the launcher,
 drawn as `docs/workflows.md` describes.
 
+The composer is the input surface, a role of its own rather than a box or a field: a card
+edged in `input` at `radius_lg`, on its own fill (`theme::raised`) under a light lift
+(`composer_lift`). Its pickers (the model, the effort, the mode, *Fast*, the branch) are
+`.short()` ghosts with a caret whatever they hold, where a picker elsewhere takes the secondary
+fill once set: each always holds a choice, and a fill on every chip would crowd the field they
+sit under. Its popup is one shell for `@`, `/`, the pickers, the `+` and branch menus and the
+attachment tray, on the library's popup surface as the window's other menus: a pinned title on
+the `@` and `/` lists and the tray alone, no key hints, a row's detail at its end, at most ten
+rows, grouped, then how many more; a menu opens just above the control that opened it.
+
+A card pinned over the composer (a permission, a question) takes the keyboard once, as it is
+pinned, and only from nowhere, an empty composer (no words, no staged files) or the card answered
+before it; never from a prompt being put together. A question's choices answer to their number on the card and to Alt with the
+number anywhere in the conversation, and each row's `Kbd` names the Alt one, which works
+wherever the caret is. The footer's answers answer to Alt anywhere in the conversation too: a permission's
+Alt+Y once, Alt+A always, Alt+N deny (refusing once where the agent offers both refusals,
+and only that button carries the key); a question's Alt+Enter on, Alt+S skip.
+A question's forward answer (*Next*, *Submit* on the last) refuses until the question showing
+has an answer. On a multi-select none is an answer: moving on with nothing picked sends an empty
+list, where *Skip* sends no answer for it. A card asking one pick-one question answers on the
+pick, so its footer holds *Skip* alone, and *Submit* beside it once an answer is typed; every
+question card carries *Skip*, so passing on one never takes *Stop*.
+
 ## Docks
 
 Each a region's box, as the agent pane is: the Workbench beside the conversation, the right half
@@ -293,6 +316,12 @@ room and leaves the terminal as it is.
   under it), the tabs parted by space, not by lines, the open one a
   rounded fill (`secondary`) with its name in the content ink, every tab, tree row and shell row
   at the regular weight, the controls at the end.
+- Their builders: the Workbench's strip, the terminal's and the Editor's are `tab_bar`s, the
+  Editor's at `tokens::MODE_BAR_H`, naming only the file open now as a `tab_select` that drops
+  down the project's tree. Any other bar inside the Workbench is a `workbench_strip`, padded
+  `tokens::ROW_INSET` so its words and the tree rows' names read down one edge, with the line
+  under it; the reader's bar is a `mode_strip`, `MODE_BAR_H` tall, and an issue's trail is one
+  too. The conversation's header draws no line and keeps `px_3`.
 - The Workbench's: *← Conversation* while it has the area, the modes as tabs (Editor, Markdown,
   Issues, Plugins only where a Claude Code agent is set up when the window opens, Neovim; a select
   where the bar is too narrow for the tabs, `MODES_MIN_W`), maximize, hide.
@@ -323,7 +352,7 @@ room and leaves the terminal as it is.
   document is its picked row, a changed file's letter in its state's ink at the row's end.
 - A failed open or save in the Editor or Markdown is a toast; a file changed on disk, a Neovim that
   would not start and a listing that failed stand as a status line under the mode.
-- Plugins: the search and filters a filter bar; a row's actions on hover and on keyboard focus, its
+- Plugins: the search and filters a filter bar, its marketplaces the bar's choices; a row's actions on hover and on keyboard focus, its
   ⋯ menu also on a right-click (refused while another change runs), its switch always; what runs
   and what waits on a restart under the list, so neither moves it.
 - The Issues tab: one filter bar over the list and the issue both, as tall as the strip over it,
@@ -359,6 +388,10 @@ room and leaves the terminal as it is.
 
 ## Pages without a session
 
+- Their kinds: the overview, Tasks, Schedules, Workflows' cards and Settings are column pages
+  (the overview, Tasks, Workflows' cards and Schedules at `PAGE_WIDE`; a workflow opened from
+  its card takes a page of three columns of its own); a project's page, a task and an issue
+  read in full are column pages at `PAGE_PROSE`; Issues is the one list page.
 - With no agent set up, the pane shows neither the project page nor the no-project line, but one
   centred column in meta text: *No agent is set up*, then per built-in agent either *<agent> is on
   this machine* with *Add* (secondary) when it is installed, or how to install it (its command in
