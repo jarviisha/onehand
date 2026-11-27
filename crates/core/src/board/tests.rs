@@ -4,11 +4,7 @@ use crate::workflow::{Brief, Setup, Template};
 use std::path::PathBuf;
 
 fn board(team: u8, todo: &[u64]) -> Board {
-    Board {
-        workflow: "builtin:branch".into(),
-        team,
-        todo: todo.to_vec(),
-    }
+    Board::made("builtin:branch".into(), team, todo, 0)
 }
 
 fn numbers(issues: Vec<&LocalIssue>) -> Vec<u64> {

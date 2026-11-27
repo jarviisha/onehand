@@ -75,16 +75,16 @@ mod migrate {
 
     /// A project folder in `root` whose `project.toml` holds `board` when
     /// given one, the old way.
-    fn kept(root: &Path, board: Option<crate::project::Board>) -> (ProjectId, PathBuf) {
+    fn kept(root: &Path, board: Option<crate::project::OldBoard>) -> (ProjectId, PathBuf) {
         let mut project = Project::new(ProjectId::mint(7), None, "/code/a".into());
-        project.board = board;
+        project.old_board = board;
         let dir = root.join(project.id.as_str());
         crate::project::file::save_to(&project, &dir).unwrap();
         (project.id, dir)
     }
 
-    fn old(workflow: &str, team: u8, todo: &[u64]) -> Option<crate::project::Board> {
-        Some(crate::project::Board {
+    fn old(workflow: &str, team: u8, todo: &[u64]) -> Option<crate::project::OldBoard> {
+        Some(crate::project::OldBoard {
             workflow: workflow.into(),
             team,
             todo: todo.to_vec(),

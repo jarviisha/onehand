@@ -101,7 +101,7 @@ pub fn migrate_blocking(projects_dir: &Path) -> Vec<String> {
             ProjectLoad::Found(project) => *project,
             ProjectLoad::Missing | ProjectLoad::Unreadable(_) => continue,
         };
-        let Some(old) = project.board.clone() else {
+        let Some(old) = project.old_board.clone() else {
             continue;
         };
         match load_from(&dir) {
@@ -120,7 +120,7 @@ pub fn migrate_blocking(projects_dir: &Path) -> Vec<String> {
                 }
             }
         }
-        project.board = None;
+        project.old_board = None;
         if let Err(why) = save_to(&project, &dir) {
             let at = dir.join(crate::project::file::FILE);
             problems.push(format!("{}: its board key was not dropped: {why}", at.display()));

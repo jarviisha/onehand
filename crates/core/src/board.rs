@@ -4,14 +4,17 @@
 
 use crate::connector::Connector;
 use crate::issues::{Issues, LocalIssue};
-use crate::project::{Board, Project, ProjectId};
+use crate::project::{Project, ProjectId};
 use crate::task::{Task, Working};
 use crate::workflow::{Outcome, Place, Stop, Template};
 use std::collections::HashSet;
 use std::path::PathBuf;
 
+pub mod drive;
 pub mod file;
 pub mod model;
+
+pub use model::{Board, Entry, MovesOn, Starts, Work};
 
 /// How many tasks one column of the board draws; the rest are counted.
 pub const BOARD_SHOWN: usize = 50;
@@ -53,11 +56,12 @@ pub fn backlog<'a>(
     board: &Board,
     taken: &HashSet<u64>,
 ) -> Vec<&'a LocalIssue> {
+    let todo = board.todo();
     issues
         .listed()
         .into_iter()
         .filter(|issue| issues.workable(issue, forge))
-        .filter(|issue| !board.todo.contains(&issue.number()) && !taken.contains(&issue.number()))
+        .filter(|issue| !todo.contains(&issue.number()) && !taken.contains(&issue.number()))
         .collect()
 }
 
@@ -94,7 +98,7 @@ pub(crate) fn pull(
         start: Vec::new(),
         gone: Vec::new(),
     };
-    for &number in &board.todo {
+    for number in board.todo() {
         let Some(issue) = issues.get(number).filter(|issue| issue.open()) else {
             pull.gone.push(number);
             continue;
