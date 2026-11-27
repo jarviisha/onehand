@@ -48,19 +48,21 @@ impl BoardDrive {
                     })
                     .map(|e| e.issue)
                     .collect();
-                Some(lost.into_iter().fold(board, |board, issue| board.removed(issue)))
+                Some(
+                    lost.into_iter()
+                        .fold(board, |board, issue| board.removed(issue)),
+                )
             }));
         }
-        fx.push(self.held());
+        fx.push(self.say_held());
         fx
     }
 
     /// The tasks every board holds: those its work column's entries name.
-    pub(super) fn held(&self) -> Effect {
-        let tasks = (self.boards.boards.values())
-            .flat_map(|board| board.work().iter().filter_map(|e| e.task.clone()))
-            .collect();
-        Effect::Held { tasks }
+    pub(super) fn say_held(&self) -> Effect {
+        Effect::Held {
+            tasks: self.boards.held(),
+        }
     }
 }
 
@@ -77,7 +79,12 @@ fn adopted(board: &crate::board::Board, tasks: &[&Seen], now: Now) -> crate::boa
     };
     let work = (on.iter())
         .filter(|seen| seen.standing == Some(false))
-        .map(|seen| entry(seen, Some(seen.run.clone().unwrap_or_else(|| seen.id.clone()))))
+        .map(|seen| {
+            entry(
+                seen,
+                Some(seen.run.clone().unwrap_or_else(|| seen.id.clone())),
+            )
+        })
         .collect();
     let done = (on.iter().rev())
         .filter(|seen| seen.standing == Some(true))

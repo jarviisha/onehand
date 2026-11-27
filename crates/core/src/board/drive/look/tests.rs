@@ -140,12 +140,22 @@ fn a_look_reads_the_issues_first() {
 fn issues_read_starts_in_order_in_one_write() {
     let mut d = drive(2, &[4, 9, 11]);
     let fx = read(&mut d, issues(&[4, 9, 11], &[]), facts(0));
-    assert_eq!(said(&fx), ["write [11]", "changed", "held"], "nothing starts before its write");
+    assert_eq!(
+        said(&fx),
+        ["write [11]", "changed", "held"],
+        "nothing starts before its write"
+    );
     assert_eq!(
         said(&land(&mut d, fx)),
         ["start 4 as id0", "start 9 as id1", "changed", "held"]
     );
-    let work: Vec<u64> = d.board(&id()).unwrap().work().iter().map(|e| e.issue).collect();
+    let work: Vec<u64> = d
+        .board(&id())
+        .unwrap()
+        .work()
+        .iter()
+        .map(|e| e.issue)
+        .collect();
     assert_eq!(work, [4, 9]);
     assert_eq!(d.starting(&id()).collect::<Vec<_>>(), [4, 9]);
 }
@@ -155,7 +165,10 @@ fn gone_issues_and_started_ones_leave_to_do_in_one_write() {
     let mut d = drive(1, &[3, 4, 9]);
     let fx = read(&mut d, issues(&[4, 9], &[3]), facts(0));
     assert_eq!(said(&fx), ["write [9]", "changed", "held"]);
-    assert_eq!(said(&land(&mut d, fx)), ["start 4 as id0", "changed", "held"]);
+    assert_eq!(
+        said(&land(&mut d, fx)),
+        ["start 4 as id0", "changed", "held"]
+    );
 }
 
 #[test]
@@ -236,7 +249,10 @@ fn the_first_steps_room_narrows_a_pull() {
         waiting: 1,
     });
     let fx = read(&mut d, issues(&[2, 7], &[]), f);
-    assert_eq!(said(&land(&mut d, fx)), ["start 2 as id0", "changed", "held"]);
+    assert_eq!(
+        said(&land(&mut d, fx)),
+        ["start 2 as id0", "changed", "held"]
+    );
 }
 
 fn landed(d: &mut BoardDrive, issue: u64, kept: bool, result: Result<(), String>) -> Vec<Effect> {
@@ -308,7 +324,11 @@ fn a_start_waits_for_its_write() {
     let mut d = drive(2, &[4]);
     let fx = read(&mut d, issues(&[4], &[]), facts(0));
     assert!(said(&fx).iter().all(|e| !e.starts_with("start")));
-    assert_eq!(d.starting(&id()).collect::<Vec<_>>(), [4], "counted meanwhile");
+    assert_eq!(
+        d.starting(&id()).collect::<Vec<_>>(),
+        [4],
+        "counted meanwhile"
+    );
 }
 
 #[test]
@@ -316,7 +336,11 @@ fn a_failed_start_write_puts_the_issue_back_and_starts_nothing() {
     let mut d = drive(2, &[4]);
     let fx = read(&mut d, issues(&[4], &[]), facts(0));
     let rest = answer(&mut d, fx, Err("disk full".into()));
-    assert!(said(&rest).iter().all(|e| !e.starts_with("start")), "{:?}", said(&rest));
+    assert!(
+        said(&rest).iter().all(|e| !e.starts_with("start")),
+        "{:?}",
+        said(&rest)
+    );
     assert_eq!(d.board(&id()).unwrap().todo(), [4]);
     assert!(d.board(&id()).unwrap().work().is_empty());
     assert_eq!(d.starting(&id()).count(), 0);
@@ -331,7 +355,10 @@ fn a_start_carried_by_a_later_write_is_asked_once() {
     let rest = answer(&mut d, first, Err("busy".into()));
     assert!(said(&rest).iter().all(|e| !e.starts_with("start")));
     let rest = land(&mut d, later);
-    let starts = said(&rest).iter().filter(|e| e.starts_with("start")).count();
+    let starts = said(&rest)
+        .iter()
+        .filter(|e| e.starts_with("start"))
+        .count();
     assert_eq!(starts, 1, "{:?}", said(&rest));
     assert_eq!(d.board(&id()).unwrap().work().len(), 1);
 }
@@ -339,27 +366,39 @@ fn a_start_carried_by_a_later_write_is_asked_once() {
 #[test]
 fn a_done_end_moves_the_entry_to_done_and_closes_once() {
     let mut d = started(4);
-    let fx = { let fx = ended(&mut d, 4, "id0", Outcome::Done); land(&mut d, fx) };
+    let fx = {
+        let fx = ended(&mut d, 4, "id0", Outcome::Done);
+        land(&mut d, fx)
+    };
     assert!(said(&fx).contains(&"read".to_string()), "{:?}", said(&fx));
     assert!(said(&fx).contains(&"held".to_string()));
     let board = d.board(&id()).unwrap();
     assert!(board.work().is_empty());
     assert_eq!(board.done()[0].issue, 4);
-    assert_eq!(said(&read(&mut d, issues(&[4], &[]), facts(0))), ["close 4"]);
+    assert_eq!(
+        said(&read(&mut d, issues(&[4], &[]), facts(0))),
+        ["close 4"]
+    );
     assert!(read(&mut d, issues(&[4], &[]), facts(0)).is_empty());
 }
 
 #[test]
 fn a_closed_issue_is_not_closed_again() {
     let mut d = started(4);
-    let _ = { let fx = ended(&mut d, 4, "id0", Outcome::Done); land(&mut d, fx) };
+    let _ = {
+        let fx = ended(&mut d, 4, "id0", Outcome::Done);
+        land(&mut d, fx)
+    };
     assert!(read(&mut d, issues(&[], &[4]), facts(0)).is_empty());
 }
 
 #[test]
 fn a_synced_issue_is_left_open() {
     let mut d = started(4);
-    let _ = { let fx = ended(&mut d, 4, "id0", Outcome::Done); land(&mut d, fx) };
+    let _ = {
+        let fx = ended(&mut d, 4, "id0", Outcome::Done);
+        land(&mut d, fx)
+    };
     let mut kept = issues(&[4], &[]);
     kept.sync_with(Some("Forge".into()));
     let forge: &'static dyn crate::connector::Connector =
@@ -372,7 +411,11 @@ fn a_synced_issue_is_left_open() {
         },
         now(),
     );
-    assert!(said(&fx).iter().all(|e| !e.starts_with("close")), "{:?}", said(&fx));
+    assert!(
+        said(&fx).iter().all(|e| !e.starts_with("close")),
+        "{:?}",
+        said(&fx)
+    );
 }
 
 #[test]
@@ -393,7 +436,10 @@ fn a_failed_end_keeps_the_entry_and_pulls_nothing() {
 #[test]
 fn an_end_of_a_task_no_entry_names_does_nothing() {
     let mut d = started(4);
-    let _ = { let fx = ended(&mut d, 4, "id0", Outcome::Done); land(&mut d, fx) };
+    let _ = {
+        let fx = ended(&mut d, 4, "id0", Outcome::Done);
+        land(&mut d, fx)
+    };
     // Retried from Done by a person: its end is theirs.
     assert!(ended(&mut d, 4, "id0", Outcome::Done).is_empty());
     assert!(ended(&mut d, 8, "elsewhere", Outcome::Stopped(Stop::ByPerson)).is_empty());
@@ -402,7 +448,9 @@ fn an_end_of_a_task_no_entry_names_does_nothing() {
 #[test]
 fn remove_refuses_while_it_works() {
     let mut d = started(4);
-    assert!(d.remove(&id(), 4, true).is_err_and(|why| why.contains("Stop")));
+    assert!(d
+        .remove(&id(), 4, true)
+        .is_err_and(|why| why.contains("Stop")));
     assert_eq!(d.board(&id()).unwrap().work().len(), 1);
 }
 

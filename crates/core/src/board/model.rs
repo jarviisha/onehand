@@ -210,7 +210,10 @@ impl Board {
                     && todo.work == Work::Person
                     && work.id == WORK
                     && matches_workflow(&work.work)
-                    && todo.entries.iter().all(|e| e.task.is_none() && e.run.is_none())
+                    && todo
+                        .entries
+                        .iter()
+                        .all(|e| e.task.is_none() && e.run.is_none())
                     && self.entries_known(work)
             }
             _ => false,
@@ -237,7 +240,9 @@ impl Board {
         match self.schema_version {
             FIRST_VERSION => work.entries.is_empty() && self.done.is_empty(),
             _ => {
-                work.entries.iter().all(|e| e.task.is_some() && e.run.is_some())
+                work.entries
+                    .iter()
+                    .all(|e| e.task.is_some() && e.run.is_some())
                     && self.done.iter().all(|e| e.task.is_some())
                     && self.done.len() <= DONE_KEPT
             }

@@ -152,10 +152,22 @@ pub(crate) fn is_working(id: &str, cx: &App) -> bool {
     cx.try_global::<Tasks>().is_some_and(|t| t.busy(id))
 }
 
+/// Every board task as the boards see it.
+pub(crate) fn board_seen(cx: &App) -> Vec<onehand_core::board::drive::Seen> {
+    cx.try_global::<Tasks>().map_or(Vec::new(), |t| {
+        (t.tasks().iter())
+            .filter_map(|task| onehand_core::board::seen(task, t.working(task.id())))
+            .collect()
+    })
+}
+
 /// How many of `project`'s board tasks hold a place on its team.
 pub(crate) fn board_running(project: &onehand_core::project::ProjectId, cx: &App) -> usize {
+    let Some(board) = crate::state::Shared::global(cx).boards.board(project) else {
+        return 0;
+    };
     cx.try_global::<Tasks>().map_or(0, |t| {
-        onehand_core::board::running(t.tasks().iter(), project, &|id| t.holds_team(id))
+        onehand_core::board::running(t.tasks().iter(), board, &|id| t.holds_team(id))
     })
 }
 
@@ -165,8 +177,11 @@ pub(crate) fn board_extends_waiting(
     project: &onehand_core::project::ProjectId,
     cx: &App,
 ) -> Vec<String> {
+    let Some(board) = crate::state::Shared::global(cx).boards.board(project) else {
+        return Vec::new();
+    };
     cx.try_global::<Tasks>().map_or(Vec::new(), |t| {
-        onehand_core::board::extends_waiting(t.tasks().iter(), project, &|id| t.extend_asked(id))
+        onehand_core::board::extends_waiting(t.tasks().iter(), board, &|id| t.extend_asked(id))
     })
 }
 
@@ -175,8 +190,11 @@ pub(crate) fn board_taken(
     project: &onehand_core::project::ProjectId,
     cx: &App,
 ) -> std::collections::HashSet<u64> {
+    let Some(board) = crate::state::Shared::global(cx).boards.board(project) else {
+        return Default::default();
+    };
     cx.try_global::<Tasks>().map_or_else(Default::default, |t| {
-        onehand_core::board::taken(t.tasks().iter(), project, &|id| t.working(id))
+        onehand_core::board::taken(board, t.tasks().iter(), project)
     })
 }
 
@@ -232,13 +250,14 @@ pub(crate) fn board(
             taken: Default::default(),
         };
     };
-    let working = |id: &str| t.working(id);
-    let of_board = || {
-        t.tasks()
-            .iter()
-            .filter(|task| task.board_issue().is_some_and(|(of, _)| of == project))
+    let Some(board) = crate::state::Shared::global(cx).boards.board(project) else {
+        return BoardTasks {
+            steps: Vec::new(),
+            done: Vec::new(),
+            taken: Default::default(),
+        };
     };
-    let columns = onehand_core::board::columns(template, of_board(), &working);
+    let columns = onehand_core::board::columns(template, board, t.tasks().iter());
     let rows = |tasks: Vec<&Task>| tasks.into_iter().map(|task| row_of(t, task)).collect();
     BoardTasks {
         steps: columns
@@ -261,6 +280,6 @@ pub(crate) fn board(
             })
             .collect(),
         done: rows(columns.done),
-        taken: onehand_core::board::taken(of_board(), project, &working),
+        taken: onehand_core::board::taken(board, t.tasks().iter(), project),
     }
 }

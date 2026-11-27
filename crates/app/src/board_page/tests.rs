@@ -58,8 +58,10 @@ fn a_task_says_what_it_waits_on() {
     );
 }
 
+/// A board's task offers what the Tasks page offers it, but Dismiss: the
+/// board holds it, and it leaves by *Remove from board*.
 #[test]
-fn a_task_offers_the_tasks_pages_acts() {
+fn a_task_offers_the_tasks_pages_acts_but_dismiss() {
     let labels = |row: &Row| -> Vec<&'static str> {
         task_offers(row)
             .into_iter()
@@ -68,7 +70,7 @@ fn a_task_offers_the_tasks_pages_acts() {
     };
     let mut ended = row(Group::Ended, "failed", Some("It failed"));
     ended.resumable = true;
-    assert_eq!(labels(&ended), ["Show task", "Resume", "Retry…", "Dismiss"]);
+    assert_eq!(labels(&ended), ["Show task", "Resume", "Retry…"]);
     let mut running = row(Group::Running, "Build", None);
     running.stoppable = true;
     assert_eq!(labels(&running), ["Show task", "Stop"]);

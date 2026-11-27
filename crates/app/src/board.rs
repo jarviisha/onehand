@@ -35,6 +35,7 @@ pub(crate) fn carry(fx: Vec<Effect>, cx: &mut App) {
                     pending,
                     board,
                     dir,
+                    seq,
                 } = *write;
                 let written = Shared::global(cx).writer.write(move || {
                     board::file::save_blocking(&dir, board.as_ref()).map_err(|why| why.to_string())
@@ -46,6 +47,7 @@ pub(crate) fn carry(fx: Vec<Effect>, cx: &mut App) {
                             Input::Written {
                                 id,
                                 pending,
+                                seq,
                                 result,
                             },
                             cx,
@@ -88,6 +90,14 @@ pub(crate) fn carry(fx: Vec<Effect>, cx: &mut App) {
                 task,
                 template,
             } => start(id, issue, task, template, cx),
+            Effect::Held { tasks } => {
+                crate::task::with_drive(cx, |d| {
+                    ((), {
+                        d.set_held(tasks);
+                        Vec::new()
+                    })
+                });
+            }
             Effect::CloseIssue { id, issue } => {
                 if let Some((root, file)) = local(&id, cx) {
                     close_issue(&root, file, issue, cx);
@@ -117,21 +127,52 @@ pub(crate) fn flush(cx: &mut App) {
     carry(fx, cx);
 }
 
-/// A board task of `project` on `issue` ended as `outcome`.
+/// Task `task` of `project`'s board, on `issue`, ended its run `run` as
+/// `outcome`.
 pub(crate) fn ended(
     project: ProjectId,
     issue: u64,
+    task: String,
+    run: Option<String>,
     outcome: Option<onehand_core::workflow::Outcome>,
     cx: &mut App,
 ) {
-    handle(
-        Input::Ended {
-            id: project,
-            issue,
-            outcome,
-        },
-        cx,
-    );
+    let ended = Input::Ended {
+        id: project,
+        issue,
+        task,
+        run,
+        outcome,
+    };
+    handle(ended, cx);
+}
+
+/// Tell the boards the tasks as they now stand: each board takes its tasks
+/// up the first time, and lets go of what is gone.
+pub(crate) fn tasks_read(cx: &mut App) {
+    let tasks = crate::task::board_seen(cx);
+    handle(Input::TasksRead { tasks }, cx);
+}
+
+/// Take `issue` off `project`'s board, back to the Backlog, unless its task
+/// works; what refuses it is said in `window`.
+pub(crate) fn remove(
+    project: &ProjectId,
+    issue: u64,
+    task: Option<&str>,
+    window: &mut gpui::Window,
+    cx: &mut App,
+) {
+    let working = task.is_some_and(|id| crate::task::is_working(id, cx));
+    let removed =
+        cx.update_global::<Shared, _>(|shared, _| shared.boards.remove(project, issue, working));
+    match removed {
+        Ok(fx) => carry(fx, cx),
+        Err(why) => window.push_notification(
+            crate::toast::failed(&format!("Removing #{issue} from the board"), why),
+            cx,
+        ),
+    }
 }
 
 /// Read `id`'s issues off the UI thread, then what the tasks and the library

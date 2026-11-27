@@ -57,6 +57,13 @@ impl Boards {
         self.boards.contains_key(id) || self.unreadable.contains_key(id)
     }
 
+    /// The tasks every board holds: those its work column's entries name.
+    pub fn held(&self) -> HashSet<String> {
+        (self.boards.values())
+            .flat_map(|board| board.work().iter().filter_map(|e| e.task.clone()))
+            .collect()
+    }
+
     /// The projects with a board this build can read.
     pub fn ids(&self) -> impl Iterator<Item = &ProjectId> {
         self.boards.keys()
@@ -131,7 +138,9 @@ pub enum Effect {
     },
     /// The tasks the boards hold now, every one of them: none of them is let
     /// go of as history, nor dismissed.
-    Held { tasks: HashSet<String> },
+    Held {
+        tasks: HashSet<String>,
+    },
 }
 
 /// What the front end reports back.
@@ -286,7 +295,7 @@ impl BoardDrive {
     pub fn unbind(&mut self, id: &ProjectId) -> Vec<Effect> {
         let mut fx = self.set_board(id, None);
         if !fx.is_empty() {
-            fx.push(self.held());
+            fx.push(self.say_held());
         }
         fx
     }
@@ -304,7 +313,7 @@ impl BoardDrive {
         }
         let mut fx = self.edit(id, false, |board| board.map(|b| b.removed(issue)));
         if !fx.is_empty() {
-            fx.push(self.held());
+            fx.push(self.say_held());
         }
         Ok(fx)
     }
@@ -421,7 +430,7 @@ impl BoardDrive {
                 }
                 fx.push(Effect::Changed(id.clone()));
                 fx.push(Effect::Signal(Signal::SaveFailed { id, why }));
-                fx.push(self.held());
+                fx.push(self.say_held());
                 fx
             }
             Input::Elapsed { token } => {

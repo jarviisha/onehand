@@ -191,6 +191,12 @@ fn a_limited_columns_head_says_how_much_of_its_room_is_held(cx: &mut TestAppCont
     };
     let project = onehand_core::project::ProjectId::mint(79);
     let heads = cx.update(|cx| {
+        use gpui::BorrowAppContext as _;
+        // The board is shown, not written: its columns are what is drawn.
+        let board = onehand_core::board::Board::made(template.id.clone(), 1, &[], 0);
+        let _ = cx.update_global::<crate::state::Shared, _>(|shared, _| {
+            shared.boards.set_board(&project, Some(board))
+        });
         crate::task::with_drive(cx, |t| ((), t.ask_room("x", key, 1)));
         crate::task::board(&project, &root, &template, cx)
             .steps

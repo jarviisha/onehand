@@ -136,7 +136,7 @@ impl Tasks {
 }
 
 /// Give the tasks' drive `command`, and carry out what it says.
-fn with_drive<R>(
+pub(crate) fn with_drive<R>(
     cx: &mut App,
     command: impl FnOnce(&mut TasksDrive<AnyWindowHandle>) -> (R, Vec<Effect<AnyWindowHandle>>),
 ) -> Option<R> {
@@ -203,7 +203,12 @@ pub(crate) fn boot(cx: &mut App) {
                     .ok()
                 })
                 .collect();
-            with_drive(cx, |d| ((), d.loaded(tasks)));
+            // What the boards hold is not let go of by the cap that runs
+            // as the tasks land.
+            let held = crate::state::Shared::global(cx).boards.held();
+            with_drive(cx, |d| ((), d.loaded(tasks, held)));
+            // A board adopts its tasks, and lets go of the ones gone.
+            crate::board::tasks_read(cx);
             // A board task cut off by the last exit is not counted, so its
             // team has room again.
             crate::board::pull_all(cx);
@@ -258,9 +263,11 @@ pub(crate) fn extend(approval: onehand_core::task::Approval, cx: &mut App) {
         .try_global::<Tasks>()
         .is_some_and(|t| t.holds_team(&approval.task));
     let boards = &crate::state::Shared::global(cx).boards;
-    let has_board = |project: &onehand_core::project::ProjectId| boards.board(project).is_some();
     let way = task(&approval.task, cx).map_or(ExtendWay::Now, |task| {
-        onehand_core::board::extend_way(&task, &has_board, holds)
+        let on_board = (task.board_issue())
+            .and_then(|(project, _)| boards.board(project))
+            .is_some_and(|board| board.names(task.id()).is_some());
+        onehand_core::board::extend_way(&task, on_board, holds)
     });
     match way {
         ExtendWay::WaitForPlace(project) => {

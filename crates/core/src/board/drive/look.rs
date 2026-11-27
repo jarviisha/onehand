@@ -116,8 +116,9 @@ impl BoardDrive {
             let mut todo = board.todo();
             todo.retain(|n| !gone.contains(n));
             let board = board.with_todo(&todo, now.secs);
-            let started = (starts.iter())
-                .fold(board, |board, (issue, task)| board.started(*issue, task, now.secs));
+            let started = (starts.iter()).fold(board, |board, (issue, task)| {
+                board.started(*issue, task, now.secs)
+            });
             Some(started)
         }));
         // Asked only once the write that names them lands.
@@ -139,7 +140,7 @@ impl BoardDrive {
             });
         }
         if named {
-            fx.push(self.held());
+            fx.push(self.say_held());
         }
         fx
     }
@@ -200,7 +201,7 @@ impl BoardDrive {
         let mut fx = Vec::new();
         if done {
             fx.extend(self.edit(id, false, |board| board.map(|b| b.finished(task, now.secs))));
-            fx.push(self.held());
+            fx.push(self.say_held());
             self.closing.entry(id.clone()).or_default().insert(issue);
         }
         if done || pulls_next(outcome) {

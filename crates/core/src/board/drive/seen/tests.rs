@@ -70,11 +70,23 @@ fn adoption_places_live_and_failed_tasks_in_work_and_done_ones_in_done() {
     );
     let board = d.board(&id()).unwrap();
     assert!(!board.adopts());
-    let work: Vec<&str> = board.work().iter().filter_map(|e| e.task.as_deref()).collect();
+    let work: Vec<&str> = board
+        .work()
+        .iter()
+        .filter_map(|e| e.task.as_deref())
+        .collect();
     assert_eq!(work, ["early", "late"], "oldest first");
-    let done: Vec<&str> = board.done().iter().filter_map(|e| e.task.as_deref()).collect();
+    let done: Vec<&str> = board
+        .done()
+        .iter()
+        .filter_map(|e| e.task.as_deref())
+        .collect();
     assert_eq!(done, ["new", "old"], "newest first");
-    assert_eq!(board.todo(), [4, 9], "an issue off the board stays in To do");
+    assert_eq!(
+        board.todo(),
+        [4, 9],
+        "an issue off the board stays in To do"
+    );
     assert_eq!(
         held(&fx),
         Some(["early", "late"].map(String::from).into_iter().collect())

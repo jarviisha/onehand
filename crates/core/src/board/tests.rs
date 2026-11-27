@@ -202,7 +202,11 @@ fn columns_place_by_current_step() {
     assert_eq!(ids(&got.done), ["3"]);
     let last = got.steps.last().unwrap();
     assert_eq!((last.step.as_str(), last.label.as_str()), ("gone", "gone"));
-    assert_eq!(ids(&last.tasks), ["5"], "a task no entry names is not drawn");
+    assert_eq!(
+        ids(&last.tasks),
+        ["5"],
+        "a task no entry names is not drawn"
+    );
 }
 
 #[test]
@@ -342,7 +346,11 @@ fn an_extend_waits_for_a_place_only_on_a_board_and_at_rest() {
         ExtendWay::WaitForPlace(project)
     );
     assert_eq!(extend_way(&on_board, true, true), ExtendWay::Now);
-    assert_eq!(extend_way(&on_board, false, false), ExtendWay::Now, "off the board");
+    assert_eq!(
+        extend_way(&on_board, false, false),
+        ExtendWay::Now,
+        "off the board"
+    );
 }
 
 /// Only an end that left the board pulls the next, done or stopped by a

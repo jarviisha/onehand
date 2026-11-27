@@ -137,7 +137,10 @@ fn upgraded_moves_to_do_issues_that_tasks_hold_and_caps_done() {
 fn started_moves_an_issue_from_to_do_to_work() {
     let board = made().started(4, "t1", 50);
     assert_eq!(board.todo(), [9]);
-    assert_eq!(board.work(), [work(4, "t1")].map(|e| Entry { since: 50, ..e }));
+    assert_eq!(
+        board.work(),
+        [work(4, "t1")].map(|e| Entry { since: 50, ..e })
+    );
 }
 
 #[test]

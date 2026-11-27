@@ -101,3 +101,32 @@ fn quit_flushes_a_waiting_team(cx: &mut TestAppContext) {
     until(cx, |_| file_of(&store, &id).contains("team = 6"));
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// What the boards hold reaches the tasks once they are read: a task they no
+/// longer hold can be dismissed again.
+#[gpui::test]
+fn a_held_set_reaches_the_tasks(cx: &mut TestAppContext) {
+    let dir = folder("board-held");
+    let (handle, _, cx) = shell(cx, dir.join("tasks"), Vec::new());
+    let (id, store) = (ProjectId::mint(64), dir.join("projects"));
+    boards(&id, &store, &[], cx);
+    let refused = |cx: &mut VisualTestContext| {
+        cx.update(|_, cx| {
+            crate::task::with_drive(cx, |d| {
+                let fx = d.dismiss("gone", handle);
+                (!fx.is_empty(), Vec::new())
+            }) == Some(true)
+        })
+    };
+    cx.update(|_, cx| {
+        crate::task::with_drive(cx, |d| {
+            d.set_held(["gone".to_string()].into_iter().collect());
+            ((), Vec::new())
+        })
+    });
+    assert!(refused(cx), "held, so refused");
+    cx.update(|_, cx| crate::board::tasks_read(cx));
+    cx.run_until_parked();
+    assert!(!refused(cx), "the boards hold nothing now");
+    let _ = std::fs::remove_dir_all(dir);
+}
