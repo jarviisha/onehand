@@ -76,7 +76,7 @@ impl BoardDrive {
             .collect();
         // A board that has not taken its tasks up yet does not know what
         // works on it, and taking them up would write over what it started.
-        let looks = self.boards.board(id).is_some_and(|b| !b.adopts()) && facts.window;
+        let looks = self.boards.board(id).is_some_and(|b| !b.adopts());
         if looks {
             fx.extend(self.decide(id, &issues, forge, facts, starting, now, &mut closing));
         }
@@ -118,7 +118,12 @@ impl BoardDrive {
         // what is left after it.
         let held = facts.running + starting + facts.extends_waiting.len();
         let room = flow::Room {
-            team: usize::from(board.team).saturating_sub(held),
+            // With no window to start a task in, nothing starts: moves into
+            // a person's column or into Done still go.
+            team: match facts.window {
+                true => usize::from(board.team).saturating_sub(held),
+                false => 0,
+            },
             // ponytail: a start counts here only until it lands; a task kept
             // and not yet asking for room is counted nowhere at the first
             // step, so a look then may start one too many. The team cap and
@@ -249,8 +254,10 @@ impl BoardDrive {
     ) -> Vec<Effect> {
         let ours = self.boards.board(id).is_some_and(|b| {
             (b.columns.iter()).any(|c| {
+                // Begun in this column: one moved here has no run until it is.
                 workflow_of(c).is_some()
-                    && c.entries.iter().any(|e| e.task.as_deref() == Some(task))
+                    && (c.entries.iter())
+                        .any(|e| e.task.as_deref() == Some(task) && e.run.is_some())
             })
         });
         if !ours {

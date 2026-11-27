@@ -613,3 +613,59 @@ fn a_lost_start_is_kept_and_not_started_again() {
         .iter()
         .all(|e| !e.starts_with("start") && !e.starts_with("next")));
 }
+
+/// An end from a workflow column the task has left, retried there by a
+/// person, does not mark it done in the workflow column it now waits in.
+#[test]
+fn an_end_from_a_workflow_column_left_for_another_changes_nothing() {
+    let mut d = started(4);
+    two_columns(&mut d);
+    let mut board = d.board(&id()).unwrap().clone();
+    board.columns[3].starts = crate::board::Starts::OnPress;
+    let fx = d.set_board(&id(), Some(board));
+    let _ = land(&mut d, fx);
+    let fx = d.place(&id(), 4, Some("ship"), None, false, now()).unwrap();
+    let _ = land(&mut d, fx);
+    assert!(ended(&mut d, 4, "id0", Outcome::Done).is_empty());
+    assert!(!d.board(&id()).unwrap().columns[3].entries[0].done);
+}
+
+/// What the board holds is every column's tasks, not the first's alone.
+#[test]
+fn every_columns_tasks_are_held() {
+    let mut d = started(4);
+    two_columns(&mut d);
+    let fx = d
+        .place(&id(), 4, Some("review"), None, false, now())
+        .unwrap();
+    assert!(d.held().contains("id0"), "in review, still held");
+    let _ = fx;
+}
+
+/// An issue whose start is on its way does not move.
+#[test]
+fn place_refuses_an_issue_starting() {
+    let mut d = drive(2, &[4]);
+    let fx = read(&mut d, issues(&[4], &[]), facts(0));
+    assert!(d
+        .place(&id(), 4, Some("todo"), None, false, now())
+        .is_err_and(|why| why.contains("starting")));
+    let _ = fx;
+}
+
+/// A done end moves to Done and closes with no window holding the project:
+/// only the starts need one.
+#[test]
+fn a_done_end_closes_with_no_window() {
+    let mut d = started(4);
+    let fx = ended(&mut d, 4, "id0", Outcome::Done);
+    let _ = land(&mut d, fx);
+    let mut f = facts(0);
+    f.window = false;
+    let fx = read(&mut d, issues(&[4], &[]), f);
+    assert!(
+        said(&fx).contains(&"close 4".to_string()),
+        "{:?}",
+        said(&fx)
+    );
+}

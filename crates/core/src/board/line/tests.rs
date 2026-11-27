@@ -139,3 +139,19 @@ fn words_say_each_line() {
     );
     assert_eq!(Line::DidNotStart.words(), "Did not start");
 }
+
+/// A run asked for that its task never made (a next run refused) reads as a
+/// start that did not land, though the task is kept.
+#[test]
+fn a_run_the_task_never_made_did_not_start() {
+    let b = board(
+        column("plan", flow(), Starts::OnEntry, MovesOn::ByItself),
+        entry(Some("t"), false),
+        None,
+    );
+    assert_eq!(
+        line(&b, 4, false, false, false),
+        (Line::DidNotStart, Some(EntryAct::Start)),
+        "the run is not one of its task's"
+    );
+}

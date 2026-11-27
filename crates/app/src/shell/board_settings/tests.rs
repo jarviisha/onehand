@@ -93,6 +93,16 @@ fn a_duplicate_saved_for_a_board_rebinds_only_that_board(cx: &mut TestAppContext
         Project::new(ProjectId::mint(92), None, dir.join("b")),
     );
     let (ia, ib) = (a.id.clone(), b.id.clone());
+    // Issue 4 is open in each project's tracker, so a look keeps it in To do.
+    for id in [&ia, &ib] {
+        let file = onehand_core::project::file::issues_file(id);
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(
+            &file,
+            r#"{"next":5,"issues":[{"number":4,"title":"four"}]}"#,
+        )
+        .unwrap();
+    }
     cx.update(|_, cx| {
         cx.update_global::<Shared, _>(|shared, _| {
             shared.projects = ProjectsDrive::new(Projects::from_iter([a, b]), dir.join("projects"));

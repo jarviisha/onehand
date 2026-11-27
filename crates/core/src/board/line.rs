@@ -49,13 +49,14 @@ impl Line {
     }
 }
 
-/// What the row of `issue` on `board` says and offers: `task_here` says
-/// whether the task its entry names is kept, `working` whether that task
-/// works, and `starting` whether a start of it is on its way.
+/// What the row of `issue` on `board` says and offers: `run_here` says
+/// whether the run its entry asked for is one of its task's (no task kept,
+/// or a next run refused, and it is not), `working` whether that task works,
+/// and `starting` whether a start of it is on its way.
 pub fn line(
     board: &Board,
     issue: u64,
-    task_here: bool,
+    run_here: bool,
     working: bool,
     starting: bool,
 ) -> (Line, Option<EntryAct>) {
@@ -73,7 +74,7 @@ pub fn line(
             if entry.done {
                 return done_here(column, next);
             }
-            match (&entry.run, task_here || working) {
+            match (&entry.run, run_here || working) {
                 (Some(_), true) => (Line::Task, None),
                 (Some(_), false) => (Line::DidNotStart, Some(EntryAct::Start)),
                 (None, _) => match column.starts {

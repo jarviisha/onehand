@@ -320,7 +320,8 @@ fn start(
 /// Start run `run` of `template` on task `task`, which works `issue` of
 /// `project` and entered column `column`, and report where it landed: on
 /// the work as its last run left it, with what a new task of the board takes
-/// now. Refused, said by its landing, when another branch is checked out.
+/// now. A refusal (another branch checked out, its worktree removed, the
+/// task at work or gone) made no run, and is said by its landing.
 #[allow(clippy::too_many_arguments)]
 fn next_run(
     project: ProjectId,
@@ -336,7 +337,7 @@ fn next_run(
             id: project.clone(),
             issue,
             task: task.clone(),
-            kept: true,
+            kept: false,
             result: Err(why),
         };
         handle(landed, cx);
@@ -364,7 +365,7 @@ fn next_run(
                     id: project,
                     issue,
                     task,
-                    kept: true,
+                    kept: false,
                     result: Err(why),
                 };
                 return handle(landed, cx);
@@ -377,11 +378,13 @@ fn next_run(
                 }
             })
             .unwrap_or_else(|| Err("no tasks are kept yet".to_string()));
+            // A next run refused made no run, so nobody else says why.
+            let kept = made.is_ok();
             let landed = Input::Landed {
                 id: project,
                 issue,
                 task,
-                kept: true,
+                kept,
                 result: made,
             };
             handle(landed, cx);

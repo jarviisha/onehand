@@ -176,7 +176,7 @@ are never written.
   person starts it again, and nothing starts it by itself.
 - **A board task** is an ordinary task with `Origin::Board { project, issue }`, kept like any
   other. Where it stands in the work column comes from its last run (`board::columns`). The
-  tasks the work column names are held: the history cap passes over them, the cap applied as the
+  tasks the board's columns name are held: the history cap passes over them, the cap applied as the
   tasks are read included (`TasksDrive::held`, told by the board's drive, `Effect::Held`).
 - **A board written before its columns named their tasks** (version 1) takes them up the first
   time the tasks are read: those on it in the work column, oldest first, the done ones in Done,
