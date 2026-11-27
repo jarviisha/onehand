@@ -272,7 +272,11 @@ fn a_rows_facts_stand_whole_or_not_at_all(_: &mut TestAppContext) {
                 onehand_ui::tokens::ROW_H.to_pixels(rem),
             );
             // What it continued keeps its words whole, the ellipsis after them.
-            let earlier_least = drawn("Continued from…", rems(0.75).to_pixels(rem), cx);
+            // counted a character at a time, as the cut counts it.
+            let earlier_least: Pixels = "Continued from…"
+                .chars()
+                .map(|c| drawn(&c.to_string(), rems(0.75).to_pixels(rem), cx))
+                .sum();
             width(cx, WIDE);
             let whole = bounds(cx, "home-facts-0").size.width;
             assert!(
@@ -332,13 +336,14 @@ fn a_rows_facts_stand_whole_or_not_at_all(_: &mut TestAppContext) {
                         "a row's facts are partly in sight at {w:?}, {zoom}%: {facts:?} in {middle:?}"
                     );
                 }
-                // Beside a short title, what it continued is never cut inside
-                // "Continued from" while the facts stand.
-                if w == NARROWEST && title == SHORT && continued && shown(facts, middle) {
+                // What it continued is never cut inside "Continued from": it
+                // is out of sight or as wide as its words.
+                if continued {
                     let earlier = bounds(cx, "home-continued-0");
+                    let drawn_here = earlier.top() + SLACK < middle.bottom();
                     assert!(
-                        earlier.size.width + SLACK >= earlier_least,
-                        "what a short title continued is cut to {earlier:?} under its words' {earlier_least:?} beside its facts at {zoom}%"
+                        !drawn_here || earlier.size.width + SLACK >= earlier_least,
+                        "what {title:?} continued is cut to {earlier:?} under its words' {earlier_least:?} at {w:?}, {zoom}%"
                     );
                 }
                 // A short title leaves its facts room beside it even in the

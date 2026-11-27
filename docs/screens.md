@@ -453,11 +453,13 @@ room and leaves the terminal as it is.
   overview's (age, title, then items and agent at the edge, led by *Continued from <title>* for
   one that continued another; the items and agent are shown whole or not at all, dropped where the
   row cannot leave the title its least width (its own whole width, or about twenty characters for
-  a longer one) and what it continued its words *Continued from* whole; what it continued is
-  itself dropped, whole, where it and the title's least do not both fit; the title is cut on an
-  ellipsis in whatever room it has and says itself whole in its tooltip; then a `⋯` on hover
-  holding *Resume*, on a page whose sessions run here *Continue in a new session…*, and *Delete…*,
-  the same on a right-click), capped, its wait and empty lines inside it:
+  a longer one) and, for one that continued another, beside it the words *Continued from* whole,
+  or, where more, the room that keeps the title its least once what it continued takes its share
+  of up to two fifths of the row (so beside a long title they go somewhat sooner); what it
+  continued is itself dropped, whole, where it and the title's least do not both fit; the title is
+  cut on an ellipsis in whatever room it has and says itself whole in its tooltip; then a `⋯` on
+  hover holding *Resume*, on a page whose sessions run here *Continue in a new session…*, and
+  *Delete…*, the same on a right-click), capped, its wait and empty lines inside it:
   every one of the project, in whichever of its folders it ran, and one that ran in a folder it
   no longer holds (a worktree since removed) has its *Resume* say the folder is gone; under
   it, for a project on this machine, the box *Worktrees* with the count of those its project
