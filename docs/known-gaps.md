@@ -488,5 +488,5 @@ the ones that exist. What workflows and tasks do not do is listed at the end of
   it is bound in *Settings ▸ Projects ▸ Board*. Their own is edited in place, so a copy of it is
   taken as a new workflow, not the board's.
 - **Dragging on the board has no edge autoscroll**, as on the rail, and draws no line where the
-  issue will land: the row it lands before fills instead. A row past the board's visible edge has
-  to be scrolled to first.
+  issue will land: the row it lands before fills instead. A column past the board's visible edge
+  has to be scrolled to first. A refused move is said after the drop, not while dragging.
