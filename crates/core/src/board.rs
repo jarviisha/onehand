@@ -219,6 +219,20 @@ fn on_board(task: &Task, working: &dyn Fn(&str) -> Option<Working>) -> Option<bo
     }
 }
 
+/// `task` as the boards see it, while it is a board's: `working` says what
+/// the app knows of whether it works.
+pub fn seen(task: &Task, working: Option<Working>) -> Option<drive::Seen> {
+    let (project, issue) = task.board_issue()?;
+    Some(drive::Seen {
+        id: task.id().to_string(),
+        project: project.clone(),
+        issue,
+        run: task.runs().last().map(|run| run.id.clone()),
+        standing: on_board(task, &|_| working),
+        recency: task.recency(),
+    })
+}
+
 /// The issues `project`'s board tasks hold out of the Backlog: those of the
 /// tasks on the board. A task that left it gives its issue back.
 pub fn taken<'a>(

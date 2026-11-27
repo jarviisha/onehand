@@ -25,7 +25,7 @@ use crate::saving::{Pending, Saves};
 use crate::workflow::Outcome;
 use crate::workflow::Template;
 use crate::Now;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::ops::Deref;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -126,6 +126,9 @@ pub enum Effect {
         id: ProjectId,
         issue: u64,
     },
+    /// The tasks the boards hold now, every one of them: none of them is let
+    /// go of as history, nor dismissed.
+    Held { tasks: HashSet<String> },
 }
 
 /// What the front end reports back.
@@ -161,6 +164,8 @@ pub enum Input {
         issue: u64,
         outcome: Option<Outcome>,
     },
+    /// The tasks were read, each board task as the boards see it.
+    TasksRead { tasks: Vec<Seen> },
 }
 
 /// Every board's drive. See the module header.
@@ -385,6 +390,7 @@ impl BoardDrive {
                 result,
             } => self.landed(&id, issue, kept, result),
             Input::Ended { id, issue, outcome } => self.ended(&id, issue, outcome.as_ref()),
+            Input::TasksRead { tasks } => self.tasks_read(&tasks, now),
         }
     }
 
@@ -478,7 +484,9 @@ fn place_before(todo: &[u64], dragged: u64, target: u64) -> Option<usize> {
 }
 
 mod look;
+mod seen;
 pub use look::Facts;
+pub use seen::Seen;
 
 #[cfg(test)]
 mod tests;

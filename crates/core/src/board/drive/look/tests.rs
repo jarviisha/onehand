@@ -57,7 +57,7 @@ fn land(d: &mut BoardDrive, fx: Vec<Effect>) -> Vec<Effect> {
             | Effect::ReadIssues { .. }
             | Effect::GivePlace { .. }
             | Effect::Start { .. }
-            | Effect::CloseIssue { .. }) => rest.push(other),
+            | Effect::CloseIssue { .. } | Effect::Held { .. }) => rest.push(other),
         }
     }
     rest
@@ -114,6 +114,7 @@ fn said(fx: &[Effect]) -> Vec<String> {
             Effect::GivePlace { task } => format!("give {task}"),
             Effect::Start { issue, task, .. } => format!("start {issue} as {task}"),
             Effect::CloseIssue { issue, .. } => format!("close {issue}"),
+            Effect::Held { .. } => "held".into(),
         })
         .collect()
 }

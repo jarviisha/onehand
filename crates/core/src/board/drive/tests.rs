@@ -51,7 +51,7 @@ fn write_of(fx: Vec<Effect>) -> Box<BoardWrite> {
             | Effect::ReadIssues { .. }
             | Effect::GivePlace { .. }
             | Effect::Start { .. }
-            | Effect::CloseIssue { .. } => None,
+            | Effect::CloseIssue { .. } | Effect::Held { .. } => None,
         })
         .expect("a write")
 }
@@ -222,7 +222,7 @@ fn a_failed_write_puts_the_board_back() {
         | Effect::ReadIssues { .. }
         | Effect::GivePlace { .. }
         | Effect::Start { .. }
-        | Effect::CloseIssue { .. } => false,
+        | Effect::CloseIssue { .. } | Effect::Held { .. } => false,
     });
     let said = fx.iter().any(|e| match e {
         Effect::Signal(Signal::SaveFailed { id: of, why }) => *of == id() && why == "disk full",
@@ -233,7 +233,7 @@ fn a_failed_write_puts_the_board_back() {
         | Effect::ReadIssues { .. }
         | Effect::GivePlace { .. }
         | Effect::Start { .. }
-        | Effect::CloseIssue { .. } => false,
+        | Effect::CloseIssue { .. } | Effect::Held { .. } => false,
     });
     assert!(changed && said);
 }
@@ -251,7 +251,7 @@ fn set_team_waits_then_writes_once() {
                 | Effect::ReadIssues { .. }
                 | Effect::GivePlace { .. }
                 | Effect::Start { .. }
-                | Effect::CloseIssue { .. } => None,
+                | Effect::CloseIssue { .. } | Effect::Held { .. } => None,
             })
             .expect("a wait")
     };
@@ -308,7 +308,7 @@ fn a_change_says_changed() {
         | Effect::ReadIssues { .. }
         | Effect::GivePlace { .. }
         | Effect::Start { .. }
-        | Effect::CloseIssue { .. } => false,
+        | Effect::CloseIssue { .. } | Effect::Held { .. } => false,
     }));
 }
 
