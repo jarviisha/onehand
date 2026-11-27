@@ -18,7 +18,10 @@
 //! changes nothing, so a newer onehand's file survives an older one.
 
 use super::model::{Board, FIRST_TEAM};
+use crate::connector::Connector;
+use crate::issues::Issues;
 use crate::project::{ProjectId, Toward};
+use crate::workflow::Outcome;
 use crate::saving::{Pending, Saves};
 use crate::workflow::Template;
 use crate::Now;
@@ -69,6 +72,13 @@ pub struct BoardWrite {
 pub enum Signal {
     /// Project `id`'s board could not be written: why.
     SaveFailed { id: ProjectId, why: String },
+    /// Issue `issue` of project `id`'s To do could not start, for `why`,
+    /// before a task was made of it: it is back in the Backlog.
+    NotStarted {
+        id: ProjectId,
+        issue: u64,
+        why: String,
+    },
 }
 
 /// What the front end carries out.
@@ -83,6 +93,24 @@ pub enum Effect {
     /// Project `id`'s board changed: draw it again wherever it is held.
     Changed(ProjectId),
     Signal(Signal),
+    /// Read project `id`'s issues and what the tasks and the library say of
+    /// its board, and report [`Input::IssuesRead`]. A late answer is
+    /// **dropped** in effect: it is a look, and a later one looks again.
+    ReadIssues { id: ProjectId },
+    /// Give task `task`, an extend waiting for a place on its board's team,
+    /// that place.
+    GivePlace { task: String },
+    /// Start a task `task` of `template` on issue `issue` of project `id`,
+    /// off screen, and report [`Input::Landed`]. A late answer is
+    /// **recorded**: a task kept is the board's whatever moved since.
+    Start {
+        id: ProjectId,
+        issue: u64,
+        task: String,
+        template: Template,
+    },
+    /// Close issue `issue` of project `id`'s own tracker.
+    CloseIssue { id: ProjectId, issue: u64 },
 }
 
 /// What the front end reports back.
@@ -95,6 +123,29 @@ pub enum Input {
     },
     /// The wait [`Effect::Arm`] asked for ran out.
     Elapsed { token: u64 },
+    /// What [`Effect::ReadIssues`] read: the issues and the forge serving
+    /// the project, or why not, and what was read beside them.
+    IssuesRead {
+        id: ProjectId,
+        read: Result<(Issues, Option<&'static dyn Connector>), String>,
+        facts: Facts,
+    },
+    /// Where [`Effect::Start`] landed: started or queued, or refused for
+    /// why; `kept` says whether its task was made before it was refused.
+    Landed {
+        id: ProjectId,
+        issue: u64,
+        task: String,
+        kept: bool,
+        result: Result<(), String>,
+    },
+    /// A board task of project `id` on `issue` ended as `outcome`, and let
+    /// its place go.
+    Ended {
+        id: ProjectId,
+        issue: u64,
+        outcome: Option<Outcome>,
+    },
 }
 
 /// Every board's drive. See the module header.
@@ -108,6 +159,12 @@ pub struct BoardDrive {
     /// The newest wait armed, while one waits.
     soon: Option<u64>,
     minted: u64,
+    /// Each board's issues taken out of To do to start whose task has not
+    /// landed yet. Never written: a start cut off by an exit is just gone.
+    starting: HashMap<ProjectId, BTreeSet<u64>>,
+    /// The issues whose board task ended done, waiting for their tracker to
+    /// be read to tell whether to close them.
+    closing: HashMap<ProjectId, BTreeSet<u64>>,
 }
 
 impl Deref for BoardDrive {
@@ -132,6 +189,8 @@ impl BoardDrive {
             waiting: BTreeSet::new(),
             soon: None,
             minted: 0,
+            starting: HashMap::new(),
+            closing: HashMap::new(),
         }
     }
 
@@ -262,7 +321,7 @@ impl BoardDrive {
 
     /// Take what came of an effect.
     #[must_use = "its effects are to be carried"]
-    pub fn handle(&mut self, input: Input, _now: Now) -> Vec<Effect> {
+    pub fn handle(&mut self, input: Input, now: Now) -> Vec<Effect> {
         match input {
             Input::Written {
                 id,
@@ -289,6 +348,15 @@ impl BoardDrive {
                 }
                 self.flush()
             }
+            Input::IssuesRead { id, read, facts } => self.issues_read(&id, read, facts, now),
+            Input::Landed {
+                id,
+                issue,
+                task: _,
+                kept,
+                result,
+            } => self.landed(&id, issue, kept, result),
+            Input::Ended { id, issue, outcome } => self.ended(&id, issue, outcome.as_ref()),
         }
     }
 
@@ -375,6 +443,9 @@ fn place_before(todo: &[u64], dragged: u64, target: u64) -> Option<usize> {
         .filter(|&&n| n != dragged)
         .position(|&n| n == target)
 }
+
+mod look;
+pub use look::Facts;
 
 #[cfg(test)]
 mod tests;

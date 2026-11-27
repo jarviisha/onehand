@@ -118,6 +118,23 @@ pub fn after_end(issue: &LocalIssue, synced: bool, done: bool) -> bool {
     done && !synced && issue.open()
 }
 
+/// Whether a board task that ended as `outcome` lets the board start the
+/// next of its To do: one done or that a person stopped left the board. One
+/// that ended without finishing is left for a person to look at and pulls
+/// nothing, deliberately: a cause the tasks share would most likely end the
+/// next the same way, one after another until To do is empty.
+pub(crate) fn pulls_next(outcome: Option<&Outcome>) -> bool {
+    match outcome {
+        Some(Outcome::Done | Outcome::Stopped(Stop::ByPerson | Stop::TakenOver)) => true,
+        Some(
+            Outcome::Stopped(Stop::TimedOut | Stop::LinkLost | Stop::Closed)
+            | Outcome::Exhausted { .. }
+            | Outcome::Failed(_),
+        )
+        | None => false,
+    }
+}
+
 /// How many of `project`'s board tasks hold a place on its team: those
 /// `holds` says do. One cut off by a restart does not, nor one out of time at
 /// rest or waiting for a place.
