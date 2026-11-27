@@ -37,8 +37,8 @@ they size.
 | review | a judgment on the whole view, by that same reviewer from the diff and the pictures |
 
 A rule's id stays out of the code: no comment, test name, lint reason or drawn word names one.
-The rules point at the tests, never the reverse. Where no rule decides, do as VS Code does: the
-palette and the selection grey were chosen that way.
+The rules point at the tests, never the reverse. Where no rule decides, the same-role part
+already in the app does (*Principles*, 4); where there is none, ask the owner.
 
 
 ## Principles

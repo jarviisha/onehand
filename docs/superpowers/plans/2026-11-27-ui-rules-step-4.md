@@ -20,8 +20,9 @@ Decided while writing:
   before a label is cut, as `card_foot` says and its tests hold.
 - The control-size rules keep the family `C` though they stand in `docs/ui-patterns.md`,
   beside the layouts they size.
-- "Where no rule decides, do as VS Code does" is written in *How a rule reads*, pending the
-  owner's word on the spec's second question.
+- The spec's second question is answered no: the rules name no other product to fall back
+  on. Where no rule decides, the same-role part already in the app does, and where there is
+  none the owner is asked.
 
 Review focus: no rule of the old text lost and none invented; every id referenced is defined;
 every test, guard and builder named exists; no sentence left that names one screen where a
