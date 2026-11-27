@@ -451,8 +451,8 @@ room and leaves the terminal as it is.
   words kept, a host's or an offloaded project's session as one here, over the host's attach. Then, in one column at every width, the box *Past
   conversations* with its count, its rows the overview's (age, title, then items and agent at the
   edge, led by *Continued from <title>* for one that continued another; the items and agent are
-  shown whole or not at all, dropped where the row cannot leave the title its least width (about
-  twenty characters); the title is cut on an ellipsis in whatever room it has and says itself
+  shown whole or not at all, dropped where the row cannot leave the title its least width (its
+  own whole width, or about twenty characters for a longer one); the title is cut on an ellipsis in whatever room it has and says itself
   whole in its tooltip; then a `⋯` on hover
   holding *Resume*, on a page whose sessions run here *Continue in a new session…*, and
   *Delete…*, the same on a right-click), capped, its wait and empty lines inside it:

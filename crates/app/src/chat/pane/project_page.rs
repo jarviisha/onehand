@@ -5,8 +5,8 @@ use crate::page_parts::{count_of, page_card, page_head, ruled};
 use crate::tokens::PAGE_PROSE;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    App, Context, FocusHandle, InteractiveElement, IntoElement, ParentElement, SharedString,
-    StatefulInteractiveElement, Styled, Window, div,
+    App, Context, FocusHandle, InteractiveElement, IntoElement, ParentElement, Pixels,
+    SharedString, StatefulInteractiveElement, Styled, Window, div,
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::menu::ContextMenuExt as _;
@@ -49,11 +49,38 @@ const TITLE_LEAST: gpui::Rems = gpui::rems(10.);
 /// its title.
 const CONTINUED_SHARE: f32 = 0.4;
 
-/// The least a title and what it continued keep together, so the title
-/// itself still has [`TITLE_LEAST`] once what it continued takes its share
-/// and the half-rem gap between them.
-const TITLE_BESIDE_CONTINUED: gpui::Rems =
-    gpui::rems((TITLE_LEAST.0 + 0.5) / (1. - CONTINUED_SHARE));
+/// The gap between a title and what it continued.
+const CONTINUED_GAP: gpui::Rems = gpui::rems(0.5);
+
+/// The least a past conversation's title box keeps before its facts go: the
+/// smaller of the title's whole width and [`TITLE_LEAST`], so a short title
+/// keeps its facts beside it, and beside what it continued enough more that
+/// the title's own words keep that once the earlier one takes its share and
+/// the half-rem gap. A box that truncates reports to layout the width it was
+/// cut to, so the whole width is shaped here, as the row's text draws it; up
+/// to the device pixel, or layout's rounding cuts a title that fits whole.
+/// `rem` is the pane's, its zoom taken in.
+fn title_least(title: &str, continued: bool, rem: Pixels, window: &Window, cx: &App) -> Pixels {
+    let mut style = window.text_style();
+    style.font_family = cx.theme().font_family.clone();
+    let size = crate::tokens::CHROME_TEXT.to_pixels(rem);
+    let run = style.to_run(title.len());
+    let whole = (window.text_system())
+        .shape_text(title.to_string().into(), size, &[run], None, None)
+        .map_or(Pixels::ZERO, |lines| {
+            lines
+                .iter()
+                .map(|line| line.width())
+                .fold(Pixels::ZERO, Pixels::max)
+        });
+    let least = whole.min(TITLE_LEAST.to_pixels(rem));
+    let least = match continued {
+        true => (least + CONTINUED_GAP.to_pixels(rem)) / (1. - CONTINUED_SHARE),
+        false => least,
+    };
+    let scale = window.scale_factor();
+    gpui::px((f32::from(least) * scale).ceil() / scale)
+}
 
 /// The project the pane is standing in while no conversation is showing.
 ///
@@ -395,6 +422,7 @@ impl ChatPane {
             return onehand_ui::hint("Add a project to start a session", cx);
         };
         let now = onehand_core::chat::now_secs();
+        let rem = window.rem_size() * self.zoom.factor();
         let (muted, ring) = (cx.theme().muted_foreground, cx.theme().ring);
         let muted_line = |text: String| div().text_xs().text_color(muted).child(text);
         // Bounded, and the bound says so below. A project worked in for months
@@ -614,11 +642,14 @@ impl ChatPane {
                                         .h_full()
                                         .flex()
                                         .items_center()
-                                        .gap_2()
-                                        .flex_basis(match meta.continued {
-                                            Some(_) => TITLE_BESIDE_CONTINUED,
-                                            None => TITLE_LEAST,
-                                        })
+                                        .gap(CONTINUED_GAP)
+                                        .flex_basis(title_least(
+                                            &meta.title,
+                                            meta.continued.is_some(),
+                                            rem,
+                                            window,
+                                            cx,
+                                        ))
                                         .flex_grow(1.)
                                         .min_w_0()
                                         .child(

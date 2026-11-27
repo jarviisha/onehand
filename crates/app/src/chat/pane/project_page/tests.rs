@@ -207,8 +207,8 @@ const ROW_WIDTHS: [Pixels; 4] = [WIDE, px(1100.), px(900.), NARROWEST];
 
 /// Each zoom the page is drawn at, its titles short, medium, long and
 /// unbroken, each with and without what it continued, on a page of its own:
-/// `check` is given the zoom's factor and its page.
-fn each_page(name: &str, seed: u64, check: impl Fn(&str, f32, &mut VisualTestContext)) {
+/// `check` is given the zoom's factor, the title and its page.
+fn each_page(name: &str, seed: u64, check: impl Fn(&str, f32, &str, &mut VisualTestContext)) {
     let mut seed = seed;
     for &(zoom, steps, _) in DRAWN {
         let factor = zoom.parse::<f32>().unwrap() / 100.;
@@ -224,7 +224,7 @@ fn each_page(name: &str, seed: u64, check: impl Fn(&str, f32, &mut VisualTestCon
                     &mut app,
                 );
                 zoom_pane(&shell, steps, cx);
-                check(zoom, factor, cx);
+                check(zoom, factor, &title, cx);
                 app.quit();
             }
         }
@@ -239,11 +239,23 @@ fn shown(facts: Bounds<Pixels>, middle: Bounds<Pixels>) -> bool {
 
 #[gpui::test]
 fn a_rows_facts_stand_whole_or_not_at_all(_: &mut TestAppContext) {
-    each_page("strain-home-facts", 913_100, |zoom, factor, cx| {
-        let (least, line) = cx.update(|window, _| {
+    each_page("strain-home-facts", 913_100, |zoom, factor, title, cx| {
+        let (least, line) = cx.update(|window, cx| {
             let rem = window.rem_size() * factor;
+            // A short title's least is its own whole width.
+            let mut style = window.text_style();
+            style.font_family = gpui_component::ActiveTheme::theme(cx).font_family.clone();
+            let whole = window
+                .text_system()
+                .shape_line(
+                    title.to_string().into(),
+                    crate::tokens::CHROME_TEXT.to_pixels(rem),
+                    &[style.to_run(title.len())],
+                    None,
+                )
+                .width;
             (
-                super::TITLE_LEAST.to_pixels(rem),
+                super::TITLE_LEAST.to_pixels(rem).min(whole),
                 onehand_ui::tokens::ROW_H.to_pixels(rem),
             )
         });
@@ -306,7 +318,14 @@ fn a_rows_facts_stand_whole_or_not_at_all(_: &mut TestAppContext) {
                     "a row's facts are partly in sight at {w:?}, {zoom}%: {facts:?} in {middle:?}"
                 );
             }
-            if w == NARROWEST {
+            // A short title leaves its facts room beside it even in the
+            // narrowest pane; any other is cut to its least there first.
+            if w == NARROWEST && title == SHORT && zoom == "100" {
+                assert!(
+                    shown(facts, middle),
+                    "a short title's facts are not shown in the narrowest pane"
+                );
+            } else if w == NARROWEST && title != SHORT {
                 assert!(
                     !shown(facts, middle),
                     "a row's facts are shown in the narrowest pane at {zoom}%"
