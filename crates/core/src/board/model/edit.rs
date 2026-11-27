@@ -102,7 +102,7 @@ impl Board {
     /// it was, its task kept and what it did in its old column forgotten, or
     /// made new, with no task, from the Backlog or Done.
     pub(crate) fn placed(&self, issue: u64, to: usize, before: Option<u64>, now: u64) -> Board {
-        if before == Some(issue) {
+        if before == Some(issue) || self.stands(issue, to, before) {
             return self.clone();
         }
         let mut board = self.clone();
@@ -192,6 +192,19 @@ impl Board {
             board.columns.swap(at, to);
         }
         board
+    }
+
+    /// Whether `issue` stands in the column at `to` already where placing it
+    /// before `before` (last with none) would put it.
+    fn stands(&self, issue: u64, to: usize, before: Option<u64>) -> bool {
+        let Some(column) = self.columns.get(to) else {
+            return false;
+        };
+        let Some(at) = column.entries.iter().position(|e| e.issue == issue) else {
+            return false;
+        };
+        let next = column.entries.get(at + 1).map(|e| e.issue);
+        next == before
     }
 
     /// Take `issue`'s entry out of wherever it stands.

@@ -4,8 +4,12 @@
 use super::column::{ColumnKey, ColumnParts, column, column_head};
 use super::rows::Button;
 use super::{BoardPage, BoardPageEvent};
+use crate::drag::DragGhost;
 use crate::state::Shared;
-use gpui::{Context, IntoElement, Stateful};
+use gpui::{
+    AppContext as _, Context, InteractiveElement as _, IntoElement, SharedString, Stateful,
+    StatefulInteractiveElement as _, Styled as _,
+};
 use gpui_component::ActiveTheme as _;
 use onehand_core::board::line::{EntryAct, Line};
 use onehand_core::board::offers::{Offer, offers};
@@ -13,6 +17,15 @@ use onehand_core::board::{BOARD_SHOWN, Board, Entry, Work};
 use onehand_core::project::ProjectId;
 use onehand_ui::RowAct;
 use std::rc::Rc;
+
+/// An issue's row under the pointer. A type of the board's own, as gpui
+/// hands a drop only to a target of its type.
+#[derive(Clone)]
+pub(super) struct EntryDrag {
+    issue: u64,
+    /// The task working it, when one does: off the board, it leaves too.
+    task: Option<String>,
+}
 
 impl BoardPage {
     /// Every column, left to right: the Backlog, the board's own, Done.
@@ -78,10 +91,13 @@ impl BoardPage {
                     })
                     .collect();
                 let line = (format!("#{n}"), crate::theme::meta_ink(cx));
-                self.issue_row(n, title, line, acts, None, |row| row, cx)
+                let drags = draggable(n, None, title.clone());
+                self.issue_row(n, title, line, acts, None, drags, cx)
             })
             .collect();
-        let mut columns = vec![
+        // A drop on the Backlog takes the issue off the board.
+        let backlog = {
+            let id = id.clone();
             column(
                 ColumnParts {
                     title: "Backlog".into(),
@@ -94,8 +110,13 @@ impl BoardPage {
                 },
                 cx,
             )
-            .into_any_element(),
-        ];
+            .drag_over::<EntryDrag>(|style, _, _, cx| style.bg(cx.theme().list_hover))
+            .on_drop(move |drag: &EntryDrag, window, cx| {
+                crate::board::remove(&id, drag.issue, drag.task.as_deref(), window, cx)
+            })
+            .into_any_element()
+        };
+        let mut columns = vec![backlog];
         let now = onehand_core::chat::now_secs();
         let templates = crate::workflow::templates(cx);
         for (at, col) in board.columns.iter().enumerate() {
@@ -106,11 +127,16 @@ impl BoardPage {
             let drawn = (col.entries.iter())
                 .take(BOARD_SHOWN)
                 .map(|entry| {
-                    self.entry_row(id, board, entry, &view, title_of(entry.issue), now, cx)
+                    let title = title_of(entry.issue);
+                    self.entry_row(id, board, &col.id, entry, &view, title, now, cx)
                 })
                 .collect();
             let key = ColumnKey::Board(col.id.clone());
             let more = self.column_more(at, col, cx);
+            // A drop off its rows puts the issue last. Its rows fill under a
+            // drag, so the column fills only when it has none, or the two
+            // fills would hide the row the issue lands before.
+            let (to, empty) = (place_last(id, col.id.clone()), col.entries.is_empty());
             columns.push(
                 column(
                     ColumnParts {
@@ -124,6 +150,11 @@ impl BoardPage {
                     },
                     cx,
                 )
+                .drag_over::<EntryDrag>(move |style, _, _, cx| match empty {
+                    true => style.bg(cx.theme().list_hover),
+                    false => style,
+                })
+                .on_drop(move |drag: &EntryDrag, window, cx| to(drag.issue, window, cx))
                 .into_any_element(),
             );
         }
@@ -144,6 +175,13 @@ impl BoardPage {
                 },
                 cx,
             )
+            .drag_over::<EntryDrag>(|style, _, _, cx| style.bg(cx.theme().list_hover))
+            .on_drop({
+                let id = id.clone();
+                move |drag: &EntryDrag, window, cx| {
+                    crate::board::place(&id, drag.issue, None, None, window, cx)
+                }
+            })
             .into_any_element(),
         );
         columns
@@ -157,6 +195,7 @@ impl BoardPage {
         &mut self,
         id: &ProjectId,
         board: &Board,
+        column: &str,
         entry: &Entry,
         view: &crate::task::BoardView,
         title: String,
@@ -203,7 +242,28 @@ impl BoardPage {
             | Line::WaitingForRoom(_)
             | Line::DidNotStart => Some(line.words()),
         };
-        let drags = |row: Stateful<gpui::Div>| row;
+        // A row whose task works stays where it is; any other drags, and
+        // every row takes a dragged issue in just before itself.
+        let lands = {
+            let (id, column) = (id.clone(), column.to_string());
+            move |row: Stateful<gpui::Div>| {
+                row.drag_over::<EntryDrag>(|style, _, _, cx| style.bg(cx.theme().list_hover))
+                    .on_drop(move |drag: &EntryDrag, window, cx| {
+                        if drag.issue != issue {
+                            let to = Some(column.clone());
+                            crate::board::place(&id, drag.issue, to, Some(issue), window, cx)
+                        }
+                    })
+            }
+        };
+        let drag = (!working).then(|| draggable(issue, entry.task.clone(), title.clone()));
+        let drags = move |row: Stateful<gpui::Div>| {
+            let row = lands(row);
+            match drag {
+                Some(drag) => drag(row),
+                None => row,
+            }
+        };
         match row {
             Some(row) => self.task_row(row, words, moves, button, drags, cx),
             None => {
@@ -327,6 +387,31 @@ fn press(id: &ProjectId, board: &Board, issue: u64, offer: &Offer) -> onehand_ui
             })
         }
     }
+}
+
+/// What makes a row of `issue`, worked by `task` and titled `title`, drag.
+fn draggable(
+    issue: u64,
+    task: Option<String>,
+    title: String,
+) -> impl FnOnce(Stateful<gpui::Div>) -> Stateful<gpui::Div> {
+    let ghost = SharedString::from(title);
+    move |row| {
+        row.on_drag(EntryDrag { issue, task }, move |_, _, _, cx| {
+            let ghost = ghost.clone();
+            cx.new(|_| DragGhost(ghost))
+        })
+    }
+}
+
+/// What a drop on column `column` of project `id`'s board does: the issue
+/// goes last there.
+fn place_last(
+    id: &ProjectId,
+    column: String,
+) -> impl Fn(u64, &mut gpui::Window, &mut gpui::App) + 'static {
+    let id = id.clone();
+    move |issue, window, cx| crate::board::place(&id, issue, Some(column.clone()), None, window, cx)
 }
 
 /// A press putting `issue` of project `id`'s board in column `to`, or Done.

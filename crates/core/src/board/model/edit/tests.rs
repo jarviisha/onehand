@@ -203,3 +203,16 @@ fn a_copy_takes_the_place_of_the_workflow_it_copies() {
     assert!(!four().runs("z"));
     assert!(four().runs("b"));
 }
+
+/// An issue placed where it stands changes nothing, not even when it came.
+#[test]
+fn placed_where_it_stands_changes_nothing() {
+    let board = four();
+    assert_eq!(board.placed(9, 0, None, 50), board, "last, placed last");
+    assert_eq!(
+        board.placed(4, 0, Some(9), 50),
+        board,
+        "just before the one after it"
+    );
+    assert_ne!(board.placed(4, 0, None, 50), board, "4 moves after 9");
+}

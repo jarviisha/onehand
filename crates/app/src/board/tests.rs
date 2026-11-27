@@ -148,6 +148,7 @@ fn a_next_run_lands_on_the_same_task(cx: &mut TestAppContext) {
     let at = root.clone();
     cx.update(|window, cx| shell.update(cx, |shell, cx| shell.open_root(at, window, cx)));
     cx.run_until_parked();
+    cx.run_until_parked();
     let template = onehand_core::workflow::builtin::all()
         .into_iter()
         .find(|t| t.id == "builtin:branch")
@@ -198,4 +199,146 @@ fn a_next_run_lands_on_the_same_task(cx: &mut TestAppContext) {
         ("r2", Some("Ship"))
     );
     let _ = std::fs::remove_dir_all(dir);
+}
+
+/// A project open in a window, its board `board` written in `store`.
+fn open_board<'a>(
+    name: &str,
+    seed: u64,
+    board: Board,
+    cx: &'a mut TestAppContext,
+) -> (
+    ProjectId,
+    std::path::PathBuf,
+    gpui::AnyWindowHandle,
+    &'a mut VisualTestContext,
+) {
+    let dir = folder(name);
+    let (handle, shell, cx) = shell(cx, dir.join("tasks"), Vec::new());
+    let root = dir.join("project");
+    std::fs::create_dir_all(&root).unwrap();
+    let root = std::fs::canonicalize(root).unwrap();
+    let project = onehand_core::project::Project::new(ProjectId::mint(seed), None, root.clone());
+    let id = project.id.clone();
+    crate::shell::rig::keep_projects(handle, &shell, vec![project], cx);
+    let at = root.clone();
+    cx.update(|window, cx| shell.update(cx, |shell, cx| shell.open_root(at, window, cx)));
+    let store = dir.join("projects");
+    let (i, s) = (id.clone(), store.clone());
+    cx.update(|_, cx| {
+        let fx = cx.update_global::<Shared, _>(|shared, _| {
+            shared.boards = BoardDrive::new(Default::default(), Default::default(), s);
+            shared.boards.set_board(&i, Some(board))
+        });
+        crate::board::carry(fx, cx);
+    });
+    cx.run_until_parked();
+    (id, store, handle, cx)
+}
+
+fn place(
+    id: &ProjectId,
+    issue: u64,
+    to: Option<&str>,
+    before: Option<u64>,
+    cx: &mut VisualTestContext,
+) {
+    let (id, to) = (id.clone(), to.map(String::from));
+    cx.update(|window, cx| crate::board::place(&id, issue, to, before, window, cx));
+    cx.run_until_parked();
+}
+
+/// To do holding issues 4 and 9, each worked by a task, so a look keeps
+/// them whatever the tracker says.
+fn worked_todo() -> Board {
+    let mut board = Board::made("w".into(), 2, &[], 0);
+    for (issue, task) in [(4, "a"), (9, "b")] {
+        board.columns[0].entries.push(onehand_core::board::Entry {
+            issue,
+            task: Some(task.into()),
+            ..onehand_core::board::Entry::default()
+        });
+    }
+    board
+}
+
+fn order(id: &ProjectId, cx: &mut VisualTestContext) -> Vec<u64> {
+    cx.update(|_, cx| {
+        let board = Shared::global(cx).boards.board(id).cloned().unwrap();
+        board.columns[0].entries.iter().map(|e| e.issue).collect()
+    })
+}
+
+#[gpui::test]
+fn placing_an_issue_before_another_moves_it_there(cx: &mut TestAppContext) {
+    let (id, _, _, cx) = open_board("place-before", 71, worked_todo(), cx);
+    place(&id, 9, Some("todo"), Some(4), cx);
+    assert_eq!(order(&id, cx), [9, 4]);
+}
+
+#[gpui::test]
+fn placing_an_issue_where_it_stands_writes_nothing(cx: &mut TestAppContext) {
+    let (id, store, _, cx) = open_board("place-same", 72, worked_todo(), cx);
+    let before = file_of(&store, &id);
+    place(&id, 9, Some("todo"), None, cx);
+    assert_eq!(file_of(&store, &id), before);
+    assert_eq!(order(&id, cx), [4, 9]);
+}
+
+#[gpui::test]
+fn a_refused_move_says_why(cx: &mut TestAppContext) {
+    let mut board = Board::made("w".into(), 2, &[], 0);
+    board.columns[1].entries.push(onehand_core::board::Entry {
+        issue: 4,
+        task: Some("busy".into()),
+        run: Some("busy".into()),
+        ..onehand_core::board::Entry::default()
+    });
+    let (id, _, handle, cx) = open_board("place-busy", 73, board, cx);
+    let root = cx.update(|_, cx| Shared::global(cx).projects.get(&id).unwrap().path.clone());
+    cx.update(|_, cx| {
+        let template = onehand_core::workflow::builtin::all().remove(0);
+        let brief = onehand_core::workflow::Brief {
+            title: "Busy".into(),
+            body: String::new(),
+            instructions: None,
+            closes: None,
+        };
+        let setup = onehand_core::workflow::Setup {
+            repo: root.clone(),
+            dir: root.clone(),
+            branch: None,
+            agent: None,
+            check: None,
+            mode: None,
+            forge: None,
+        };
+        let task = onehand_core::task::Task::new("busy".into(), template, brief, setup);
+        crate::task::hold_place(task, handle, cx);
+    });
+    let notes = |cx: &mut VisualTestContext| {
+        use gpui_component::WindowExt as _;
+        cx.update(|window, cx| window.notifications(cx).len())
+    };
+    let before = notes(cx);
+    place(&id, 4, Some("todo"), None, cx);
+    assert_eq!(notes(cx), before + 1, "said");
+    let at = cx.update(|_, cx| {
+        Shared::global(cx)
+            .boards
+            .board(&id)
+            .unwrap()
+            .at(4)
+            .map(|(a, _)| a)
+    });
+    assert_eq!(at, Some(1), "it stays");
+}
+
+#[gpui::test]
+fn dropping_on_the_backlog_takes_it_off_the_board(cx: &mut TestAppContext) {
+    let (id, _, _, cx) = open_board("drop-backlog", 74, worked_todo(), cx);
+    let i = id.clone();
+    cx.update(|window, cx| crate::board::remove(&i, 4, Some("a"), window, cx));
+    cx.run_until_parked();
+    assert_eq!(order(&id, cx), [9]);
 }
