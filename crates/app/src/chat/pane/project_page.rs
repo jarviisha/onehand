@@ -45,6 +45,16 @@ const GIVES_FIRST: f32 = 1e3;
 /// than this, the facts go and the title has the row.
 const TITLE_LEAST: gpui::Rems = gpui::rems(10.);
 
+/// The most of a row's middle what a conversation continued takes, beside
+/// its title.
+const CONTINUED_SHARE: f32 = 0.4;
+
+/// The least a title and what it continued keep together, so the title
+/// itself still has [`TITLE_LEAST`] once what it continued takes its share
+/// and the half-rem gap between them.
+const TITLE_BESIDE_CONTINUED: gpui::Rems =
+    gpui::rems((TITLE_LEAST.0 + 0.5) / (1. - CONTINUED_SHARE));
+
 /// The project the pane is standing in while no conversation is showing.
 ///
 /// Pushed by the shell rather than looked up: the workspace tree is the
@@ -605,12 +615,18 @@ impl ChatPane {
                                         .flex()
                                         .items_center()
                                         .gap_2()
-                                        .flex_basis(TITLE_LEAST)
+                                        .flex_basis(match meta.continued {
+                                            Some(_) => TITLE_BESIDE_CONTINUED,
+                                            None => TITLE_LEAST,
+                                        })
                                         .flex_grow(1.)
                                         .min_w_0()
                                         .child(
                                             div()
                                                 .id(("home-title", i))
+                                                .debug_selector(move || {
+                                                    format!("home-title-text-{i}")
+                                                })
                                                 .flex_1()
                                                 .min_w_0()
                                                 .truncate()
@@ -635,7 +651,7 @@ impl ChatPane {
                                             div()
                                                 .flex_shrink_1()
                                                 .min_w_0()
-                                                .max_w(gpui::relative(0.4))
+                                                .max_w(gpui::relative(CONTINUED_SHARE))
                                                 .truncate()
                                                 .text_xs()
                                                 .text_color(muted)

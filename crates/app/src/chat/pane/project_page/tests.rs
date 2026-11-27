@@ -255,10 +255,11 @@ fn a_rows_facts_stand_whole_or_not_at_all(_: &mut TestAppContext) {
         );
         for w in ROW_WIDTHS {
             width(cx, w);
-            let (row, middle, named, facts, more) = (
+            let (row, middle, named, text, facts, more) = (
                 bounds(cx, "home-row-0"),
                 bounds(cx, "home-middle-0"),
                 bounds(cx, "home-title-0"),
+                bounds(cx, "home-title-text-0"),
                 bounds(cx, "home-facts-0"),
                 bounds(cx, "home-more-0"),
             );
@@ -273,7 +274,15 @@ fn a_rows_facts_stand_whole_or_not_at_all(_: &mut TestAppContext) {
                 named.size.width + SLACK >= least.min(middle.size.width),
                 "the title is down to {named:?} under its least {least:?} at {w:?}, {zoom}%"
             );
+            // That the second line is out of sight is the middle's clip,
+            // which bounds cannot read: a picture holds it.
             if shown(facts, middle) {
+                // While the facts stand, the title's own words keep their
+                // least, whatever it continued takes beside them.
+                assert!(
+                    text.size.width + SLACK >= least,
+                    "the title's words are down to {text:?} under {least:?} beside its facts at {w:?}, {zoom}%"
+                );
                 assert_inside(facts, middle, &format!("a row's facts at {w:?}, {zoom}%"));
                 assert!(
                     same(facts.size.width, whole),

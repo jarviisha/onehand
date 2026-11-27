@@ -374,8 +374,6 @@ minor bump may break any of them.
 - A long workspace name no longer moves the title bar: in a window narrower than about 1000 px it
   is cut sooner, instead of pushing the search off the bar's centre and the toggles out of the
   window. Its tooltip now always says the name whole, a short one too.
-- At a large zoom in a narrow pane, a past conversation's "N items · agent" line on a project's
-  page is cut, instead of the row's actions standing past its end.
 - A past conversation's title on a project's page keeps its room: its "N items · agent" line is
   shown whole or not at all, and dropped where the row cannot leave the title about twenty
   characters. The title is cut in whatever room it has, and says itself whole in a tooltip.
