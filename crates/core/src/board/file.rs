@@ -71,7 +71,11 @@ pub fn load_all_blocking(
             BoardLoad::Found(board) => {
                 boards.insert(id, board);
             }
-            BoardLoad::Missing => {}
+            BoardLoad::Missing => {
+                if let Some(why) = left_in_project(&dir) {
+                    unreadable.insert(id, why);
+                }
+            }
             BoardLoad::Unreadable(why) => {
                 unreadable.insert(id, why);
             }
@@ -130,6 +134,22 @@ pub fn migrate_blocking(projects_dir: &Path) -> Vec<String> {
         }
     }
     problems
+}
+
+/// Why the board of the project in `dir` is not read, when its move out of
+/// `project.toml` failed and the old key still holds it: taken for none, a
+/// board bound anew would start an empty To do the next start's move then
+/// puts over the old one.
+fn left_in_project(dir: &Path) -> Option<String> {
+    use crate::project::file::{load_from as load_project, ProjectLoad};
+    match load_project(dir) {
+        ProjectLoad::Found(project) => project.old_board.as_ref().map(|_| {
+            "it is still kept in its project, where an earlier build left it, and could not \
+             be moved; onehand tries again at the next start"
+                .to_string()
+        }),
+        ProjectLoad::Missing | ProjectLoad::Unreadable(_) => None,
+    }
 }
 
 /// When `path` was last written, in seconds; 0 when that cannot be read.

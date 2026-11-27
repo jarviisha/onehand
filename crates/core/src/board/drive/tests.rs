@@ -279,10 +279,21 @@ fn an_unreadable_board_is_never_written() {
     assert!(d.add_todo(&id(), 4, now()).is_empty());
     assert!(d.set_team(&id(), 3).is_empty());
     assert!(d.unbind(&id()).is_empty());
-    assert!(d
-        .bind(&id(), Some(&flow(Place::Worktree)), now())
-        .is_ok_and(|fx| fx.is_empty()));
     assert_eq!(d.unreadable(&id()), Some("too new"));
+}
+
+#[test]
+fn binding_an_unreadable_board_says_why() {
+    let mut unreadable = HashMap::new();
+    unreadable.insert(id(), "too new".to_string());
+    let mut d = BoardDrive::new(HashMap::new(), unreadable, "/data/projects".into());
+    let flow = flow(Place::Worktree);
+    assert!(d
+        .bind(&id(), Some(&flow), now())
+        .is_err_and(|why| why.contains("too new")));
+    assert!(d
+        .bind_copy(&id(), &flow, now())
+        .is_some_and(|bound| bound.is_err_and(|why| why.contains("too new"))));
 }
 
 #[test]

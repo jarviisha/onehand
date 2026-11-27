@@ -170,8 +170,8 @@ now. The held tasks (step 2) go to `TasksDrive`, held on the same `Shared`, thro
   so dismissing, retrying and binding again behave as they do now.
 - **The carrier carries and reports only.** The refusal rule moves into `Input::Landed`: refused
   before the task was kept, the issue is back in the Backlog and `NotStarted { issue, why }` is
-  said once; refused after, the task holds the issue and its own start said why. `kept` comes from
-  where the start landed (`Effect::Told`), not from a read in the carrier. `control::start_task`
+  said once; refused after, the task holds the issue and its own start said why. `kept` is whether
+  the task is there once the start has landed, a read the carrier reports. `control::start_task`
   takes the id it is given.
 - Tests: in core, the drive's answers as `ProjectsDrive`'s were (moved with it), a failed write
   put back, a late landing, the migration (key only, file only, both, an unreadable file never

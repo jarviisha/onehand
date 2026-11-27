@@ -553,7 +553,7 @@ fn a_board_task_that_cannot_start_says_it_failed() {
                     .task("1")
                     .and_then(|t| t.runs.last())
                     .map(|r| r.id.clone()),
-                outcome: tasks.task("1").and_then(Task::outcome),
+                outcome: Some(Outcome::Failed("no agent".into())),
             })),
         "{fx:?}"
     );

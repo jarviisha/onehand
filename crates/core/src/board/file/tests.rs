@@ -182,3 +182,23 @@ mod migrate {
         assert!(!dir.join(FILE).exists());
     }
 }
+
+/// A board whose move out of its project failed is said to be unreadable,
+/// not taken for none: a person binding one anew would start an empty To do
+/// that the next start's move then puts over the old one.
+#[test]
+fn a_board_still_in_its_project_is_unreadable_not_missing() {
+    let root = scratch("still-in-project");
+    let mut project =
+        crate::project::Project::new(crate::project::ProjectId::mint(8), None, "/code/a".into());
+    project.old_board = Some(crate::project::OldBoard {
+        workflow: "w".into(),
+        team: 3,
+        todo: vec![4],
+    });
+    let dir = root.join(project.id.as_str());
+    crate::project::file::save_to(&project, &dir).unwrap();
+    let (boards, unreadable) = load_all_blocking(&root);
+    assert!(boards.is_empty());
+    assert!(unreadable.contains_key(&project.id), "{unreadable:?}");
+}

@@ -105,11 +105,20 @@ pub(super) fn board_section(handle: &Entity<Shell>, root: &Path, cx: &App) -> An
                     });
                 })
         });
-    let refusal = shell.board_refusal(root).map(|why| {
+    // A board this build cannot read is left as it is; why stands under the
+    // menu until a bind is refused for a reason of its own.
+    let unreadable = (project.as_ref())
+        .and_then(|project| {
+            crate::state::Shared::global(cx)
+                .boards
+                .unreadable(&project.id)
+        })
+        .map(|why| format!("Its board cannot be read, and is left as it is: {why}"));
+    let refusal = (shell.board_refusal(root).map(str::to_string).or(unreadable)).map(|why| {
         div()
             .text_xs()
             .text_color(crate::theme::status_ink(cx).danger)
-            .child(why.to_string())
+            .child(why)
     });
     let workflow = onehand_ui::field(
         "Workflow",

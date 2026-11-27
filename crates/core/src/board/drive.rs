@@ -226,6 +226,11 @@ impl BoardDrive {
         template: Option<&Template>,
         now: Now,
     ) -> Result<Vec<Effect>, String> {
+        if let Some(why) = self.boards.unreadable(id) {
+            return Err(format!(
+                "Its board cannot be read, and is left as it is: {why}"
+            ));
+        }
         let workflow = super::usable(template)?.id.clone();
         Ok(self.edit(id, false, |board| match board {
             Some(kept) => Some(kept.rebound(workflow)),
@@ -241,7 +246,9 @@ impl BoardDrive {
         copy: &Template,
         now: Now,
     ) -> Option<Result<Vec<Effect>, String>> {
-        self.boards.board(id)?;
+        if self.boards.board(id).is_none() && self.boards.unreadable(id).is_none() {
+            return None;
+        }
         Some(self.bind(id, Some(copy), now))
     }
 
