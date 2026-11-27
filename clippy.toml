@@ -1,0 +1,18 @@
+# Calls that may be made in one named place only. A lawful site carries
+# `#[expect(clippy::disallowed_methods, reason = "…")]` on its item or
+# statement, so the day its call is gone the expectation fails by itself.
+disallowed-methods = [
+    { path = "gpui::rgb", reason = "a colour is written in the app's palette and read from the theme" },
+    { path = "gpui::rgba", reason = "a colour is written in the app's palette and read from the theme" },
+    { path = "gpui::hsla", reason = "a colour is written in the app's palette and read from the theme" },
+    { path = "gpui::black", reason = "a colour is written in the app's palette and read from the theme" },
+    { path = "gpui::white", reason = "a colour is written in the app's palette and read from the theme" },
+    { path = "gpui::red", reason = "a colour is written in the app's palette and read from the theme" },
+    { path = "gpui::green", reason = "a colour is written in the app's palette and read from the theme" },
+    { path = "gpui::blue", reason = "a colour is written in the app's palette and read from the theme" },
+    { path = "gpui::yellow", reason = "a colour is written in the app's palette and read from the theme" },
+    { path = "gpui::opaque_grey", reason = "a colour is written in the app's palette and read from the theme" },
+    { path = "gpui_component::button::Button::new", reason = "a button is made with `onehand_ui::action`, which gives it the pointer and the corner" },
+    { path = "gpui::Styled::cursor_pointer", reason = "the pointer is given by the shared builders, so it means a press will act" },
+    { path = "gpui_component::Disableable::disabled", reason = "a button refuses with its reason (`Refuses::refuses`); a switch is locked with `Locked::locked`" },
+]

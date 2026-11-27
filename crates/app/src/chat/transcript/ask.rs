@@ -420,8 +420,10 @@ impl AskForm<'_> {
         let last = self.a.is_last(active);
 
         card_foot()
+            .debug_selector(|| "ask-foot".into())
             .child(
                 crate::controls::action(("ask-skip", idx))
+                    .debug_selector(|| "ask-answer-0".into())
                     .quiet(cx)
                     .short()
                     .accessibility_label("Skip")
@@ -441,6 +443,7 @@ impl AskForm<'_> {
             .when(forward, |foot| {
                 foot.child(
                     crate::controls::action(("ask-submit", idx))
+                        .debug_selector(|| "ask-answer-1".into())
                         .primary()
                         .short()
                         // Nothing is picked yet: refusing, and the pointer would

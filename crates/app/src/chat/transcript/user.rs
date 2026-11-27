@@ -460,6 +460,10 @@ pub(in crate::chat) fn plate(
 
 /// A plate that does something when pressed: the pointer, an edge that steps
 /// up under it, since a fill would be lost behind a picture, and `tip`.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "a prompt that opens, made by hand, which no shared builder draws"
+)]
 pub(in crate::chat) fn opens(
     plate: gpui::Stateful<gpui::Div>,
     tip: SharedString,

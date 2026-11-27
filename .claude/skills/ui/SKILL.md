@@ -5,23 +5,29 @@ description: Build, change and review onehand's UI in the app and its feature cr
 
 # UI
 
-The rules live in the documents; this skill is how to apply them. Read the sections the change
-touches, not the whole set:
+The rules live in the documents, each with an id and what checks it (`DESIGN.md`, *How a rule
+reads*); this skill is how to apply them. Read the rules the change touches, not the whole set:
 
 | Changing | Read |
 |---|---|
 | What a region holds, or its order | [screens.md](../../../docs/screens.md), or the feature's own document (`docs/tasks.md`, `docs/workflows.md`) |
 | A principle, the window's frame, the transcript | [DESIGN.md](../../../DESIGN.md) *Principles*, *Layout*, *Transcript* |
-| A colour, an ink, type, space, a corner, a line | DESIGN.md *Type, space and shape*, *Colour and state*; the token in [tokens.md](tokens.md) |
-| A control, its variant, its size, an icon | DESIGN.md *Components*, *Icons*; [UI patterns](../../../docs/ui-patterns.md) *Control sizes*; the builder in [catalog.md](catalog.md) |
-| A page, a panel, a list, a form, a dialog | UI patterns *Choose the container*, *Hierarchy*, *Spacing and density*, then its pattern; the screen to build from in catalog.md *Patterns* |
-| Waiting, empty, failing, refusing, a toast, a removal, a key, focus, a word | UI patterns *Behaviour*; the wiring in catalog.md *Keys and focus* |
+| A colour, an ink, type, space, a corner, a line | DESIGN.md `T-01` to `T-27`; the token in the code: `crates/ui/src/tokens.rs` (shared sizes), `crates/ui/src/ink.rs` and `crates/app/src/theme.rs` (inks, fills, the palette), each with what it is for beside it |
+| A control, its variant, its size, an icon | DESIGN.md `C-01` to `C-15`; [UI patterns](../../../docs/ui-patterns.md) *Control sizes*, `C-16` to `C-21`; the builder in [catalog.md](catalog.md) |
+| A page, a panel, a list, a form, a dialog | UI patterns `K-01` to `K-08`, then its pattern's rules among `K-09` to `K-32`; the screen to build from in catalog.md *Patterns* |
+| Anything that lays parts out in a row, a bar or a list | UI patterns *Strips*, `K-09`, and *Under strain*, `L-01` to `L-13` |
+| Waiting, empty, failing, refusing, a toast, a removal | UI patterns `S-01` to `S-13` |
+| A key, focus, a word | UI patterns `W-01` to `W-10`; the wiring in catalog.md *Keys and focus* |
 
-tokens.md and catalog.md describe the code as it stands: a lookup, not permission to copy a
-caller that departs from the contract. Visual cleanup does not authorize removing actions or
+catalog.md describes the code as it stands: a lookup, not permission to copy a caller that
+departs from the contract. Visual cleanup does not authorize removing actions or
 changing navigation.
 
 ## Building
+
+Before the first line, **name the rules**: the ids the change touches, from the table above.
+They go to the reviewer and into the pull request, and a rule you cannot name is one you have
+not read.
 
 1. **Find the peer.** Search the screen's labels and catalog.md for the component and its
    same-role peers across app and feature crates. Compare height, text axis, ink, icon size, spacing,
@@ -37,13 +43,27 @@ changing navigation.
 4. **Measure and bound it.** A split or a stack reads the container it is given, never the window.
    Every list has a named cap and says how many it left out. Text that can run long truncates or
    wraps as its neighbours do; content of several lines grows rather than shrinking its font.
+   A view that holds a name of unknown length, a trailing slot, a row of actions or a list in a
+   box that scrolls takes a strain test beside its peers': it draws the view at the narrowest
+   and a wide size, with short, long and unbroken words, at 100% and 150% where its region
+   zooms, and with none, one and one past the cap where it lists, and reads its parts' bounds
+   (`crates/app/src/shell/rig/strain.rs`; the parts are marked with `debug_selector`). A view
+   in a feature crate, out of that rig's reach, reads the bounds in gpui's test window itself,
+   as `crates/ui/src/page/tests.rs` does.
 5. **Draw every state** (*States*) at the size its role takes, in one geometry across states, and
    check the way between them (loading to content, empty to content), not only where it lands.
+   A transition (a page left and shown again, a way back, a dock hiding) keeps the state its
+   rule keeps (`K-17`, `K-18`, `K-27`).
    Fix a size a component gets wrong in its shared wrapper, never at the call site.
 6. **Take each token by its role**: an ink by its role and the surface under it, a gap by the
    relationship, a column page's width from `PAGE_*`, a strip's height from `BAR_H`, a row's
-   from `ROW_H`. Add a token only for a missing role (tokens.md, *Adding a token*); when a shared
-   default changes, review its other callers too.
+   from `ROW_H`. Add a token only for a missing role (`T-10`, `T-17`), and a new step in a
+   scale (a type size, a corner, a spacing step, an elevation) only where the owner authorised
+   a change to the system; when a shared default changes, review its other callers too. A new
+   size is a named constant, and the size census fails until its list holds it: bring
+   `crates/app/src/guards/sizes.txt` up to date from the test's own lines and say the size in
+   the pull request. A shared size or a palette value
+   changes only when the owner asked.
 7. **Wire keys, words and saves**: each key a keymap command (catalog.md, *Keys and focus*),
    each word as UI patterns *Words* has it, and a change the person can take back saved as
    catalog.md's saving row shows.
@@ -56,7 +76,7 @@ changing navigation.
 | Hover | it can be pressed or picked | the pointer cursor (`action` sets it) and the hover step its surface takes (`DESIGN.md`, *Colour and state*); the library's own on its other controls |
 | Selected or open | one of several is chosen, or its menu is open | the selected step (`DESIGN.md`, *Colour and state*) |
 | Focus | the keyboard reaches it | the ring, for the keyboard only (`DESIGN.md`, *Colour and state*); row actions become available without moving content; custom elements use `.focus_visible(\|s\| s.border_color(cx.theme().ring))`, library controls draw theirs, and a field draws none (its caret shows it) |
-| Refusing | it cannot act now | `.refuses(Some(why))`: no press, the arrow cursor, and `why` as its tooltip |
+| Refusing | it cannot act now | `.refuses(Some(why))`: no press, the arrow cursor, and `why` as its tooltip; a switch a person cannot flip is `.locked(…)` |
 | Loading | it started work still running | `.loading(true)` on the button that started it, its label kept |
 | Waiting, empty, failed | it shows content | UI patterns, *Waiting*, *Nothing to show*, *Failing and refusing* |
 
@@ -103,39 +123,103 @@ div().p_3().border_1().border_color(theme.border).bg(theme.muted).shadow(lift(cx
 div().v_flex().gap_2().child(heading).child(group)
 ```
 
+## The reviewer
+
+A change a person can see ends with a review its author does not write.
+
+**When.** Every change a person can see, before it is called finished. Skip it for a change to
+words alone, or one no screenshot can show (a key binding, focus order, a refusal's tooltip
+text), and say so in one line in the report and the pull request: *Not pictured: words only*,
+or *Not pictured: nothing a screenshot shows*. Where no headless session can run, the pull
+request says *Not pictured: no headless session here*. A contract-only change takes the
+contract path below and no reviewer.
+
+**The author first.** Build the app and drive the changed view with the `drive` skill's
+`matrix`: both palettes, at the narrowest width the view's region allows and a wide one. The
+scripts cannot drag, so a dock is pictured at the width the window gives it, and where the
+window cannot hold the conversation beside the narrowest useful Workbench (at 720 wide), the
+Workbench takes the whole area under a way back to the conversation: a dock's own narrowest
+width beside the conversation goes under what the reviewer could not see.
+Picture the states the change touches (a long name, an empty list, a hover) with more steps
+files, and where a rule is checked at a zoom, the steps press the zoom keys before the shot.
+Read each picture yourself first.
+
+**The reviewer is fresh**: an agent with no part in the change, started for this alone. A
+subagent, or a second session where the host has no subagents (in Claude Code, for example, the
+Agent tool with `general-purpose`). Never the author answering for it. Where no second agent
+can be started, the pull request says *Not reviewed: no second agent*, and the owner's look
+stands alone.
+
+**Its brief**, filled in and handed over whole:
+
+```text
+You review a UI change you did not write. Intent, in one line: <what the change is for>.
+The diff, pasted whole: the output of
+  git diff BASE...HEAD -- crates .claude docs DESIGN.md AGENTS.md CONTEXT.md
+  (BASE the branch's base, main as a rule).
+The pictures, each with its width, palette and state: <path> (<width>, <light|dark>, <state>) …
+The rules the change touches, by id; read each in DESIGN.md or docs/ui-patterns.md before
+answering: <T-23, L-04, …>
+Every view also answers to DESIGN.md's Principles 2 (a signal only where something needs the
+person), 5 (nothing said twice) and 6 (every list bounded, saying so): answer those three too.
+Answer one line per rule: holds; broken (which picture and where on it, the file and line in
+the diff); or cannot see (why: a hover not pictured, a zoom, text the view did not hold).
+Then "What I could not see": the states and widths no picture shows.
+Then anything else a picture shows wrong that no rule above names.
+```
+
+It is told nothing of the author's own judgment of the work.
+
+**Its findings** are fixed in the change, with the affected pictures taken again and given to the
+same reviewer, or to a fresh one given the earlier findings where it cannot be continued; at most
+two rounds, after which what is left is listed in the pull request as open. The pull request
+says in words what was pictured (the view, the widths, the palettes, the states) and what the
+reviewer found, fixed or left open. It gives no path: a picture under `/tmp` means nothing to a
+later reader. Nothing is dropped silently.
+
 ## Finishing
 
 Take the path the diff needs; neither path's evidence proves the other complete.
 
 **Contract and skill changes only.**
 
-1. Keep each rule with its owner: DESIGN.md visual roles and the frame, screens.md what each
-   region holds, UI patterns layouts and behaviour, tokens.md and catalog.md what is built; this
+1. Keep each rule with its owner: DESIGN.md the visual rules and the frame, screens.md what each
+   region holds, UI patterns layouts and behaviour, catalog.md what is built; this
    skill applies them and is never a second system. No rule rests on another product; the palette
    is onehand's own, written once in `crate::theme`.
-2. Follow the changed rule through this skill, tokens.md, catalog.md, checklist.md and
-   `AGENTS.md`, resolving contradictions and broken links; preserve feature behaviour unless the
-   user asked otherwise, and keep target rules apart from claims about the code. Walk realistic
-   cases through the text (a new settings section, a row with secondary text, a hovered selected
-   item, a narrow dock, a shared token change): each reaches an existing pattern or an explicit
-   implementation gap, never a local style.
-3. Check this file's frontmatter (`name` is `ui`, its directory's name; `description` is set) and
-   run `git diff --check`; prose needs no runtime test. Report the documents changed, the checks
-   and that no rendered UI was migrated.
+2. A rule added or changed keeps the form (`DESIGN.md`, *How a rule reads*): a new id in its
+   family, never a reused one; a *When* that names a situation, not a screen; one *Unless*; and
+   a *Checked by* naming a checker that exists, a test only for the part it holds. What only
+   one screen can meet goes to `docs/screens.md`.
+3. Follow the changed rule through this skill, catalog.md and `AGENTS.md`, resolving
+   contradictions and broken links; preserve feature behaviour unless the user asked otherwise,
+   and keep target rules apart from claims about the code. Walk realistic cases through the text
+   (a new settings section, a row with secondary text, a hovered selected item, a narrow dock, a
+   shared token change): each reaches an existing rule or an explicit implementation gap, never
+   a local style.
+4. Check this file's frontmatter (`name` is `ui`, its directory's name; `description` is set) and
+   run `git diff --check` and `cargo test -p onehand --locked --lib guards`, which reads the
+   documents. Report the documents changed, the checks and that no rendered UI was migrated.
 
 **Implementation changes.**
 
-1. **Answer [checklist.md](checklist.md)**: each item yes, no (its file and line) or n/a (why),
-   after reading the rule the item names.
-2. **Run the checks**: `cargo test -p onehand --locked`,
+1. **Run the checks**: `cargo test -p onehand --locked`,
    `cargo test -p <crate> --locked` for every other crate touched,
-   `make clippy CLIPPY_EXTRA="-- -D warnings"` and `make fmt`. Quote any failure.
+   `make clippy CLIPPY_EXTRA="-- -D warnings"` and `make fmt`. Quote any failure. The lints and
+   the guards hold where a colour, a size, a button and the pointer are written
+   (`docs/rules-and-gotchas.md`, *Guard coverage*); a site that needs one of the banned calls
+   takes `#[expect(clippy::disallowed_methods, reason = "…")]` on the narrowest item, its reason
+   in its own words.
+2. **Picture and review**, as *The reviewer* says, or say why it was skipped.
 3. **Carry the documents** in the same change: what a screen holds or its order to
-   `docs/screens.md` (or the feature's own document); a principle, the frame, the transcript or a
-   visual rule to `DESIGN.md`, which gets at most one line per new region; a pattern or a
-   behaviour to `docs/ui-patterns.md`; a token or a builder to tokens.md or catalog.md.
-4. **Compare peers and report**: the same-role component compared, the shared builder or tokens
-   checked, a changed shared default's callers inspected; failures, fixes, remaining gaps and
-   checks run. Hand the user a focused visual check in `make dev` or `make showcase` (both
-   themes, narrow and wide containers, zoom, long text, the states that apply), and claim no
-   visual verification: passing tests are not evidence of visual consistency.
+   `docs/screens.md` (or the feature's own document); a principle, the frame or the transcript
+   to `DESIGN.md`, which gets at most one line per new region; a rule to `DESIGN.md` or
+   `docs/ui-patterns.md`, in the form above; a builder to catalog.md, a token's purpose to the comment beside it. A
+   departure the change leaves standing is recorded in `docs/known-gaps.md` with its reason.
+4. **Compare peers and report**: the rules the change touches, by id; the same-role component
+   compared; the shared builder or tokens checked; a changed shared default's callers inspected;
+   failures, fixes, remaining gaps and checks run. Report what was pictured and the reviewer's
+   line for each rule; passing tests are not evidence of visual consistency. The owner's look
+   stays, for taste: hand them a focused visual check in `make dev` or `make showcase` (both
+   themes, narrow and wide containers, zoom, long text, the states that apply), and keep what
+   was observed apart from what is pending.

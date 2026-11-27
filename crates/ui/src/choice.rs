@@ -105,6 +105,12 @@ pub fn segment(
 /// reads as standing on the track rather than filling it.
 const SEGMENT_INSET: Rems = rems(0.1875);
 
+/// How far the chosen segment's lift falls, in pixels as a hairline is.
+const LIFT_DROP: gpui::Pixels = gpui::px(0.5);
+
+/// How soft the chosen segment's lift is: a blur as thin as a hairline.
+const LIFT_BLUR: gpui::Pixels = gpui::px(1.);
+
 /// A pick-one track's two fills.
 pub struct SegmentFills {
     /// The track's: the well, a step off the page and off a floating surface.
@@ -139,8 +145,8 @@ fn segment_lift(cx: &App) -> Vec<BoxShadow> {
     };
     vec![BoxShadow {
         color,
-        offset: point(px(0.), px(0.5)),
-        blur_radius: px(1.),
+        offset: point(px(0.), LIFT_DROP),
+        blur_radius: LIFT_BLUR,
         spread_radius: px(0.),
         inset: false,
     }]

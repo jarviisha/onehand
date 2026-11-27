@@ -1,15 +1,15 @@
 ---
 name: drive
-description: Launch onehand in a headless sway session and drive it (click, type, screenshot) to verify a change end to end, when the owner asks for it.
-disable-model-invocation: true
+description: Launch onehand in a headless sway session of its own and drive it (click, type, resize, switch palette, screenshot) to picture a visible change before calling it finished, or to test end to end when the owner asks.
 ---
 
 # Drive
 
 Run the real app on a Wayland compositor of its own: one headless output of 1600x1000, a data
 root under `/tmp`, and a pointer and keyboard the agent controls. The person's own onehand and
-desktop are never touched. Use it only when the owner asks you to test in the app. The repository's
-default stays "build, test, stop; the user looks".
+desktop are never touched. Use it to picture the view a visible change touched before calling
+the change finished (the `ui` skill says how, and who reviews the pictures), or when the owner
+asks you to test in the app.
 
 The scripts are in `scripts/` beside this file; run them from anywhere. `DRIVE_ROOT` (default
 `/tmp/onehand-drive`) holds everything: logs, pids, screenshots, the data root and the project.
@@ -18,7 +18,19 @@ The scripts are in `scripts/` beside this file; run them from anywhere. `DRIVE_R
 
 1. **Build** what is to be tested: `cargo build` (the app on the branch's code). Done when it
    builds. A `--release` binary works too; pass its path to `up`.
+   - Where `cargo build` is routed to a build host, it brings no binary back. Build through the
+     project's build host instead: `<onehand> --build <host> -- cargo build -p onehand -p
+     onehand-host`. All of the build host's artifacts are built or none come back, and they
+     land under its `into` (`target/from-<host>/target/debug/onehand`); pass that path to `up`.
+   - `<onehand>` is the binary of the running onehand, which is not on `PATH`: the `cargo` shim
+     in `route-shims/` under the config directory names it on its `exec` line.
+   - A debug build carries the library's icons inside it (the workspace's dev profile sees to
+     it), so one built on another machine draws them here.
 2. **Start**: `scripts/session.sh up [BIN]`. It does five things:
+   - takes the binary: a BIN given to `up`, `restart` or `palette` is kept for the commands
+     after it until `down` forgets it; with none given and none kept, the repo's
+     `target/debug/onehand`. A missing one is said by its path before anything starts;
+   - starts at 1600x1000;
    - seeds the data root on the first run: a git project `proj` whose check command is `true`,
      and two agents, *Mock Work* and *Mock UI*;
    - builds the virtual pointer;
@@ -27,7 +39,8 @@ The scripts are in `scripts/` beside this file; run them from anywhere. `DRIVE_R
      afresh on every `up`, since an app started on a held one can panic;
    - starts the app and waits for its window.
 
-   Done when it returns 0. A non-zero exit prints the app's or sway's log tail.
+   Done when it returns 0. A non-zero exit prints the app's or sway's log tail. `restart` and
+   `palette` refuse when the session's sway is not running.
 3. **Drive**, one action at a time, and look after each:
    - `scripts/drive.sh shot NAME` writes `$DRIVE_ROOT/NAME.png`. **Read the screenshot** before
      the next action, and take every coordinate from what is on it.
@@ -38,8 +51,27 @@ The scripts are in `scripts/` beside this file; run them from anywhere. `DRIVE_R
      a press.
    - `type TEXT` types into the field that has focus; click the field first.
    - `key -k Escape` passes `wtype` arguments.
-   - `drive.sh alive` after any action that could crash. It prints the panic and backtrace if the
-     app is gone.
+   - `drive.sh alive` after any action that could crash. If the app is gone it prints the panic
+     and backtrace and exits 1.
+   - `drive.sh size W [H]` sets the window's size in output pixels (H defaults to 1000), live.
+     The window goes no smaller than 720 by 480 (`WINDOW_MIN`, `crates/app/src/shell/boot/open.rs`);
+     a narrower width or a lower height is refused.
+   - `session.sh palette light|dark` draws the app light or dark. The choice is read at boot, so
+     the app starts again, its data kept and its view lost.
+   - `drive.sh matrix NAME [STEPS]` pictures one view in both palettes and at each width of
+     `$DRIVE_WIDTHS` (default `720 1600`), narrowest last: `NAME-<width>-<palette>.png`. After
+     each palette it reaches the view again by running STEPS at 1600 wide, then narrows the
+     window. It runs light, then dark, and leaves the app dark at 1600 wide. STEPS is a bash
+     file of plain `$DRIVE …` lines, no functions, keys before clicks, its coordinates read off
+     a 1600-wide screenshot. A step that fails, a pipe's part included, stops the matrix, saying
+     its line, and so does the app dying, with its log's tail:
+
+     ```bash
+     $DRIVE key -M ctrl -k comma -m ctrl   # Settings
+     sleep 1
+     $DRIVE click 413 242                  # its Agents section
+     sleep 1
+     ```
 
    Done when every behaviour the change touches has been seen working on a screenshot, or a
    failure has been captured with its log.
@@ -88,4 +120,6 @@ The scripts are in `scripts/` beside this file; run them from anywhere. `DRIVE_R
   in the same shell command as the one that started it, with `sleep` between.
 - **Layouts move.** A dialog grows a line (a warning, a hint) and its buttons shift down, so
   take coordinates from the latest screenshot, not from an earlier run.
+- **A palette switch loses the view.** The app starts again on it, so a view is reached anew by
+  the steps file, never assumed to survive; `matrix` does this for you.
 - `MESA-EGL: warning … failed to get driver name` in `app.log` is the pixman renderer's noise.

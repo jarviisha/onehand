@@ -83,8 +83,11 @@ The full text behind the short forms in `AGENTS.md`, with the reason for each.
   Make the split in the change that would cross the limit, so the next change starts with a
   usable seam. The number is approximate; splitting one coherent operation arbitrarily only
   makes its control flow harder to follow. Source guards do not enforce a line-count limit.
-- **Don't self-verify UI by launching or screenshotting.** Make the change, make sure it builds and
-  tests pass, then stop — the user inspects the result visually.
+- **Drive what you changed, never the owner's app.** Opening the owner's running onehand or
+  desktop could change their data or interrupt their work; the headless session has a data root
+  of its own under `/tmp`, so the agent builds, runs the checks, then drives the changed view
+  there and, where a second agent can be started, has the pictures reviewed before it says the
+  change is finished. The owner still looks, for taste.
 
 ## Guard coverage
 
@@ -102,7 +105,26 @@ Review the uncovered part when changing the relevant area:
 | An archived conversation is adopted in one place | Finds the model's loader called anywhere but `ChatSession::adopt` | A loader reached through an alias |
 | An atomic write is written in one place | Counts the files containing `fs::rename(` and insists on one, `config::write_atomic`'s | A rename spelled another way, or reached through another API |
 | A scrolling box is not a flex column | Finds `.v_flex()` or `.flex_col()` in the builder chain of an `overflow_y_scroll` or `overflow_scroll` call, in UI sources: the call's line, its head and the calls at its indent, stepping over the lines that close an argument | A flex set through a helper, a variable or `.map`, or on a line that also opens a nested element |
-| Theme, bounded rendering, module size and the UI contract | Dedicated tests cover individual behaviours; no source guard scans the visual rules (colour, size, corner, controls, icons, motion) | All of them, by review; nothing synchronizes documentation with code |
+| A colour is made in the palette (lint) | `clippy.toml` bans `gpui::rgb`, `rgba`, `hsla` and the named colours (`black`, `white`, `red`, `green`, `blue`, `yellow`, `opaque_grey`) outside the palette in `crates/app/src/theme.rs` and the lift in `onehand_ui::tokens`; each lawful site carries an `expect` | `transparent_black` and `transparent_white` are free, since they draw nothing; a colour made by a library helper the list does not name |
+| A button is made by the wrapper (lint) | Bans `gpui_component::button::Button::new` outside `onehand_ui::action` | A button made by another of the library's constructors |
+| The pointer comes from the shared builders (lint) | Bans `gpui::Styled::cursor_pointer` outside the builders in `crates/ui`; each hand-made row that still sets it carries an `expect` with its reason, on the statement holding the call where one does | Where no statement holds the call (it stands in the function's returned chain or in a closure inside it), the `expect` is on the whole function: `add_project`, `new_session_row`, `schedule_row`, `about_section`, `outside_section`, `telegram_section`, `fold_line`, `opens`, `subagent`, `activity_row`, `card`, `installed_row` and `reference_link` |
+| A button refuses, it is not disabled (lint) | Bans `gpui_component::Disableable::disabled`, which every `Disableable` type shares: a button refuses through `Refuses::refuses`, a switch is locked through `Locked::locked` | A menu item's and a field's `disabled` are their own and are not seen |
+| A colour is written in the palette alone | Finds a hex string of six or eight digits, or an `Rgba {`/`Hsla {` literal, in UI production code outside `theme.rs` and `ansi.rs` | A three-digit hex; a hex code inside a longer string; a colour built from numbers some other way. A pattern or a rest on `Hsla {` (`Hsla { h, .. }`, `..ink`) is flagged and takes a rewrite |
+| A size is written once, in a constant | Finds a number other than zero, suffixed or not, in `px(`, `rems(` or a tuple `Pixels(`/`Rems(` outside a `const` item, in UI production code; a constant ends at the first `;` after its `=` | A call written over several lines, a helper of another name (`*_px(`), a size computed from numbers, a bare `f32`, the spacing and type steps; a `=` inside a const's type (`Foo<Item = Rems>`) is taken for the start of its value, and a `;` inside a string over several lines ends the const early |
+| The size census | Lists every constant whose type names `Rems` or `Pixels` in UI production code (`Size<Pixels>`, `Edges<Rems>` and arrays of them included), every constant of `onehand_ui::tokens` and every palette slot, and compares the list with `crates/app/src/guards/sizes.txt`, a line written twice counted twice; a failure prints the lines to add and to drop | A size typed as a bare `f32` outside `tokens`; a size held inside a constant of another type (`const P: Pad = Pad { w: px(4.) }`), which the size guard also passes |
+| Theme, bounded rendering, module size and the UI contract | Dedicated tests cover individual behaviours; the lints and guards above hold colour, size, buttons and the pointer | Corner, icons, motion and the rest of the contract, by review; nothing synchronizes documentation with code |
+
+The three guards on colour and size read production code only: they leave out a `tests.rs`, anything
+under a `tests/` directory, a module its parent declares under a plain `#[cfg(test)]` on
+`mod NAME;` (doc comments and attributes between them allowed), and each item under
+`#[cfg(test)]`, a field included. They do not see a test-only module declared some other way
+(through a `#[path]`, or a cfg expression that is not plain `test`), and an unbalanced bracket
+in a string or char inside a `#[cfg(test)]` item, or inside an attribute written over several
+lines, throws off where it ends; a test-only field written over several
+lines, or a last field with no trailing comma, hides the production lines after it.
+An `expect` for any of the four lints licenses every banned call in the item or statement it
+sits on, not only the one it was written for. clippy keeps its last result and does not notice a changed `clippy.toml`: touch a source to
+re-lint locally. CI starts clean.
 
 Keep the checks that catch real regressions. Add a targeted check when a concrete failure
 justifies it, and describe its limits rather than treating a source scan as a Rust parser.

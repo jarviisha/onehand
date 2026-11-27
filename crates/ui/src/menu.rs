@@ -39,6 +39,10 @@ const MENU_INSET: gpui::Pixels = px(8.);
 /// **Only for a row that acts.** A disabled entry keeps the library's default
 /// and should, for the reason [`resting`] exists: a pointer over something that
 /// refuses is a promise the control cannot keep.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "a menu row is a shared builder, and it gives the pointer"
+)]
 pub fn menu_row<E: IntoElement>(
     render: impl Fn(&mut Window, &mut App) -> E + 'static,
 ) -> PopupMenuItem {

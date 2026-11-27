@@ -80,6 +80,10 @@ pub fn tab_select(
 /// the rest muted and taking the row hover, truncating with its full `hint` on
 /// hover. The caller caps its width, says what a press does, and adds what
 /// follows the name: a mark, then [`tab_close`].
+#[expect(
+    clippy::disallowed_methods,
+    reason = "a tab chip is a shared builder, and it gives the pointer"
+)]
 pub fn tab_chip(
     id: impl Into<ElementId>,
     label: SharedString,

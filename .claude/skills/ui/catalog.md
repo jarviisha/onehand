@@ -11,7 +11,7 @@ An existing use may still need migration to the contract; copying it is not a co
 
 The app uses the library for: `Button` (always through `action`), `Input` (always through
 `text_input` or `search_input`) and `InputState`, `Textarea` (always through `text_area`), `Switch`
-(always through `toggle`),
+(always through `toggle`, and locked with `.locked(…)`),
 `Tag`, `Kbd`, `Spinner`, `Tooltip`, `Dialog` (`window.open_dialog`, `window.open_alert_dialog`, with
 `DialogFooter` and `DialogClose`), `Notification` (`window.push_notification`), `PopupMenu` and
 `DropdownMenu` (through the menu builders below), `Popover`, `Scrollbar`, the resizable panels,
@@ -55,7 +55,7 @@ Draw none of these by hand: a `div` that looks like a button, a label, a key cap
 | A strip along the top of a region, and its icon control | `strip(cx)`, `strip_control(id, icon, on, cx)`; a bar inside the Workbench `workbench_strip(cx)`, inset `ROW_INSET`, with a line under it; a mode's own bar under it `mode_strip(cx)`, `MODE_BAR_H` tall | `crates/ui/src/strip.rs` |
 | One of a few choices, the taken one filled (filter chips only, never inside a track) | `choice` (a `quiet` ghost button, `selected` when taken, at the `ControlSize` its role takes) | `crates/ui/src/choice.rs` |
 | One choice inside a track | `segment(id, label, on, size, cx)`: chosen, a step lighter than the track (`segment_fills`: the page fill by day, `accent` by night) in the prose ink under a tight lift, pressing it changing nothing; unchosen, the muted ink on the track, its hover a step between the track and the pick | `crates/ui/src/choice.rs` |
-| A setting turned on or off | `toggle(id, on)`: the library's `Switch` at `.small()`, with no focus ring a pointer press would leave | `crates/ui/src/toggle.rs` |
+| A setting turned on or off | `toggle(id, on)`: the library's `Switch` at `.small()`, with no focus ring a pointer press would leave; `.locked(bool)` for a switch a person cannot flip now | `crates/ui/src/toggle.rs` |
 | A split, or a dock's edge | `h_resizable`, `v_resizable`, `edge_handle`: nothing drawn at rest or under the pointer, one `ring` line while held; `seam_line` for a skin that draws that line elsewhere in its band (the dock area, down the middle of the gap between boxes) | `crates/ui/src/resize.rs` |
 | Rendered Markdown | `no_code_label(view)` on every `TextView`; `unedged_code()` as the style of one with none of its own (a code block is a well, no edge) | `crates/ui/src/prose.rs` |
 | A choice between a few views, or a dialog form's few kinds, every one the same width | `switch` (a `segment` per view at `flex_1`, in one track on the `muted` fill with no edge, at the `ControlSize`'s height, its segments held in `SEGMENT_INSET` (3px) and parted `gap_0p5`) | `crates/ui/src/choice.rs` |

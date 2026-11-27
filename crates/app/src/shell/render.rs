@@ -47,7 +47,12 @@ impl Render for Shell {
                         .fixed()
                         // No line down its edge: the boxes beside it stand off
                         // the window's fill it shares.
-                        .child(div().size_full().child(rail)),
+                        .child(
+                            div()
+                                .debug_selector(|| "rail".into())
+                                .size_full()
+                                .child(rail),
+                        ),
                 )
                 .child(resizable_panel().child(dock))
                 // Called once, when a drag ends: the one thing that changes the

@@ -46,6 +46,12 @@ pub(crate) use search::workspace_control;
 pub(crate) use session::{session_label, signal_mark, status_icon, word_ink};
 pub(crate) use workspace::ellipsize_front;
 
+/// A name as a menu row or the workspace control cuts it at a character.
+#[cfg(test)]
+pub(crate) fn cut_at_count(name: &str) -> gpui::SharedString {
+    row::ellipsize(name, row::MAX_LABEL)
+}
+
 /// How far a session row is set in under its project: one mark's slot, the
 /// fold's, and the gap after it. With the inset every row keeps, a session's
 /// mark stands under its project's folder and its title under the project's
@@ -398,6 +404,10 @@ fn more(group: Option<PathBuf>, hidden: usize, cx: &mut Context<Shell>) -> AnyEl
 
 /// The list's last two rows: the way to grow it, with a folder here or, with
 /// `on_host`, with one on a host. Set apart from the list above by the first.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the rail's add-a-project row, made by hand, which no shared builder draws"
+)]
 fn add_project(on_host: bool, cx: &mut Context<Shell>) -> AnyElement {
     let hover = row::hover_fill(cx);
     let (id, label, tip) = match on_host {

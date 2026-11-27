@@ -13,7 +13,7 @@ use gpui_component::{ResizableState, WindowExt as _};
 use onehand_core::config::{AppConfig, Appearance};
 use onehand_core::workspace::Workspace;
 
-mod open;
+pub(super) mod open;
 use open::open;
 pub use open::{open_or_focus, seed_workspace};
 use std::collections::HashMap;

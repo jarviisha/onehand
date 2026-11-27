@@ -11,7 +11,11 @@ use onehand_core::board::BOARD_SHOWN;
 /// How wide each column stands: a task's title and its line of facts with
 /// room for its `⋯`, so a board of four steps fits a wide pane and a longer
 /// one scrolls sideways rather than squeezing every title.
-const COLUMN_W: Rems = rems(17.);
+pub(super) const COLUMN_W: Rems = rems(17.);
+
+/// How far the scrollbar's frame reaches back through the card's own inset
+/// (`pr_3`), so its thumb runs down the card's edge and never over a row.
+const SCROLLBAR_PULL: Rems = rems(-0.75);
 
 /// Which column a scroll handle is kept for.
 #[derive(Clone, PartialEq, Eq, Hash)]
@@ -98,6 +102,7 @@ pub(super) fn column(parts: ColumnParts, cx: &App) -> gpui::Div {
         })
         .child(ruled(rows, cx));
     page_card(title, Some(count), control, cx)
+        .debug_selector(|| format!("{}-box", key.scroll_id()))
         .flex_none()
         .w(COLUMN_W)
         .max_h_full()
@@ -108,7 +113,7 @@ pub(super) fn column(parts: ColumnParts, cx: &App) -> gpui::Div {
                 .relative()
                 .v_flex()
                 .min_h_0()
-                .mr(gpui::rems(-0.75))
+                .mr(SCROLLBAR_PULL)
                 .child(list)
                 .child(onehand_ui::scrollbar(&scroll).id(key.bar_id())),
         )

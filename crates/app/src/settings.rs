@@ -467,6 +467,10 @@ const NAV_ROW_H: gpui::Rems = gpui::rems(1.625);
 /// rail beside it is.
 fn nav_row(page: SettingsPage, current: SettingsPage, handle: &Entity<Shell>, cx: &App) -> Div {
     let handle = handle.clone();
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "a settings page's row in its list, made by hand, which no shared builder draws"
+    )]
     let row = div()
         .id(page.label())
         .h_flex()

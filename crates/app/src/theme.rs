@@ -49,6 +49,11 @@ pub(crate) use onehand_ui::meta_ink;
 /// field, a row, a tab) and `radius_lg`, 6, a container's (a card, a box, a
 /// region, a dialog), a step rounder so what holds controls never looks
 /// sharper than they are. The library's configs leave both unset at 6 and 8.
+/// The library's dialogs, toasts and command palette read `radius_lg`; its
+/// tooltips, popup menus, select and completion lists and popovers read
+/// `radius`, and a popover the app builds with its own appearance sets
+/// `radius_lg` on it. What the library draws at half its corner (checkboxes,
+/// `Kbd`, a small menu row, its tabs) comes out at 2 and is left to it.
 ///
 /// Runs at boot, before a mode is chosen, because choosing one applies whichever
 /// of these two configs the mode names.
@@ -239,6 +244,10 @@ pub(crate) fn composer_lift(cx: &App) -> Vec<gpui::BoxShadow> {
 /// The two shadows' colours. The prose ink, thinned, on the light page, where
 /// pure black reads as a smudge. On the dark page, near black, no shadow
 /// shows, so the tight one takes the hairline's colour and draws the edge.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the palette's own file: the dark broad shadow is black thinned"
+)]
 fn composer_shades(dark: bool, ink: Hsla, hairline: Hsla) -> (Hsla, Hsla) {
     match dark {
         true => (hairline, gpui::hsla(0., 0., 0., 0.4)),
@@ -359,6 +368,10 @@ mod tests {
     /// Each region is told from its neighbour by its own fill, and the dark
     /// page, the deepest of them, is a charcoal rather than a black.
     #[test]
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "pure black, to measure the page against"
+    )]
     fn the_regions_stand_a_step_apart() {
         for (name, mode) in [("light", ThemeMode::Light), ("dark", ThemeMode::Dark)] {
             let theme = installed(mode);

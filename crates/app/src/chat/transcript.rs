@@ -556,4 +556,6 @@ fn live_index(target: TranscriptItemId) -> Option<usize> {
 }
 
 #[cfg(test)]
+mod strain_tests;
+#[cfg(test)]
 mod tests;

@@ -77,3 +77,16 @@ debug = "line-tables-only"
 
 [profile.dev.package."*"]
 opt-level = 3
+
+# The library's bundled icons are embedded only where debug assertions are
+# off; with them on, a debug build reads the icons from the folder they sat
+# in on the machine that compiled it, so a binary built elsewhere draws no
+# icon at all. The choice is made twice and must agree: in the crate holding
+# the icons, where the derive's code is compiled, and in the embedding crate,
+# which only that crate uses. Off in those two alone, a debug build carries
+# its icons inside it, wherever it was compiled.
+[profile.dev.package.gpui-kit-assets]
+debug-assertions = false
+
+[profile.dev.package.rust-embed]
+debug-assertions = false

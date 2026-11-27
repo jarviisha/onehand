@@ -11,6 +11,8 @@ use onehand_core::config::drive::SettingsDrive;
 use onehand_core::workspace::Workspace;
 use std::path::PathBuf;
 
+pub(crate) mod strain;
+
 /// A folder of the test's own, emptied.
 pub(crate) fn folder(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("onehand-shell-{name}-{}", std::process::id()));
@@ -40,6 +42,22 @@ pub(crate) fn shell(
     Entity<crate::shell::Shell>,
     &mut VisualTestContext,
 ) {
+    shell_on(cx, store, agents, Workspace::seeded("/tmp"))
+}
+
+/// A shell on `ws`, the tasks writing into `store`, and `agents`
+/// configured. The workspace is kept in a folder of this test's own beside
+/// `store`, whatever `ws` named.
+pub(crate) fn shell_on(
+    cx: &mut TestAppContext,
+    store: PathBuf,
+    agents: Vec<AgentSpec>,
+    ws: Workspace,
+) -> (
+    gpui::AnyWindowHandle,
+    Entity<crate::shell::Shell>,
+    &mut VisualTestContext,
+) {
     cx.executor().allow_parking();
     cx.update(gpui_component::init);
     // A folder of this test's own: every rig's workspace is of `/tmp`, and
@@ -55,8 +73,8 @@ pub(crate) fn shell(
         cx.set_global(Tasks::in_dir(store));
     });
     let mut made = None;
+    let mut ws = ws;
     let window = cx.add_window(|window, cx| {
-        let mut ws = Workspace::seeded("/tmp");
         ws.storage_dir = storage.clone();
         let shell = gpui::AppContext::new(cx, |cx| crate::shell::Shell::new(ws, window, cx));
         made = Some(shell.clone());
@@ -169,4 +187,100 @@ pub(crate) fn repo_with_worktree(dir: &std::path::Path) -> (PathBuf, PathBuf) {
         std::fs::canonicalize(main).unwrap(),
         std::fs::canonicalize(wt).unwrap(),
     )
+}
+
+/// The next session started here takes its events from the returned
+/// channel.
+pub(crate) fn canned(
+    cx: &mut VisualTestContext,
+) -> futures::channel::mpsc::Sender<onehand_core::acp::AcpEvent> {
+    use gpui::BorrowAppContext as _;
+    let (tx, rx) = futures::channel::mpsc::channel(64);
+    cx.update(|_, cx| {
+        cx.update_global::<Shared, _>(|shared, _| {
+            shared
+                .canned
+                .push_back(onehand_io::acp::Events::from_channel(rx))
+        })
+    });
+    tx
+}
+
+/// Open a session of `agent` on `dir` and put it on screen, its agent the
+/// canned one handed back, already up.
+pub(crate) fn shown_session(
+    shell: &Entity<crate::shell::Shell>,
+    dir: PathBuf,
+    agent: AgentSpec,
+    cx: &mut VisualTestContext,
+) -> (
+    u64,
+    futures::channel::mpsc::Sender<onehand_core::acp::AcpEvent>,
+    tokio::sync::mpsc::UnboundedReceiver<onehand_core::acp::AcpRequest>,
+) {
+    let mut events = canned(cx);
+    let uid = cx.update(|window, cx| {
+        shell.update(cx, |shell, cx| {
+            let (uid, _) = shell
+                .open_off_screen(dir, agent, Vec::new(), cx)
+                .expect("a session");
+            shell.show_session(uid, window, cx);
+            uid
+        })
+    });
+    let requests = crate::chat::session::tests::carrier::up(&mut events);
+    cx.run_until_parked();
+    (uid, events, requests)
+}
+
+/// Step the conversation pane's zoom in `steps` times, as its key does.
+pub(crate) fn zoom_pane(
+    shell: &Entity<crate::shell::Shell>,
+    steps: usize,
+    cx: &mut VisualTestContext,
+) {
+    cx.update(|_, cx| {
+        let pane = shell.read(cx).chat.clone();
+        pane.update(cx, |pane, cx| {
+            for _ in 0..steps {
+                pane.zoom_mut().zoom_in();
+            }
+            cx.notify();
+        })
+    });
+    cx.run_until_parked();
+}
+
+/// A conversation as a build kept it: `sid`, ran in `folder`, of `project`,
+/// titled `title` or untitled.
+pub(crate) fn kept_conversation(
+    sid: &str,
+    folder: &std::path::Path,
+    project: &onehand_core::project::ProjectId,
+    title: Option<&str>,
+) {
+    let dir = onehand_core::chat::conversations_dir().join(sid);
+    std::fs::create_dir_all(&dir).unwrap();
+    let meta = serde_json::json!({
+        "format": 2,
+        "session_id": sid,
+        "root": folder.display().to_string(),
+        "project": project.as_str(),
+        "agent": "Claude",
+        "created": 1,
+        "updated": 2,
+        "items": 1,
+        "title": title,
+        "preview": "hello",
+        "prefs": {},
+    });
+    std::fs::write(dir.join("meta.json"), meta.to_string()).unwrap();
+}
+
+/// `shell`'s board page.
+pub(crate) fn board_page(
+    shell: &Entity<crate::shell::Shell>,
+    cx: &mut VisualTestContext,
+) -> Entity<crate::board_page::BoardPage> {
+    cx.update(|_, cx| shell.read(cx).board_page.clone())
 }

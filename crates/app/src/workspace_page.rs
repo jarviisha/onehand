@@ -361,6 +361,10 @@ impl WorkspacePage {
 
         // A tile per project: its name and the most urgent mark its sessions
         // carry, as on its rail row, then its branch, then what it holds.
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "a project tile that opens, made by hand, which no shared builder draws"
+        )]
         let tiles: Vec<gpui::AnyElement> = page
             .projects
             .iter()

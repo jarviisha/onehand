@@ -472,6 +472,10 @@ impl SchedulesPage {
 /// One schedule, as a task's row is drawn: its name, then when it runs, its
 /// project and when it runs next, then what its last look said; its switch
 /// at the end.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "a schedule row and its switch, made by hand, which no shared builder draws"
+)]
 fn schedule_row(
     handle: &Entity<SchedulesPage>,
     i: usize,

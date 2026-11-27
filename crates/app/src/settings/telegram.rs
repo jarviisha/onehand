@@ -56,6 +56,10 @@ impl TelegramDraft {
 }
 
 /// The Telegram group.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "a switch's label that flips it, made by hand, which no shared builder draws"
+)]
 pub(super) fn telegram_section(handle: &Entity<Shell>, cx: &App) -> AnyElement {
     let drive = &crate::state::Shared::global(cx).remote.drive;
     let on = drive.on();
