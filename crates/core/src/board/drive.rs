@@ -57,10 +57,11 @@ impl Boards {
         self.boards.contains_key(id) || self.unreadable.contains_key(id)
     }
 
-    /// The tasks every board holds: those its work column's entries name.
+    /// The tasks every board holds: those its columns' entries name.
     pub fn held(&self) -> HashSet<String> {
         (self.boards.values())
-            .flat_map(|board| board.work().iter().filter_map(|e| e.task.clone()))
+            .flat_map(|board| board.columns.iter())
+            .flat_map(|column| column.entries.iter().filter_map(|e| e.task.clone()))
             .collect()
     }
 
@@ -87,8 +88,9 @@ pub struct BoardWrite {
 pub enum Signal {
     /// Project `id`'s board could not be written: why.
     SaveFailed { id: ProjectId, why: String },
-    /// Issue `issue` of project `id`'s To do could not start, for `why`,
-    /// before a task was made of it: it is back in the Backlog.
+    /// Issue `issue` of project `id`'s board could not start, for `why`:
+    /// its row reads as a start that did not land, for a person to start
+    /// again.
     NotStarted {
         id: ProjectId,
         issue: u64,
@@ -130,6 +132,19 @@ pub enum Effect {
         issue: u64,
         task: String,
         template: Template,
+        /// The name of the column it starts in.
+        column: String,
+    },
+    /// Start run `run` of `template` on task `task`, which works issue
+    /// `issue` of project `id` and entered column `column`, off screen, and
+    /// report [`Input::Landed`]. A late answer is **recorded**, as a start's.
+    NextRun {
+        id: ProjectId,
+        issue: u64,
+        task: String,
+        run: String,
+        template: Template,
+        column: String,
     },
     /// Close issue `issue` of project `id`'s own tracker.
     CloseIssue {
@@ -458,7 +473,7 @@ impl BoardDrive {
                 task,
                 run: _,
                 outcome,
-            } => self.ended(&id, issue, &task, outcome.as_ref(), now),
+            } => self.ended(&id, issue, &task, outcome.as_ref()),
             Input::TasksRead { tasks } => self.tasks_read(&tasks, now),
         }
     }
@@ -542,9 +557,10 @@ impl BoardDrive {
         })))
     }
 
-    /// Whether project `id`'s work column, as shown, names `issue`.
+    /// Whether project `id`'s board, as shown, holds `issue` begun: an entry
+    /// of it with the run its start asked for.
     fn names_issue(&self, id: &ProjectId, issue: u64) -> bool {
-        (self.boards.board(id)).is_some_and(|b| b.work().iter().any(|e| e.issue == issue))
+        (self.boards.board(id)).is_some_and(|b| b.at(issue).is_some_and(|(_, e)| e.run.is_some()))
     }
 
     /// The starts project `id`'s write `seq` lets go ahead: once it landed,
@@ -592,6 +608,7 @@ fn place_before(todo: &[u64], dragged: u64, target: u64) -> Option<usize> {
         .position(|&n| n == target)
 }
 
+mod columns;
 mod look;
 mod seen;
 pub use look::Facts;

@@ -6,7 +6,6 @@ use super::{BoardDrive, Effect};
 use crate::board::Entry;
 use crate::project::ProjectId;
 use crate::Now;
-use std::collections::HashSet;
 
 /// One board task as the boards see it, read by the front end.
 #[derive(Debug, Clone)]
@@ -25,33 +24,21 @@ pub struct Seen {
 
 impl BoardDrive {
     /// What [`super::Input::TasksRead`] brought: each board written before
-    /// its columns named their tasks takes its tasks up; each board drops an
-    /// entry whose task is not there and whose start is not on its way, its
-    /// issue back in the Backlog; and what the boards hold is said.
+    /// its columns named their tasks takes its tasks up, and what the boards
+    /// hold is said.
     pub(super) fn tasks_read(&mut self, tasks: &[Seen], now: Now) -> Vec<Effect> {
         let ids: Vec<ProjectId> = self.boards.boards.keys().cloned().collect();
         let mut fx = Vec::new();
         for id in &ids {
             let of: Vec<&Seen> = tasks.iter().filter(|seen| seen.project == *id).collect();
-            let here: HashSet<&str> = of.iter().map(|seen| seen.id.as_str()).collect();
-            let starting = self.starting.get(id).cloned().unwrap_or_default();
+            // An entry whose task is not there stays, to read as a start that
+            // did not land, for a person to start again.
             fx.extend(self.edit(id, false, |board| {
                 let board = board?;
-                let board = match board.adopts() {
+                Some(match board.adopts() {
                     true => adopted(&board, &of, now),
                     false => board,
-                };
-                let lost: Vec<u64> = (board.work().iter())
-                    .filter(|e| {
-                        let named = e.task.as_deref().is_some_and(|t| here.contains(t));
-                        !named && !starting.contains(&e.issue)
-                    })
-                    .map(|e| e.issue)
-                    .collect();
-                Some(
-                    lost.into_iter()
-                        .fold(board, |board, issue| board.removed(issue)),
-                )
+                })
             }));
         }
         fx.push(self.say_held());
@@ -76,6 +63,7 @@ fn adopted(board: &crate::board::Board, tasks: &[&Seen], now: Now) -> crate::boa
         task: Some(seen.id.clone()),
         run,
         since: now.secs,
+        done: false,
     };
     let work = (on.iter())
         .filter(|seen| seen.standing == Some(false))

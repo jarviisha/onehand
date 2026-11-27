@@ -185,19 +185,6 @@ pub(crate) fn board_extends_waiting(
     })
 }
 
-/// The issues `project`'s board tasks hold, which its To do does not start.
-pub(crate) fn board_taken(
-    project: &onehand_core::project::ProjectId,
-    cx: &App,
-) -> std::collections::HashSet<u64> {
-    let Some(board) = crate::state::Shared::global(cx).boards.board(project) else {
-        return Default::default();
-    };
-    cx.try_global::<Tasks>().map_or_else(Default::default, |t| {
-        onehand_core::board::taken(board, t.tasks().iter(), project)
-    })
-}
-
 /// The limit of `template`'s step at `at`, for runs of the project at
 /// `root`, and how many hold room there and wait for it; none when the step
 /// is not limited.

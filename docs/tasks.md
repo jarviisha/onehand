@@ -165,6 +165,12 @@ and the rail count cannot drift apart.
 
 ### Retry and Resume
 
+**A next run** is a board's: a task whose issue enters another of its board's workflow columns
+gets a new run of that column's workflow (`TasksDrive::next_run`), on the same place as its last
+run, at the first step, carrying nothing, with the agent, mode, check command and timeout a new
+task takes now. It is driven off screen, and refused on a task at work, on one whose worktree was
+removed, and on work with another branch checked out, as a retry is.
+
 | | Resume | Retry |
 |---|---|---|
 | Run | the same one | a new one |

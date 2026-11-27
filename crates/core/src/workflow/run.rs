@@ -327,6 +327,10 @@ pub struct Run {
     /// The pull request its pull request step opened or took up.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pull_request: Option<PrOpened>,
+    /// The name of the board's column it started in, when a board started
+    /// it there.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub column: Option<String>,
     #[serde(skip)]
     awaiting: Await,
     /// An extend's prompt, held while the run waits for room at the step it
@@ -361,6 +365,7 @@ impl Run {
             outcome: None,
             failure: None,
             pull_request: None,
+            column: None,
             awaiting: Await::Nothing,
             extend_text: None,
         }

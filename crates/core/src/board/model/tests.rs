@@ -55,21 +55,30 @@ fn rebound_keeps_team_and_to_do() {
     assert_eq!(board.team, 3);
 }
 
+/// A board of an earlier version is read only in the shape it had then.
 #[test]
-fn shape_refuses_what_step_one_does_not_know() {
-    assert!(made().shape().is_ok());
-    let mut third = made();
+fn shape_refuses_what_an_earlier_version_did_not_know() {
+    let old = || {
+        let mut board = made();
+        board.schema_version = 2;
+        board
+    };
+    assert!(old().shape().is_ok());
+    let mut third = old();
     third.columns.push(third.columns[0].clone());
     assert!(third.shape().is_err());
-    let mut person = made();
+    let mut person = old();
     person.columns[1].work = Work::Person;
     assert!(person.shape().is_err());
-    let mut flow = made();
+    let mut flow = old();
     flow.columns[0].work = Work::Workflow { id: "w".into() };
     assert!(flow.shape().is_err());
-    let mut done = made();
+    let mut done = old();
     done.done.push(done.columns[0].entries[0].clone());
-    assert!(done.shape().is_err());
+    assert!(
+        done.shape().is_err(),
+        "an issue on the board twice, and done with no task"
+    );
     let mut newer = made();
     newer.schema_version = SCHEMA_VERSION + 1;
     assert!(newer.shape().is_err());
@@ -81,6 +90,7 @@ fn work(issue: u64, task: &str) -> Entry {
         task: Some(task.into()),
         run: Some(task.into()),
         since: 5,
+        done: false,
     }
 }
 
@@ -110,13 +120,15 @@ fn version_two_with_work_and_done_is_read() {
 }
 
 #[test]
-fn a_work_entry_without_a_task_is_refused() {
+fn a_work_entry_without_a_task_is_refused_at_version_two() {
     let mut board = made();
+    board.schema_version = 2;
     board.columns[1].entries.push(Entry {
         issue: 3,
         task: None,
         run: None,
         since: 0,
+        done: false,
     });
     assert!(board.shape().is_err());
 }
@@ -131,28 +143,6 @@ fn upgraded_moves_to_do_issues_that_tasks_hold_and_caps_done() {
     assert_eq!(board.done().len(), DONE_KEPT);
     assert_eq!(board.done()[0].issue, 100, "newest first, as handed");
     assert_eq!(board.schema_version, SCHEMA_VERSION);
-}
-
-#[test]
-fn started_moves_an_issue_from_to_do_to_work() {
-    let board = made().started(4, "t1", 50);
-    assert_eq!(board.todo(), [9]);
-    assert_eq!(
-        board.work(),
-        [work(4, "t1")].map(|e| Entry { since: 50, ..e })
-    );
-}
-
-#[test]
-fn finished_puts_the_newest_first() {
-    let board = made()
-        .upgraded(vec![work(4, "a"), work(5, "b")], vec![done(7, "c")])
-        .finished("b", 60);
-    assert_eq!(board.work().len(), 1);
-    let order: Vec<u64> = board.done().iter().map(|e| e.issue).collect();
-    assert_eq!(order, [5, 7]);
-    assert_eq!(board.done()[0].since, 60);
-    assert!(board.done()[0].run.is_none());
 }
 
 #[test]

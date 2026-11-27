@@ -32,6 +32,7 @@ pub(super) async fn start(
         grant: onehand_core::task::Grant::default(),
         agent: None,
         mode: None,
+        column: None,
     };
     match start_task(window, shell, starting, cx).await? {
         (id, Placed::Started) => Ok(format!("Task {id} started: {title}")),

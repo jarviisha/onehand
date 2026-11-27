@@ -89,7 +89,16 @@ pub(crate) fn carry(fx: Vec<Effect>, cx: &mut App) {
                 issue,
                 task,
                 template,
-            } => start(id, issue, task, template, cx),
+                column,
+            } => start(id, issue, task, template, column, cx),
+            Effect::NextRun {
+                id,
+                issue,
+                task,
+                run,
+                template,
+                column,
+            } => next_run(id, issue, task, run, template, column, cx),
             Effect::Held { tasks } => {
                 crate::task::with_drive(cx, |d| {
                     ((), {
@@ -199,22 +208,40 @@ fn read_issues(id: ProjectId, cx: &mut App) {
 
 /// What the tasks and the library say of `id`'s board, at `root`.
 fn facts(id: &ProjectId, root: Option<&Path>, cx: &App) -> Facts {
-    let template = (Shared::global(cx).boards.board(id))
-        .ok_or_else(|| "no board".to_string())
-        .and_then(|board| crate::control::template(board.workflow(), cx));
-    let first = match (root, &template) {
-        (Some(root), Ok(template)) => crate::task::room_at(root, template, 0, cx),
-        (None, _) | (_, Err(_)) => None,
-    };
+    let board = Shared::global(cx).boards.board(id);
+    let workflows: Vec<String> = (board.into_iter())
+        .flat_map(|board| board.columns.iter())
+        .filter_map(|column| match &column.work {
+            board::Work::Workflow { id } => Some(id.clone()),
+            board::Work::Person => None,
+        })
+        .collect();
+    let templates: std::collections::HashMap<String, Result<Template, String>> = (workflows.iter())
+        .map(|w| (w.clone(), crate::control::template(w, cx)))
+        .collect();
+    let first = (templates.iter())
+        .map(|(w, template)| {
+            let room = match (root, template) {
+                (Some(root), Ok(template)) => crate::task::room_at(root, template, 0, cx),
+                (None, _) | (_, Err(_)) => None,
+            };
+            (w.clone(), room)
+        })
+        .collect();
+    // A fresh id for each start a look may decide: as many as the team, and
+    // one for each issue waiting in a column that starts on entry.
+    let waiting = (board.into_iter())
+        .flat_map(|board| board.columns.iter())
+        .map(|column| column.entries.len())
+        .sum::<usize>();
     let window = root.is_some_and(|root| !crate::windows::holding_root(root, cx).is_empty());
     Facts {
-        template,
+        templates,
         running: crate::task::board_running(id, cx),
         extends_waiting: crate::task::board_extends_waiting(id, cx),
         first,
-        taken: crate::task::board_taken(id, cx),
         window,
-        ids: (0..board::model::MOST_TEAM)
+        ids: (0..usize::from(board::model::MOST_TEAM) + waiting)
             .map(|_| onehand_core::task::new_id())
             .collect(),
     }
@@ -222,7 +249,14 @@ fn facts(id: &ProjectId, root: Option<&Path>, cx: &App) -> Facts {
 
 /// Start task `task` of `template` on `issue` of `project` in a window
 /// holding the project, and report where it landed.
-fn start(project: ProjectId, issue: u64, task: String, template: Template, cx: &mut App) {
+fn start(
+    project: ProjectId,
+    issue: u64,
+    task: String,
+    template: Template,
+    column: String,
+    cx: &mut App,
+) {
     let Some((window, shell)) = holding(&project, cx) else {
         let landed = Input::Landed {
             id: project,
@@ -258,6 +292,7 @@ fn start(project: ProjectId, issue: u64, task: String, template: Template, cx: &
                 grant: Grant::default(),
                 agent: None,
                 mode: None,
+                column: Some(column),
             };
             let (_, placed) =
                 crate::control::start_task_as(id.clone(), window, shell, starting, cx).await?;
@@ -275,6 +310,82 @@ fn start(project: ProjectId, issue: u64, task: String, template: Template, cx: &
                 task: id,
                 kept,
                 result: started,
+            };
+            handle(landed, cx);
+        });
+    })
+    .detach();
+}
+
+/// Start run `run` of `template` on task `task`, which works `issue` of
+/// `project` and entered column `column`, and report where it landed: on
+/// the work as its last run left it, with what a new task of the board takes
+/// now. A refusal (another branch checked out, its worktree removed, the
+/// task at work or gone) made no run, and is said by its landing.
+#[allow(clippy::too_many_arguments)]
+fn next_run(
+    project: ProjectId,
+    issue: u64,
+    task: String,
+    run: String,
+    template: Template,
+    column: String,
+    cx: &mut App,
+) {
+    let refused = |why: String, cx: &mut App| {
+        let landed = Input::Landed {
+            id: project.clone(),
+            issue,
+            task: task.clone(),
+            kept: false,
+            result: Err(why),
+        };
+        handle(landed, cx);
+    };
+    let Some((window, shell)) = holding(&project, cx) else {
+        return refused("no window holds the project".to_string(), cx);
+    };
+    let Some(last) = crate::task::task(&task, cx).and_then(|t| t.runs().last().cloned()) else {
+        return refused("its task is gone".to_string(), cx);
+    };
+    let (dir, end) = (last.setup.dir.clone(), last.last_mark().map(str::to_string));
+    let check = shell.read(cx).check_of(&last.setup.repo);
+    cx.spawn(async move |cx| {
+        let against = match end {
+            Some(end) => cx
+                .background_executor()
+                .spawn(async move { onehand_core::task::marks::against_blocking(&dir, &end) })
+                .await
+                .ok(),
+            None => None,
+        };
+        cx.update(|cx| {
+            if let Some(why) = against.as_ref().and_then(|a| a.refuses_retry()) {
+                let landed = Input::Landed {
+                    id: project,
+                    issue,
+                    task,
+                    kept: false,
+                    result: Err(why),
+                };
+                return handle(landed, cx);
+            }
+            let current = crate::task::facts::now_for(check, cx);
+            let made = crate::task::with_drive(cx, |d| {
+                match d.next_run(&task, run, template, current, column, window) {
+                    Ok(fx) => (Ok(()), fx),
+                    Err(why) => (Err(why), Vec::new()),
+                }
+            })
+            .unwrap_or_else(|| Err("no tasks are kept yet".to_string()));
+            // A next run refused made no run, so nobody else says why.
+            let kept = made.is_ok();
+            let landed = Input::Landed {
+                id: project,
+                issue,
+                task,
+                kept,
+                result: made,
             };
             handle(landed, cx);
         });

@@ -41,6 +41,7 @@ fn starting(project: PathBuf, origin: Origin) -> Starting {
         grant: Grant::default(),
         agent: None,
         mode: None,
+        column: None,
     }
 }
 

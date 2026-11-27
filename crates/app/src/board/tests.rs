@@ -130,3 +130,72 @@ fn a_held_set_reaches_the_tasks(cx: &mut TestAppContext) {
     assert!(!refused(cx), "the boards hold nothing now");
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// A next run the board asks for lands on the same task, as its second run,
+/// started in the column it entered.
+#[gpui::test]
+fn a_next_run_lands_on_the_same_task(cx: &mut TestAppContext) {
+    use onehand_core::board::drive::Effect;
+    use onehand_core::project::Project;
+    let dir = folder("board-next-run");
+    let (handle, shell, cx) = shell(cx, dir.join("tasks"), Vec::new());
+    let root = dir.join("project");
+    std::fs::create_dir_all(&root).unwrap();
+    let root = std::fs::canonicalize(root).unwrap();
+    let project = Project::new(ProjectId::mint(65), None, root.clone());
+    let id = project.id.clone();
+    crate::shell::rig::keep_projects(handle, &shell, vec![project], cx);
+    let at = root.clone();
+    cx.update(|window, cx| shell.update(cx, |shell, cx| shell.open_root(at, window, cx)));
+    cx.run_until_parked();
+    let template = onehand_core::workflow::builtin::all()
+        .into_iter()
+        .find(|t| t.id == "builtin:branch")
+        .unwrap();
+    let brief = onehand_core::workflow::Brief {
+        title: "Issue".into(),
+        body: String::new(),
+        instructions: None,
+        closes: None,
+    };
+    let setup = onehand_core::workflow::Setup {
+        repo: root.clone(),
+        dir: root.clone(),
+        branch: None,
+        agent: None,
+        check: None,
+        mode: None,
+        forge: None,
+    };
+    let task = onehand_core::task::Task::new("t1".into(), template.clone(), brief, setup);
+    cx.update(|_, cx| {
+        crate::task::with_drive(cx, |d| ((), d.add(task)));
+    });
+    cx.update(|_, cx| {
+        let next = Effect::NextRun {
+            id: id.clone(),
+            issue: 4,
+            task: "t1".into(),
+            run: "r2".into(),
+            template,
+            column: "Ship".into(),
+        };
+        crate::board::carry(vec![next], cx);
+    });
+    until(cx, |cx| {
+        cx.update(|_, cx| crate::task::task("t1", cx).is_some_and(|t| t.runs().len() == 2))
+    });
+    let last = cx.update(|_, cx| {
+        crate::task::task("t1", cx)
+            .unwrap()
+            .runs()
+            .last()
+            .cloned()
+            .unwrap()
+    });
+    assert_eq!(
+        (last.id.as_str(), last.column.as_deref()),
+        ("r2", Some("Ship"))
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}

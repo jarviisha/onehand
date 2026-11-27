@@ -12,6 +12,8 @@ use std::path::PathBuf;
 
 pub mod drive;
 pub mod file;
+pub(crate) mod flow;
+pub mod line;
 pub mod model;
 
 pub use model::{Board, Entry, MovesOn, Starts, Work};
@@ -63,52 +65,6 @@ pub fn backlog<'a>(
         .filter(|issue| issues.workable(issue, forge))
         .filter(|issue| !todo.contains(&issue.number()) && !taken.contains(&issue.number()))
         .collect()
-}
-
-/// What a look at To do decides.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Pull {
-    /// Issues to start now, first first.
-    pub start: Vec<u64>,
-    /// Issues dropped from To do because they are closed or no longer there.
-    pub gone: Vec<u64>,
-}
-
-/// Which of `board`'s To do to start while `running` of its tasks work: as
-/// many as the team has room for, and none when the team is full or was
-/// lowered below what runs. When its workflow's first step is limited,
-/// `first` is that limit and how many tasks hold or wait for room there, and
-/// no more start than the step has room for. An issue closed or no longer in `issues` is
-/// dropped. One open but not workable now, as a forge's while the forge is
-/// not found, or one a task of the board still holds (`taken`), stays in
-/// To do for a later look.
-pub(crate) fn pull(
-    board: &Board,
-    running: usize,
-    first: Option<(u32, usize)>,
-    issues: &Issues,
-    forge: Option<&'static dyn Connector>,
-    taken: &HashSet<u64>,
-) -> Pull {
-    let team = usize::from(board.team).saturating_sub(running);
-    let room = first.map_or(team, |(limit, at)| {
-        team.min((limit as usize).saturating_sub(at))
-    });
-    let mut pull = Pull {
-        start: Vec::new(),
-        gone: Vec::new(),
-    };
-    for number in board.todo() {
-        let Some(issue) = issues.get(number).filter(|issue| issue.open()) else {
-            pull.gone.push(number);
-            continue;
-        };
-        let ready = issues.workable(issue, forge) && !taken.contains(&number);
-        if ready && pull.start.len() < room {
-            pull.start.push(number);
-        }
-    }
-    pull
 }
 
 /// Whether a board task's end closes its issue: it finished, and the issue

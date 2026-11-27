@@ -771,6 +771,7 @@ fn starting(place: crate::workflow::Place) -> crate::task::Starting {
         grant: Default::default(),
         agent: None,
         mode: None,
+        column: None,
     }
 }
 
@@ -1238,4 +1239,121 @@ fn loaded_caps_nothing_it_was_told_is_held() {
     let mut tasks = TasksDrive::<Win>::default();
     let _ = tasks.loaded(read, std::collections::HashSet::from(["0".to_string()]));
     assert!(tasks.task("0").is_some(), "held, so kept though oldest");
+}
+
+/// A task done in one column of its board, on its branch.
+fn worked(id: &str) -> Task {
+    let mut task = titled(id, "Issue", "/wt");
+    task.setup.repo = PathBuf::from("/repo");
+    task.runs[0].setup.repo = PathBuf::from("/repo");
+    task.runs[0].setup.branch = Some("workflow/issue".into());
+    task.runs[0].setup.forge = Some("GitHub".into());
+    task.runs[0].setup.agent = Some("old".into());
+    task.runs[0].outcome = Some(Outcome::Done);
+    task
+}
+
+fn current() -> crate::workflow::Current {
+    crate::workflow::Current {
+        agent: Some("new".into()),
+        mode: None,
+        check: Some("make check".into()),
+        timeout: None,
+    }
+}
+
+fn next_template() -> crate::workflow::Template {
+    crate::workflow::builtin::all()
+        .into_iter()
+        .find(|t| t.id == "builtin:branch")
+        .unwrap()
+}
+
+#[test]
+fn next_run_starts_at_the_first_step_carrying_nothing() {
+    let mut tasks = TasksDrive::default();
+    tasks.add(worked("1"));
+    let fx = tasks
+        .next_run(
+            "1",
+            "r2".into(),
+            next_template(),
+            current(),
+            "Ship".into(),
+            WINDOW,
+        )
+        .unwrap();
+    assert!(named(&fx, "Save"), "{fx:?}");
+    let task = tasks.task("1").unwrap();
+    let run = task.runs().last().unwrap();
+    assert_eq!((run.id.as_str(), run.step), ("r2", 0));
+    assert_eq!(run.column.as_deref(), Some("Ship"));
+    assert!(run.outcome.is_none());
+    assert_eq!(task.runs().len(), 2);
+}
+
+#[test]
+fn next_run_keeps_the_place_and_takes_current_settings() {
+    let mut tasks = TasksDrive::default();
+    tasks.add(worked("1"));
+    let _ = tasks.next_run(
+        "1",
+        "r2".into(),
+        next_template(),
+        current(),
+        "Ship".into(),
+        WINDOW,
+    );
+    let setup = &tasks.task("1").unwrap().runs().last().unwrap().setup;
+    assert_eq!(setup.dir, PathBuf::from("/wt"));
+    assert_eq!(setup.repo, PathBuf::from("/repo"));
+    assert_eq!(setup.branch.as_deref(), Some("workflow/issue"));
+    assert_eq!(setup.forge.as_deref(), Some("GitHub"));
+    assert_eq!(setup.agent.as_deref(), Some("new"));
+    assert_eq!(setup.check.as_deref(), Some("make check"));
+}
+
+#[test]
+fn next_run_is_refused_on_a_removed_worktree_and_at_work() {
+    let mut tasks = TasksDrive::default();
+    let mut gone = worked("1");
+    gone.worktree_removed = true;
+    tasks.add(gone);
+    assert!(tasks
+        .next_run(
+            "1",
+            "r2".into(),
+            next_template(),
+            current(),
+            "Ship".into(),
+            WINDOW
+        )
+        .is_err_and(|why| why.contains("worktree")));
+    tasks.add(worked("2"));
+    ask(&mut tasks, "2", "/wt2");
+    assert!(tasks
+        .next_run(
+            "2",
+            "r2".into(),
+            next_template(),
+            current(),
+            "Ship".into(),
+            WINDOW
+        )
+        .is_err());
+}
+
+#[test]
+fn next_run_is_driven_off_screen() {
+    let mut tasks = TasksDrive::default();
+    tasks.add(worked("1"));
+    let _ = tasks.next_run(
+        "1",
+        "r2".into(),
+        next_template(),
+        current(),
+        "Ship".into(),
+        WINDOW,
+    );
+    assert!(tasks.take_off_screen("1"));
 }

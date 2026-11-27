@@ -330,7 +330,8 @@ the run's history, capped at 200.
   read, the brief's title alone. A brief made from an issue kept in step with the forge names it
   (`Brief::closes`), and the body ends *Closes <reference>* unless it says so already. One closed
   without being merged is refused, never opened again beside. The run keeps the pull request it
-  opened or took up (`Run::pull_request`, its number and address), read back once it is open; one
+  opened or took up (`Run::pull_request`, its number and address), read back once it is open, and,
+  when a board started it, the name of the column it started in (`Run::column`); one
   not read back is still found by its branch. Either failing ends the run as
   failed, on the forge; a retry starts at that step again. *Status checks* is judged by `workflow::judge` from the
   forge's pull request, **on the commit that was pushed**: checks on any other head are waited
