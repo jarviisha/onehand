@@ -105,6 +105,7 @@ mod migrate {
                 assert_eq!(board.workflow(), "w");
                 assert_eq!(board.team, 3);
                 assert_eq!(board.todo(), [4]);
+                assert!(board.adopts(), "the board's tasks are taken up once read");
             }
             BoardLoad::Missing | BoardLoad::Unreadable(_) => panic!("no board file"),
         }

@@ -10,7 +10,14 @@
 use serde::{Deserialize, Serialize};
 
 /// The version of the board file this build writes and reads.
-pub const SCHEMA_VERSION: u32 = 1;
+pub const SCHEMA_VERSION: u32 = 2;
+
+/// The version a board was written at before its columns named their
+/// tasks: read, and upgraded once the tasks are read.
+const FIRST_VERSION: u32 = 1;
+
+/// How many done issues a board keeps.
+pub const DONE_KEPT: usize = crate::board::BOARD_SHOWN;
 
 /// The most tasks a board's team may run at once.
 pub const MOST_TEAM: u8 = 8;
@@ -190,7 +197,7 @@ impl Board {
     /// Whether this build can keep the board: its version, and the one shape
     /// it knows.
     pub(crate) fn shape(&self) -> Result<(), String> {
-        if self.schema_version != SCHEMA_VERSION {
+        if self.schema_version != SCHEMA_VERSION && self.schema_version != FIRST_VERSION {
             return Err(format!(
                 "it was written as version {}, and this build of onehand reads version \
                  {SCHEMA_VERSION}",
@@ -203,8 +210,8 @@ impl Board {
                     && todo.work == Work::Person
                     && work.id == WORK
                     && matches_workflow(&work.work)
-                    && work.entries.is_empty()
-                    && self.done.is_empty()
+                    && todo.entries.iter().all(|e| e.task.is_none() && e.run.is_none())
+                    && self.entries_known(work)
             }
             _ => false,
         };
@@ -212,6 +219,131 @@ impl Board {
             true => Ok(()),
             false => Err("its columns are of a shape this build of onehand does not know".into()),
         }
+    }
+}
+
+/// Where on a board an entry naming a task stands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Place {
+    Work,
+    Done,
+}
+
+impl Board {
+    /// Whether the work column's and Done's entries are as this version
+    /// keeps them: none before the tasks were named, and after, each naming
+    /// its task, the work column's its run too, and Done within its keep.
+    fn entries_known(&self, work: &Column) -> bool {
+        match self.schema_version {
+            FIRST_VERSION => work.entries.is_empty() && self.done.is_empty(),
+            _ => {
+                work.entries.iter().all(|e| e.task.is_some() && e.run.is_some())
+                    && self.done.iter().all(|e| e.task.is_some())
+                    && self.done.len() <= DONE_KEPT
+            }
+        }
+    }
+
+    /// The board as it stands before its tasks are taken up: what a board
+    /// moved out of its project is, its tasks there already.
+    pub(crate) fn unadopted(mut self) -> Board {
+        self.schema_version = FIRST_VERSION;
+        self
+    }
+
+    /// Whether the board was written before its columns named their tasks,
+    /// and takes them up once they are read.
+    pub(crate) fn adopts(&self) -> bool {
+        self.schema_version == FIRST_VERSION
+    }
+
+    /// The work column's entries, first first.
+    pub fn work(&self) -> &[Entry] {
+        self.columns.get(1).map_or(&[], |column| &column.entries)
+    }
+
+    /// What is done, newest first.
+    pub fn done(&self) -> &[Entry] {
+        &self.done
+    }
+
+    /// Where an entry naming `task` stands, if one does.
+    pub fn names(&self, task: &str) -> Option<Place> {
+        let named = |entries: &[Entry]| entries.iter().any(|e| e.task.as_deref() == Some(task));
+        match (named(self.work()), named(&self.done)) {
+            (true, _) => Some(Place::Work),
+            (false, true) => Some(Place::Done),
+            (false, false) => None,
+        }
+    }
+
+    /// The board at this version, its work column holding `work` and Done
+    /// `done` (newest first, kept to [`DONE_KEPT`]), none of their issues
+    /// left in To do.
+    pub(crate) fn upgraded(&self, work: Vec<Entry>, mut done: Vec<Entry>) -> Board {
+        let mut board = self.clone();
+        board.schema_version = SCHEMA_VERSION;
+        let named: Vec<u64> = work.iter().chain(&done).map(|e| e.issue).collect();
+        if let Some(todo) = board.columns.first_mut() {
+            todo.entries.retain(|e| !named.contains(&e.issue));
+        }
+        if let Some(column) = board.columns.get_mut(1) {
+            column.entries = work;
+        }
+        done.truncate(DONE_KEPT);
+        board.done = done;
+        board
+    }
+
+    /// The board with `issue` taken out of To do into the work column, as
+    /// task `task`'s first run, entered at `now`.
+    pub(crate) fn started(&self, issue: u64, task: &str, now: u64) -> Board {
+        let mut board = self.clone();
+        if let Some(todo) = board.columns.first_mut() {
+            todo.entries.retain(|e| e.issue != issue);
+        }
+        if let Some(column) = board.columns.get_mut(1) {
+            column.entries.push(Entry {
+                issue,
+                task: Some(task.to_string()),
+                run: Some(task.to_string()),
+                since: now,
+            });
+        }
+        board
+    }
+
+    /// The board with task `task`'s work entry moved to the front of Done,
+    /// entered at `now`.
+    pub(crate) fn finished(&self, task: &str, now: u64) -> Board {
+        let mut board = self.clone();
+        let Some(column) = board.columns.get_mut(1) else {
+            return board;
+        };
+        let Some(at) = (column.entries.iter()).position(|e| e.task.as_deref() == Some(task)) else {
+            return board;
+        };
+        let entry = column.entries.remove(at);
+        board.done.insert(
+            0,
+            Entry {
+                run: None,
+                since: now,
+                ..entry
+            },
+        );
+        board.done.truncate(DONE_KEPT);
+        board
+    }
+
+    /// The board with `issue` in no column and not in Done.
+    pub(crate) fn removed(&self, issue: u64) -> Board {
+        let mut board = self.clone();
+        for column in &mut board.columns {
+            column.entries.retain(|e| e.issue != issue);
+        }
+        board.done.retain(|e| e.issue != issue);
+        board
     }
 }
 
