@@ -379,6 +379,14 @@ fn the_composers_controls_stay_inside_their_boxes(_: &mut TestAppContext) {
         for part in ["page-start-in", "page-cards"] {
             assert_inside(bounds(cx, part), column, &format!("{part} at {zoom}%"));
         }
+        // With no branch field the strip keeps one line.
+        assert!(
+            same(
+                bounds(cx, "page-start-in").top(),
+                bounds(cx, "page-cards").top()
+            ),
+            "the strip breaks onto a second line at {zoom}%"
+        );
         // A new worktree's branch field beside them, or under them when the
         // strip is short of room: it keeps its width, or the column's
         // whole, and squeezes neither chip.

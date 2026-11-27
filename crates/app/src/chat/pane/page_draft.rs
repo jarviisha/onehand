@@ -496,10 +496,11 @@ impl ChatPane {
             .then(|| onehand_core::worktree::validate_branch(&branch).err())
             .flatten();
         // Short of room, the branch field goes onto a line of its own
-        // rather than squeeze the chips beside it to nothing.
+        // rather than squeeze the chips beside it to nothing; without it the
+        // strip keeps one line and its chips are cut.
         let strip = div()
             .h_flex()
-            .flex_wrap()
+            .when(start == StartIn::NewWorktree, |strip| strip.flex_wrap())
             .items_center()
             .gap_2()
             .w_full()
