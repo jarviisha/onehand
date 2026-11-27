@@ -682,8 +682,8 @@ menu, with a workflow, *Starts* (*When it enters*, *When Start is pressed*) with
 *Moves on* (*By itself*, *A person moves it*), *Limit*, empty for none; what refuses it above the
 footer in the danger ink; *Cancel*, then *Add* or *Save*. Then *Team*, a track of 1 to 8 with
 *Running tasks finish; no more start until fewer than N run.* under its title, and *Remove the
-board…* in the danger ink, which asks first. A board this build cannot read shows why and *Remove
-the board…* alone. With no such project it
+board…* in the danger ink, which asks first. A board this build cannot read shows why, alone: it is
+never written over, nor taken away. With no such project it
 says *No project here runs on this machine*. A project's dots menu, on the rail and over its page, offers *Project
 settings…* after *Copy project path* for such a project, opening this page on it. Under the
 Agents page's rows, each built-in agent installed on the

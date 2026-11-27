@@ -50,8 +50,15 @@ impl Shell {
                     }
                     E::Duplicated {
                         for_board,
+                        from,
                         template,
-                    } => shell.board_uses_copy(for_board.clone(), template.clone(), window, cx),
+                    } => shell.board_uses_copy(
+                        for_board.clone(),
+                        from.clone(),
+                        template.clone(),
+                        window,
+                        cx,
+                    ),
                 }
             },
         )

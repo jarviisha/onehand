@@ -291,18 +291,28 @@ impl BoardDrive {
         }))
     }
 
-    /// Bind `copy`, a copy of the workflow of project `id`'s board, as that
-    /// board, as [`Self::bind`] does; none when it has no board.
+    /// Bind `copy`, a copy of workflow `from` that project `id`'s board runs,
+    /// wherever the board runs it: refused, with why, when a board cannot
+    /// run it or cannot be read; none when the board runs no `from`.
     pub fn bind_copy(
         &mut self,
         id: &ProjectId,
+        from: &str,
         copy: &Template,
-        now: Now,
+        _now: Now,
     ) -> Option<Result<Vec<Effect>, String>> {
-        if self.boards.board(id).is_none() && self.boards.unreadable(id).is_none() {
+        if let Some(why) = self.boards.unreadable(id) {
+            return Some(Err(format!(
+                "Its board cannot be read, and is left as it is: {why}"
+            )));
+        }
+        if !self.boards.board(id)?.runs(from) {
             return None;
         }
-        Some(self.bind(id, Some(copy), now))
+        Some(super::usable(Some(copy)).map(|copy| {
+            let to = copy.id.clone();
+            self.edit(id, false, |board| board.map(|b| b.rebound_from(from, to)))
+        }))
     }
 
     /// Take project `id`'s board away: its file goes.

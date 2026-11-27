@@ -216,7 +216,7 @@ fn a_column_removed_while_its_form_is_open_refuses_the_save(cx: &mut TestAppCont
     });
     cx.run_until_parked();
     save(&shell, "Review", "", cx);
-    assert!(said(&shell, cx).is_some_and(|why| why.contains("No column")));
+    assert!(said(&shell, cx).is_some_and(|why| why.contains("is gone")));
     assert!(board_of(&id, cx).column("review").is_none());
 }
 
@@ -286,7 +286,7 @@ fn a_board_box_lists_its_columns_and_offers_add(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn an_unreadable_board_shows_only_its_reason_and_remove(cx: &mut TestAppContext) {
+fn an_unreadable_board_shows_only_its_reason(cx: &mut TestAppContext) {
     let (shell, root, id, cx) = rig("col-unread", 110, Board::made(BRANCH.into(), 2, &[], 0), cx);
     let dir = root.parent().unwrap().join("projects");
     cx.update(|_, cx| {
@@ -297,7 +297,10 @@ fn an_unreadable_board_shows_only_its_reason_and_remove(cx: &mut TestAppContext)
     });
     settings(&shell, &root, cx);
     assert!(cx.debug_bounds("board-unreadable").is_some());
-    assert!(cx.debug_bounds("board-remove").is_some());
+    assert!(
+        cx.debug_bounds("board-remove").is_none(),
+        "never taken away while unread"
+    );
     assert!(cx.debug_bounds("board-add-column").is_none());
 }
 

@@ -57,6 +57,8 @@ pub(crate) enum WorkflowsPageEvent {
     /// again only after.
     Duplicated {
         for_board: onehand_core::project::ProjectId,
+        /// The id of the workflow it is a copy of, which the board runs.
+        from: String,
         template: onehand_core::workflow::Template,
     },
 }
@@ -70,7 +72,8 @@ pub(crate) struct WorkflowsPage {
     picked: Option<pick::Pick>,
     /// The board the workflow open was opened from, while it stays open: a
     /// copy of it saved takes its place on that board alone.
-    for_board: Option<onehand_core::project::ProjectId>,
+    /// The board it was opened from, and the workflow of it opened.
+    for_board: Option<(onehand_core::project::ProjectId, String)>,
     /// The window's projects a run may start on, in rail order, and the one
     /// selected in the rail, which *Run…* offers first.
     projects: Vec<(PathBuf, SharedString)>,

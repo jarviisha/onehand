@@ -8,7 +8,7 @@ use crate::settings::{list_row, list_rows, more_not_shown};
 use crate::shell::Shell;
 use gpui::{
     AnyElement, App, Entity, InteractiveElement as _, IntoElement, ParentElement, SharedString,
-    Styled, Window, div,
+    Styled, div,
 };
 use gpui_component::StyledExt;
 use gpui_component::button::ButtonVariants as _;
@@ -20,8 +20,6 @@ use onehand_ui::{ControlSize, Tall as _};
 use onehand_ui::{Refuses as _, Short as _, ShortIcon as _};
 use std::path::Path;
 
-const NO_BOARD: &str = "No board";
-
 pub(super) fn board_section(handle: &Entity<Shell>, root: &Path, cx: &App) -> AnyElement {
     let shell = handle.read(cx);
     let project = crate::projects::of(root, cx);
@@ -32,88 +30,6 @@ pub(super) fn board_section(handle: &Entity<Shell>, root: &Path, cx: &App) -> An
             .cloned()
     });
     let templates = crate::workflow::templates(cx);
-    let name_of = |id: &str| {
-        crate::workflow::find(&templates, id)
-            .map_or_else(|| format!("{id} (gone)"), |t| t.name.clone())
-    };
-    let label = bound
-        .as_ref()
-        .map_or_else(|| NO_BOARD.to_string(), |board| name_of(board.workflow()));
-    let offered: Vec<(String, String, bool)> = templates
-        .iter()
-        .filter_map(|entry| entry.template.as_ref().ok())
-        .map(|t| {
-            let on = bound.as_ref().is_some_and(|b| b.workflow() == t.id);
-            (t.id.clone(), t.name.clone(), on)
-        })
-        .collect();
-    let more = offered
-        .len()
-        .saturating_sub(crate::workflow::TEMPLATES_SHOWN);
-    let none_on = bound.is_none();
-    let picker = {
-        let (handle, root) = (handle.clone(), root.to_path_buf());
-        crate::controls::menu_below(
-            "board-workflow",
-            onehand_ui::picker(
-                "board-workflow-trigger",
-                label,
-                bound.is_some(),
-                ControlSize::Tall,
-                cx,
-            ),
-            move |mut menu, _, _| {
-                let pick = {
-                    let (handle, root) = (handle.clone(), root.clone());
-                    move |workflow: Option<String>| {
-                        let (handle, root) = (handle.clone(), root.clone());
-                        move |_: &_, window: &mut Window, cx: &mut App| {
-                            handle.update(cx, |shell, cx| {
-                                shell.bind_board(root.clone(), workflow.clone(), window, cx);
-                            });
-                        }
-                    }
-                };
-                menu = menu.item(
-                    crate::controls::menu_item(NO_BOARD)
-                        .checked(none_on)
-                        .on_click(pick(None)),
-                );
-                for (id, name, on) in offered.iter().take(crate::workflow::TEMPLATES_SHOWN) {
-                    menu = menu.item(
-                        crate::controls::menu_item(name.clone())
-                            .checked(*on)
-                            .on_click(pick(Some(id.clone()))),
-                    );
-                }
-                if more > 0 {
-                    menu = menu.label(SharedString::from(format!("{more} more not shown")));
-                }
-                menu
-            },
-        )
-    };
-    // A workflow that is gone has nothing to open.
-    let edit = bound
-        .as_ref()
-        .filter(|board| crate::workflow::find(&templates, board.workflow()).is_some())
-        .zip(project.as_ref())
-        .map(|(board, project)| {
-            let (handle, workflow, id) = (
-                handle.clone(),
-                board.workflow().to_string(),
-                project.id.clone(),
-            );
-            crate::controls::action("board-edit-workflow")
-                .tall()
-                .secondary()
-                .label("Edit workflow")
-                .on_click(move |_, window, cx| {
-                    handle.update(cx, |shell, cx| {
-                        shell.show_workflow(&workflow, None, Some(id.clone()), window, cx)
-                    });
-                })
-        });
     // A board this build cannot read is left as it is; why stands under the
     // menu until a bind is refused for a reason of its own.
     let unreadable = (project.as_ref())
@@ -147,7 +63,8 @@ pub(super) fn board_section(handle: &Entity<Shell>, root: &Path, cx: &App) -> An
             .debug_selector(|| "board-remove".into())
     };
     let section = section(Some("Board"), None, cx);
-    // A board this build cannot read: why, and the way to take it away.
+    // A board this build cannot read is never written, nor taken away:
+    // why, alone.
     if bound.is_none() && unreadable_board(project.as_ref(), cx) {
         return section
             .child(
@@ -157,7 +74,6 @@ pub(super) fn board_section(handle: &Entity<Shell>, root: &Path, cx: &App) -> An
                     .children(refusal)
                     .debug_selector(|| "board-unreadable".into()),
             )
-            .child(remove())
             .into_any_element();
     }
     let Some(board) = bound else {
@@ -168,20 +84,65 @@ pub(super) fn board_section(handle: &Entity<Shell>, root: &Path, cx: &App) -> An
                 .v_flex()
                 .gap_2()
                 .items_start()
-                .child(div().h_flex().gap_2().child(picker).children(edit))
+                .child(workflow_menu(handle, root, &templates, cx))
                 .children(refusal),
             cx,
         )
         .debug_selector(|| "board-workflow-field".into());
         return section.child(workflow).into_any_element();
     };
-    let _ = edit;
     let team = team_field(handle, root, board.team, cx);
     section
         .child(columns_field(handle, root, &board, &templates, refusal, cx))
         .child(team)
         .child(remove())
         .into_any_element()
+}
+
+/// The library's workflows, picking one making the project at `root` a board
+/// that runs it.
+fn workflow_menu(
+    handle: &Entity<Shell>,
+    root: &Path,
+    templates: &[crate::workflow::Entry],
+    cx: &App,
+) -> AnyElement {
+    let offered: Vec<(String, String)> = templates
+        .iter()
+        .filter_map(|entry| entry.template.as_ref().ok())
+        .map(|t| (t.id.clone(), t.name.clone()))
+        .collect();
+    let more = offered
+        .len()
+        .saturating_sub(crate::workflow::TEMPLATES_SHOWN);
+    let (handle, root) = (handle.clone(), root.to_path_buf());
+    crate::controls::menu_below(
+        "board-workflow",
+        onehand_ui::picker(
+            "board-workflow-trigger",
+            "No board",
+            false,
+            ControlSize::Tall,
+            cx,
+        ),
+        move |mut menu, _, _| {
+            for (id, name) in offered.iter().take(crate::workflow::TEMPLATES_SHOWN) {
+                let (handle, root, id) = (handle.clone(), root.clone(), id.clone());
+                menu = menu.item(crate::controls::menu_item(name.clone()).on_click(
+                    move |_, window, cx| {
+                        handle.update(cx, |shell, cx| {
+                            shell.bind_board(root.clone(), Some(id.clone()), window, cx);
+                        });
+                    },
+                ));
+            }
+            if more > 0 {
+                menu = menu.label(SharedString::from(format!("{more} more not shown")));
+            }
+            menu
+        },
+    )
+    .into_any_element()
 }
 
 /// How many columns the Board box lists before it says how many it left out.

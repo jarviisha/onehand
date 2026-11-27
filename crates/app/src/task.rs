@@ -135,7 +135,6 @@ impl Tasks {
     }
 }
 
-/// Give the tasks' drive `command`, and carry out what it says.
 /// Keep `task` holding its place, as one at work does, from `window`: what
 /// its start would ask is left undone. For a test that needs a task at work.
 #[cfg(test)]
@@ -156,6 +155,7 @@ pub(crate) fn hold_place(task: Task, window: AnyWindowHandle, cx: &mut App) {
     });
 }
 
+/// Give the tasks' drive `command`, and carry out what it says.
 pub(crate) fn with_drive<R>(
     cx: &mut App,
     command: impl FnOnce(&mut TasksDrive<AnyWindowHandle>) -> (R, Vec<Effect<AnyWindowHandle>>),

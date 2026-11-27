@@ -58,6 +58,31 @@ impl Board {
         }
     }
 
+    /// Whether a column of the board runs the workflow with id `workflow`.
+    pub fn runs(&self, workflow: &str) -> bool {
+        (self.columns.iter()).any(|c| {
+            c.work
+                == super::Work::Workflow {
+                    id: workflow.to_string(),
+                }
+        })
+    }
+
+    /// The board with every column running `from` running `workflow`
+    /// instead: a copy of it bound where it ran.
+    pub(crate) fn rebound_from(&self, from: &str, workflow: String) -> Board {
+        let mut board = self.clone();
+        let old = super::Work::Workflow {
+            id: from.to_string(),
+        };
+        for column in board.columns.iter_mut().filter(|c| c.work == old) {
+            column.work = super::Work::Workflow {
+                id: workflow.clone(),
+            };
+        }
+        board
+    }
+
     /// The column with id `id`.
     pub fn column(&self, id: &str) -> Option<&Column> {
         self.columns.iter().find(|column| column.id == id)

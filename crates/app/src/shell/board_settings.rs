@@ -64,11 +64,12 @@ impl Shell {
         self.bound(root, id, bound, cx);
     }
 
-    /// Bind `template`, a copy of the workflow of the board of `project`
-    /// just saved, as that board, and say so.
+    /// Bind `template`, a copy of workflow `from` the board of `project`
+    /// runs, just saved, where the board runs `from`, and say so.
     pub(super) fn board_uses_copy(
         &mut self,
         project: ProjectId,
+        from: String,
         template: onehand_core::workflow::Template,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -85,7 +86,7 @@ impl Shell {
         let Some(bound) = cx.update_global::<crate::state::Shared, _>(|shared, _| {
             shared
                 .boards
-                .bind_copy(&project, &template, onehand_core::Now::read())
+                .bind_copy(&project, &from, &template, onehand_core::Now::read())
         }) else {
             return;
         };
