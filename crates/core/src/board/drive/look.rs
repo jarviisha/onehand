@@ -3,6 +3,7 @@
 //! that ended done closed.
 
 use super::{BoardDrive, Effect, Signal};
+use crate::board::model::Place;
 use crate::board::{extends_given, pull, pulls_next, usable};
 use crate::connector::Connector;
 use crate::issues::Issues;
@@ -106,20 +107,39 @@ impl BoardDrive {
             forge,
             &facts.taken,
         );
-        let out: Vec<u64> = decided.gone.iter().chain(&decided.start).copied().collect();
-        fx.extend(self.edit_todo(id, now, |todo| todo.retain(|n| !out.contains(n))));
-        let mut ids = facts.ids.into_iter();
-        for issue in decided.start {
-            let Some(task) = ids.next() else {
-                break;
-            };
+        // Each start paired with its task's id first, so an issue leaves To
+        // do only with a start to stand for it.
+        let starts: Vec<(u64, String)> = decided.start.iter().copied().zip(facts.ids).collect();
+        let gone = decided.gone;
+        fx.extend(self.edit(id, false, |board| {
+            let board = board?;
+            let mut todo = board.todo();
+            todo.retain(|n| !gone.contains(n));
+            let board = board.with_todo(&todo, now.secs);
+            let started = (starts.iter())
+                .fold(board, |board, (issue, task)| board.started(*issue, task, now.secs));
+            Some(started)
+        }));
+        // Asked only once the write that names them lands.
+        let seq = self.newest.get(id).copied().unwrap_or(0);
+        let named = !starts.is_empty();
+        for (issue, task) in starts {
             self.starting.entry(id.clone()).or_default().insert(issue);
-            fx.push(Effect::Start {
+            let start = Effect::Start {
                 id: id.clone(),
                 issue,
                 task,
                 template: template.clone(),
+            };
+            self.held.push(super::Held {
+                id: id.clone(),
+                seq,
+                issue,
+                start,
             });
+        }
+        if named {
+            fx.push(self.held());
         }
         fx
     }
@@ -154,29 +174,39 @@ impl BoardDrive {
         }
     }
 
-    /// What [`super::Input::Ended`] brought: a done task's issue is closed once its
-    /// tracker is read, whether or not the project still has a board, and an
-    /// end that left the board lets it look again.
+    /// What [`super::Input::Ended`] brought: an end is the board's when its
+    /// work column names the task. A done one moves to Done, its issue closed
+    /// once its tracker is read; any other stays where it is; and an end that
+    /// left room on the team lets the board look again. The end of a task no
+    /// entry names, one a person took up off the board, is theirs.
     pub(super) fn ended(
         &mut self,
         id: &ProjectId,
         issue: u64,
+        task: &str,
         outcome: Option<&Outcome>,
+        now: Now,
     ) -> Vec<Effect> {
+        let ours = (self.boards.board(id)).is_some_and(|b| b.names(task) == Some(Place::Work));
+        if !ours {
+            return Vec::new();
+        }
         let done = match outcome {
             Some(Outcome::Done) => true,
             Some(Outcome::Stopped(_) | Outcome::Exhausted { .. } | Outcome::Failed(_)) | None => {
                 false
             }
         };
+        let mut fx = Vec::new();
         if done {
+            fx.extend(self.edit(id, false, |board| board.map(|b| b.finished(task, now.secs))));
+            fx.push(self.held());
             self.closing.entry(id.clone()).or_default().insert(issue);
         }
-        let look = pulls_next(outcome) && self.boards.board(id).is_some();
-        match done || look {
-            true => vec![Effect::ReadIssues { id: id.clone() }],
-            false => Vec::new(),
+        if done || pulls_next(outcome) {
+            fx.push(Effect::ReadIssues { id: id.clone() });
         }
+        fx
     }
 }
 

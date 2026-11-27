@@ -29,6 +29,7 @@ fn drive_with_todo(todo: &[u64]) -> BoardDrive {
         Input::Written {
             id: id(),
             pending: w.pending,
+            seq: w.seq,
             result: Ok(()),
         },
         now(),
@@ -209,6 +210,7 @@ fn a_failed_write_puts_the_board_back() {
         Input::Written {
             id: id(),
             pending: w.pending,
+            seq: w.seq,
             result: Err("disk full".into()),
         },
         now(),
