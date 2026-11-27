@@ -49,6 +49,11 @@ pub(crate) use onehand_ui::meta_ink;
 /// field, a row, a tab) and `radius_lg`, 6, a container's (a card, a box, a
 /// region, a dialog), a step rounder so what holds controls never looks
 /// sharper than they are. The library's configs leave both unset at 6 and 8.
+/// The library's dialogs, toasts and command palette read `radius_lg`; its
+/// tooltips, popup menus, select and completion lists and popovers read
+/// `radius`, and a popover the app builds with its own appearance sets
+/// `radius_lg` on it. What the library draws at half its corner (checkboxes,
+/// `Kbd`, a small menu row, its tabs) comes out at 2 and is left to it.
 ///
 /// Runs at boot, before a mode is chosen, because choosing one applies whichever
 /// of these two configs the mode names.

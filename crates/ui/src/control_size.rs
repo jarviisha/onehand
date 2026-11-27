@@ -1,4 +1,33 @@
 //! The sizes a control takes, each the role it serves.
+//!
+//! What each size measures, as the pinned `gpui-component` draws it (its
+//! `sizing.rs`, `button/button.rs`, `icon.rs`, `tag.rs`, `checkbox.rs`,
+//! `switch.rs`, `kbd.rs`), in pixels at the 16px base. **px** marks a size the
+//! library holds in pixels, which per-panel zoom does not scale; everything
+//! else is in rems. Moving the library's version means checking these figures.
+//!
+//! | Size | Button: height / words / icon / icon–label gap / inset | Input: height / words / inset | Icon alone |
+//! |---|---|---|---|
+//! | `.xsmall()`: an icon-only button inside a small object only | 20 / 12 / 12 / 4 / 4 | 20 / 12 / 4 **px** | 12 |
+//! | `.short()`: a button the library's extra small, a field its small | 24 / 12 / 12 / 4 / 8 | 24 / 13 / 8 **px** | 14 |
+//! | `.short_icon()`: an icon-only button beside `.short()`, the library's small held square | 24 / – / 14 / – / 0 | – | 14 |
+//! | `.tall()`: the library's small, held taller | 28 / 13 / 14 / 4 / 12 | 28 / 13 / 8 **px** | 16 |
+//!
+//! Their words, icons and insets are the library's. A field of several lines
+//! is the library's `Textarea`, which takes no size: its text sits at the
+//! default's inset, 10 **px**, which no wrapper reaches, so it starts 2px
+//! inside a `.short()` field's above it.
+//!
+//! Components that keep geometry of their own, centred in their row rather
+//! than sized to it:
+//!
+//! | Component | Geometry |
+//! |---|---|
+//! | `Tag` through `badge` | words 11 at 1.25 and medium weight, inset 6 × 0; its height follows its line |
+//! | `Checkbox` | box 12 / 14 / 16 at `.xsmall()` / `.small()` / default; its label 12 / 14 / 16 |
+//! | `Switch` | track 28 × 16 **px** at `.xsmall()` and `.small()`, 36 × 20 **px** at the default; thumb 12 / 16 **px** |
+//! | `Kbd` | words 12, inset 4 × 2 |
+//! | The library's table rows | 26 / 30 / 32 **px** at `.xsmall()` / `.small()` / default; the app draws its own rows at [`tokens::ROW_H`] |
 
 use crate::tokens;
 use gpui::Styled as _;

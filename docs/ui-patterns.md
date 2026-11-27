@@ -124,7 +124,7 @@ The neutral inks of T-04, on a neutral surface:
 
 #### C-16 Each role takes its component and its size
 
-`.claude/skills/ui/tokens.md` holds what each size measures in each component.
+`crates/ui/src/control_size.rs` says what each size measures in each component.
 
 | Role | Component | Size |
 |---|---|---|

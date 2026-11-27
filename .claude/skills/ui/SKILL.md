@@ -12,15 +12,15 @@ reads*); this skill is how to apply them. Read the rules the change touches, not
 |---|---|
 | What a region holds, or its order | [screens.md](../../../docs/screens.md), or the feature's own document (`docs/tasks.md`, `docs/workflows.md`) |
 | A principle, the window's frame, the transcript | [DESIGN.md](../../../DESIGN.md) *Principles*, *Layout*, *Transcript* |
-| A colour, an ink, type, space, a corner, a line | DESIGN.md `T-01` to `T-27`; the token in [tokens.md](tokens.md) |
+| A colour, an ink, type, space, a corner, a line | DESIGN.md `T-01` to `T-27`; the token in the code: `crates/ui/src/tokens.rs` (shared sizes), `crates/ui/src/ink.rs` and `crates/app/src/theme.rs` (inks, fills, the palette), each with what it is for beside it |
 | A control, its variant, its size, an icon | DESIGN.md `C-01` to `C-15`; [UI patterns](../../../docs/ui-patterns.md) *Control sizes*, `C-16` to `C-21`; the builder in [catalog.md](catalog.md) |
 | A page, a panel, a list, a form, a dialog | UI patterns `K-01` to `K-08`, then its pattern's rules among `K-09` to `K-32`; the screen to build from in catalog.md *Patterns* |
 | Anything that lays parts out in a row, a bar or a list | UI patterns *Strips*, `K-09`, and *Under strain*, `L-01` to `L-13` |
 | Waiting, empty, failing, refusing, a toast, a removal | UI patterns `S-01` to `S-13` |
 | A key, focus, a word | UI patterns `W-01` to `W-10`; the wiring in catalog.md *Keys and focus* |
 
-tokens.md and catalog.md describe the code as it stands: a lookup, not permission to copy a
-caller that departs from the contract. Visual cleanup does not authorize removing actions or
+catalog.md describes the code as it stands: a lookup, not permission to copy a caller that
+departs from the contract. Visual cleanup does not authorize removing actions or
 changing navigation.
 
 ## Building
@@ -57,10 +57,12 @@ not read.
    Fix a size a component gets wrong in its shared wrapper, never at the call site.
 6. **Take each token by its role**: an ink by its role and the surface under it, a gap by the
    relationship, a column page's width from `PAGE_*`, a strip's height from `BAR_H`, a row's
-   from `ROW_H`. Add a token only for a missing role (tokens.md, *Adding a token*); when a shared
-   default changes, review its other callers too. A new size is a named constant, and the size
-   census fails until its list holds it: bring `crates/app/src/guards/sizes.txt` up to date from
-   the test's own lines and say the size in the pull request. A shared size or a palette value
+   from `ROW_H`. Add a token only for a missing role (`T-10`, `T-17`), and a new step in a
+   scale (a type size, a corner, a spacing step, an elevation) only where the owner authorised
+   a change to the system; when a shared default changes, review its other callers too. A new
+   size is a named constant, and the size census fails until its list holds it: bring
+   `crates/app/src/guards/sizes.txt` up to date from the test's own lines and say the size in
+   the pull request. A shared size or a palette value
    changes only when the owner asked.
 7. **Wire keys, words and saves**: each key a keymap command (catalog.md, *Keys and focus*),
    each word as UI patterns *Words* has it, and a change the person can take back saved as
@@ -182,14 +184,14 @@ Take the path the diff needs; neither path's evidence proves the other complete.
 **Contract and skill changes only.**
 
 1. Keep each rule with its owner: DESIGN.md the visual rules and the frame, screens.md what each
-   region holds, UI patterns layouts and behaviour, tokens.md and catalog.md what is built; this
+   region holds, UI patterns layouts and behaviour, catalog.md what is built; this
    skill applies them and is never a second system. No rule rests on another product; the palette
    is onehand's own, written once in `crate::theme`.
 2. A rule added or changed keeps the form (`DESIGN.md`, *How a rule reads*): a new id in its
    family, never a reused one; a *When* that names a situation, not a screen; one *Unless*; and
    a *Checked by* naming a checker that exists, a test only for the part it holds. What only
    one screen can meet goes to `docs/screens.md`.
-3. Follow the changed rule through this skill, tokens.md, catalog.md and `AGENTS.md`, resolving
+3. Follow the changed rule through this skill, catalog.md and `AGENTS.md`, resolving
    contradictions and broken links; preserve feature behaviour unless the user asked otherwise,
    and keep target rules apart from claims about the code. Walk realistic cases through the text
    (a new settings section, a row with secondary text, a hovered selected item, a narrow dock, a
@@ -212,7 +214,7 @@ Take the path the diff needs; neither path's evidence proves the other complete.
 3. **Carry the documents** in the same change: what a screen holds or its order to
    `docs/screens.md` (or the feature's own document); a principle, the frame or the transcript
    to `DESIGN.md`, which gets at most one line per new region; a rule to `DESIGN.md` or
-   `docs/ui-patterns.md`, in the form above; a token or a builder to tokens.md or catalog.md. A
+   `docs/ui-patterns.md`, in the form above; a builder to catalog.md, a token's purpose to the comment beside it. A
    departure the change leaves standing is recorded in `docs/known-gaps.md` with its reason.
 4. **Compare peers and report**: the rules the change touches, by id; the same-role component
    compared; the shared builder or tokens checked; a changed shared default's callers inspected;
