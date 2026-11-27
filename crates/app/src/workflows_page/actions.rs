@@ -192,7 +192,7 @@ impl WorkflowsPage {
         &mut self,
         template: Template,
         file: Option<PathBuf>,
-        for_board: Option<onehand_core::project::ProjectId>,
+        for_board: Option<(onehand_core::project::ProjectId, String)>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -364,9 +364,10 @@ impl WorkflowsPage {
                             // Any save of the form ends what it was opened
                             // from the board for.
                             page.for_board = None;
-                            if let Some(for_board) = for_board {
+                            if let Some((for_board, from)) = for_board {
                                 cx.emit(super::WorkflowsPageEvent::Duplicated {
                                     for_board,
+                                    from,
                                     template: written,
                                 });
                             }

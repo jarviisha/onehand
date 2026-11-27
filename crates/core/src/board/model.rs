@@ -168,10 +168,12 @@ impl Board {
             .collect()
     }
 
-    /// The board running `workflow` instead, all else kept.
+    /// The board with its first workflow column running `workflow` instead,
+    /// all else kept.
     pub(crate) fn rebound(&self, workflow: String) -> Board {
         let mut board = self.clone();
-        if let Some(column) = board.columns.get_mut(1) {
+        let first = (board.columns.iter_mut()).find(|column| matches_workflow(&column.work));
+        if let Some(column) = first {
             column.work = Work::Workflow { id: workflow };
         }
         board

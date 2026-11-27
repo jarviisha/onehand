@@ -64,11 +64,12 @@ impl Shell {
         self.bound(root, id, bound, cx);
     }
 
-    /// Bind `template`, a copy of the workflow of the board of `project`
-    /// just saved, as that board, and say so.
+    /// Bind `template`, a copy of workflow `from` the board of `project`
+    /// runs, just saved, where the board runs `from`, and say so.
     pub(super) fn board_uses_copy(
         &mut self,
         project: ProjectId,
+        from: String,
         template: onehand_core::workflow::Template,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -85,7 +86,7 @@ impl Shell {
         let Some(bound) = cx.update_global::<crate::state::Shared, _>(|shared, _| {
             shared
                 .boards
-                .bind_copy(&project, &template, onehand_core::Now::read())
+                .bind_copy(&project, &from, &template, onehand_core::Now::read())
         }) else {
             return;
         };
@@ -95,6 +96,35 @@ impl Shell {
         };
         self.bound(root, project, bound, cx);
         gpui_component::WindowExt::push_notification(window, said, cx);
+    }
+
+    /// *Remove the board…*: ask first, then take the board of the project at
+    /// `root` away.
+    pub(crate) fn remove_board(
+        &mut self,
+        root: PathBuf,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.board_refused = None;
+        let Some(id) = self.project_of_row(&root) else {
+            return;
+        };
+        let name = (crate::state::Shared::global(cx).projects.get(&id))
+            .map(|p| p.name.clone())
+            .unwrap_or_default();
+        let ask = Confirm {
+            id: "remove-board",
+            title: format!("Remove the board from {}?", name).into(),
+            description: "Its columns and its To do go; the issues stay open, in no list. Tasks \
+                          already started run on, as yours."
+                .into(),
+            act: "Remove",
+            ..Default::default()
+        };
+        self.confirm(ask, window, cx, move |shell, window, cx| {
+            shell.unbind_board(root.clone(), window, cx)
+        });
     }
 
     fn unbind_board(&mut self, root: PathBuf, _: &mut Window, cx: &mut Context<Self>) {

@@ -135,6 +135,26 @@ impl Tasks {
     }
 }
 
+/// Keep `task` holding its place, as one at work does, from `window`: what
+/// its start would ask is left undone. For a test that needs a task at work.
+#[cfg(test)]
+pub(crate) fn hold_place(task: Task, window: AnyWindowHandle, cx: &mut App) {
+    let id = task.id().to_string();
+    let place = task.setup().dir.clone();
+    cx.update_global::<Tasks, _>(|t, _| {
+        let _ = t.drive.add(task);
+        let _ = t.drive.request(&id, window);
+        let _ = t
+            .drive
+            .handle(onehand_core::task::tasks::Input::PlaceFound {
+                task: id.clone(),
+                place,
+                window,
+                window_open: true,
+            });
+    });
+}
+
 /// Give the tasks' drive `command`, and carry out what it says.
 pub(crate) fn with_drive<R>(
     cx: &mut App,

@@ -240,7 +240,9 @@ fn a_copy_the_board_cannot_use_is_said_and_one_for_a_gone_board_binds_none(
     let bind = |id: &ProjectId, cx: &mut VisualTestContext| {
         let (id, copy) = (id.clone(), copy.clone());
         cx.update(|window, cx| {
-            shell.update(cx, |shell, cx| shell.board_uses_copy(id, copy, window, cx))
+            shell.update(cx, |shell, cx| {
+                shell.board_uses_copy(id, BRANCH.to_string(), copy, window, cx)
+            })
         });
         cx.run_until_parked();
     };

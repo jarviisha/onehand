@@ -163,3 +163,43 @@ fn holds_names_any_column() {
     assert!(board.holds("t"));
     assert_eq!(board.at(6).map(|(at, _)| at), Some(2));
 }
+
+#[test]
+fn a_name_used_twice_is_refused() {
+    let mut board = four();
+    board.columns[3].name = " Review ".into();
+    assert!(board
+        .shape()
+        .is_err_and(|why| why.contains("Two columns are called")));
+}
+
+/// A copy bound to a board takes the place of the workflow its first
+/// workflow column runs, never a person's column's.
+#[test]
+fn rebound_changes_the_first_workflow_column_only() {
+    let mut board = four();
+    board.columns.swap(1, 2);
+    let board = board.rebound("copy".into());
+    assert_eq!(
+        board.columns[1].work,
+        Work::Person,
+        "a person's column stays one"
+    );
+    assert_eq!(board.columns[2].work, flow("copy"));
+    assert_eq!(board.columns[3].work, flow("b"));
+}
+
+/// A copy of one workflow, bound from a column running it, takes the place
+/// of that workflow wherever the board runs it, and nowhere else.
+#[test]
+fn a_copy_takes_the_place_of_the_workflow_it_copies() {
+    let board = four().rebound_from("b", "copy".into());
+    assert_eq!(
+        board.columns[1].work,
+        flow("a"),
+        "another workflow's column stays"
+    );
+    assert_eq!(board.columns[3].work, flow("copy"));
+    assert!(!four().runs("z"));
+    assert!(four().runs("b"));
+}

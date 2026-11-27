@@ -162,7 +162,7 @@ fn bind_starts_small_and_keeps_what_a_rebind_had() {
     let mut copy = flow.clone();
     copy.id = "copy".into();
     assert!(d
-        .bind_copy(&id(), &copy, now())
+        .bind_copy(&id(), "mine", &copy, now())
         .is_some_and(|bound| bound.is_ok()));
     let kept = d.board(&id()).unwrap().clone();
     assert_eq!((kept.workflow(), kept.team), ("copy", 3));
@@ -179,7 +179,7 @@ fn bind_refuses_what_a_board_cannot_run() {
     assert!(d.bind(&id(), Some(&checkout), now()).is_err());
     assert!(d.board(&id()).is_none());
     assert!(
-        d.bind_copy(&id(), &checkout, now()).is_none(),
+        d.bind_copy(&id(), "mine", &checkout, now()).is_none(),
         "no board to copy for"
     );
 }
@@ -302,7 +302,7 @@ fn binding_an_unreadable_board_says_why() {
         .bind(&id(), Some(&flow), now())
         .is_err_and(|why| why.contains("too new")));
     assert!(d
-        .bind_copy(&id(), &flow, now())
+        .bind_copy(&id(), "mine", &flow, now())
         .is_some_and(|bound| bound.is_err_and(|why| why.contains("too new"))));
 }
 
@@ -336,4 +336,19 @@ fn a_drop_on_a_row_lands_just_before_it() {
     // From the Backlog.
     assert_eq!(place_before(&todo, 9, 1), Some(0));
     assert_eq!(place_before(&todo, 3, 3), None);
+}
+
+#[test]
+fn bind_copy_rebinds_the_columns_running_what_it_copies() {
+    let mut d = drive_with_todo(&[4]);
+    let mut copy = flow(Place::Worktree);
+    copy.id = "copy".into();
+    assert!(
+        d.bind_copy(&id(), "elsewhere", &copy, now()).is_none(),
+        "the board runs no such workflow"
+    );
+    assert!(d
+        .bind_copy(&id(), "mine", &copy, now())
+        .is_some_and(|bound| bound.is_ok()));
+    assert_eq!(d.board(&id()).unwrap().workflow(), "copy");
 }

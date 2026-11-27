@@ -16,6 +16,7 @@ use onehand_core::workspace::HostName;
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 
+mod board_columns;
 mod board_settings;
 mod boot;
 mod build_hosts;
@@ -306,6 +307,7 @@ pub struct Shell {
     build_host_draft: Option<build_hosts::BuildHostDraft>,
     /// The form that adds or changes one of a project's routed commands.
     route_draft: Option<routes::RouteDraft>,
+    column_draft: Option<board_columns::ColumnDraft>,
     /// The commands each project folder suggests routing, read once a folder.
     route_suggestions: HashMap<PathBuf, Vec<&'static str>>,
     /// The folders of this window's offloaded projects whose writers are

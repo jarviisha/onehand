@@ -50,8 +50,15 @@ impl Shell {
                     }
                     E::Duplicated {
                         for_board,
+                        from,
                         template,
-                    } => shell.board_uses_copy(for_board.clone(), template.clone(), window, cx),
+                    } => shell.board_uses_copy(
+                        for_board.clone(),
+                        from.clone(),
+                        template.clone(),
+                        window,
+                        cx,
+                    ),
                 }
             },
         )
@@ -514,6 +521,7 @@ impl Shell {
             offload_draft: None,
             build_host_draft: None,
             route_draft: None,
+            column_draft: None,
             route_suggestions: HashMap::new(),
             offload_locks: HashMap::new(),
             dialog_return: None,

@@ -9,20 +9,29 @@ on this machine. A project on a host has none: its issues are not kept here.
 
 ## What a person gets
 
-- **Binding.** *Settings ▸ Projects ▸ Board* has a *Workflow* menu: *No board* and the library's
-  workflows (*Board team* is the built-in made for a board). A workflow that works in the
-  checkout cannot be bound, since several tasks work at once and a checkout holds one; the reason
-  is said under the menu and nothing is bound
-  (`board::usable`). Once bound, *Team* sets how many tasks work at once, 1 to 8, 2 at first.
-  Choosing *No board* on a board whose To do is not empty asks first (*Remove the board from
-  <project>?*): its To do goes, the issues stay open in no list, and tasks already started run on
-  as the person's own; a board bound later starts with none of them.
+- **Making a board.** *Settings ▸ Projects ▸ Board*, with no board, has a *Workflow* menu of the
+  library's workflows (*Board team* is the built-in made for a board): picking one makes a board of
+  To do and one column running it. A workflow that works in the checkout cannot run on a board,
+  since several tasks work at once and a checkout holds one; the reason is said under the menu
+  and nothing is made (`board::usable`). *Team* sets how many tasks work at once, 1 to 8, 2 at
+  first.
+- **Its columns** are defined in the same box: a row each, moved up and down, edited in the column
+  dialog (its name, a person's or a workflow's, when a workflow column starts, how an issue moves
+  on, a limit), removed while empty, and added with *Add column…* (`Shell::save_column`, then
+  `BoardDrive::{add_column, edit_column, move_column, remove_column}`). A name is a column's own,
+  whatever its case; a limit is a whole number of at least 1; a workflow column's workflow must be
+  on offer and run on a worktree; a column turned to a person's while a task works there is
+  refused. Each refusal stays in the dialog. The board page still draws the one shape a board is
+  made in.
+- **Removing it.** *Remove the board…* asks first (*Remove the board from <project>?*): its columns
+  and To do go, the issues stay open in no list, and tasks already started run on as the person's
+  own; a board made later starts with none of them.
 - **Editing.** The board's head has *Edit workflow*, and a step's column a `⋯` with *Edit step*:
   both open the Workflows page on the board's workflow, the second with that step open, asking
-  first when the form there holds changes not saved. *Settings ▸ Projects ▸ Board* has the same
-  *Edit workflow* beside its menu. A built-in workflow opens read-only, with its *Duplicate to
-  edit*; that duplicate, saved for the first time, becomes that board's workflow, team and To do
-  kept, and a toast says *<project>'s board now uses <copy name>*. Only a copy of a built-in
+  first when the form there holds changes not saved. *Settings ▸ Projects ▸ Board* has an *Edit
+  workflow* on each workflow column's row. A built-in workflow opens read-only, with its
+  *Duplicate to edit*; that duplicate, saved for the first time, takes the place of the workflow
+  it copies wherever the board runs it, all else kept, and a toast says *<project>'s board now uses <copy name>*. Only a copy of a built-in
   workflow rebinds: one of the person's own is edited in place, and a copy of it leaves the board
   as it is. No other board changes, and the page forgets the board on any save, once another
   workflow is opened, or when the form is closed.

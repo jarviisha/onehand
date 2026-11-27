@@ -15,7 +15,12 @@ impl Board {
             return Err("it has no columns".into());
         }
         let mut ids = HashSet::new();
+        let mut names = HashSet::new();
         for column in &self.columns {
+            let name = column.name.trim().to_lowercase();
+            if !name.is_empty() && !names.insert(name) {
+                return Err(format!("Two columns are called {}", column.name.trim()));
+            }
             if column.id.trim().is_empty() || !ids.insert(column.id.as_str()) {
                 return Err(format!(
                     "a column's id, `{}`, is empty or used twice",
@@ -51,6 +56,31 @@ impl Board {
             true => Ok(()),
             false => Err("it keeps more done than it may".into()),
         }
+    }
+
+    /// Whether a column of the board runs the workflow with id `workflow`.
+    pub fn runs(&self, workflow: &str) -> bool {
+        (self.columns.iter()).any(|c| {
+            c.work
+                == super::Work::Workflow {
+                    id: workflow.to_string(),
+                }
+        })
+    }
+
+    /// The board with every column running `from` running `workflow`
+    /// instead: a copy of it bound where it ran.
+    pub(crate) fn rebound_from(&self, from: &str, workflow: String) -> Board {
+        let mut board = self.clone();
+        let old = super::Work::Workflow {
+            id: from.to_string(),
+        };
+        for column in board.columns.iter_mut().filter(|c| c.work == old) {
+            column.work = super::Work::Workflow {
+                id: workflow.clone(),
+            };
+        }
+        board
     }
 
     /// The column with id `id`.

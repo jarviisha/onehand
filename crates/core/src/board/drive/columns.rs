@@ -10,6 +10,9 @@ use crate::project::{ProjectId, Toward};
 use crate::workflow::Template;
 use crate::Now;
 
+/// What a column no longer there is said as.
+const GONE: &str = "That column is gone";
+
 impl BoardDrive {
     /// Add `column`, with no issues, at place `at` of project `id`'s board:
     /// refused when `valid` refuses its work or the board would not keep.
@@ -41,13 +44,17 @@ impl BoardDrive {
         valid: &dyn Fn(&Work) -> Result<(), String>,
     ) -> Result<Vec<Effect>, String> {
         valid(&edit.work)?;
+        let starting = self.starting.get(id).cloned().unwrap_or_default();
         self.change(id, |board| {
             let at = (board.columns.iter())
                 .position(|c| c.id == column_id)
-                .ok_or_else(|| format!("No column {column_id}"))?;
+                .ok_or_else(|| GONE.to_string())?;
             let old = &board.columns[at];
             let mut entries = old.entries.clone();
             if workflow_of(old).is_some() && workflow_of(&edit).is_none() {
+                if entries.iter().any(|e| starting.contains(&e.issue)) {
+                    return Err("An issue there is starting: wait for it to start".to_string());
+                }
                 let works = |e: &crate::board::Entry| e.task.as_deref().is_some_and(working);
                 if entries.iter().any(works) {
                     return Err("Stop what works there first".to_string());
@@ -71,12 +78,12 @@ impl BoardDrive {
         column_id: &str,
     ) -> Result<Vec<Effect>, String> {
         self.change(id, |board| match board.column(column_id) {
-            Some(column) if !column.entries.is_empty() => Err(format!(
-                "Move its {} issues out first",
-                column.entries.len()
-            )),
+            Some(column) if !column.entries.is_empty() => Err(match column.entries.len() {
+                1 => "Move its issue out first".to_string(),
+                n => format!("Move its {n} issues out first"),
+            }),
             Some(_) => Ok(board.without_column(column_id)),
-            None => Err(format!("No column {column_id}")),
+            None => Err(GONE.to_string()),
         })
     }
 
@@ -113,7 +120,7 @@ impl BoardDrive {
             Some(to) => {
                 let at = (board.columns.iter())
                     .position(|c| c.id == to)
-                    .ok_or_else(|| format!("No column {to}"))?;
+                    .ok_or_else(|| GONE.to_string())?;
                 let column = &board.columns[at];
                 let others = column.entries.iter().filter(|e| e.issue != issue).count();
                 if column.limit.is_some_and(|limit| others >= limit as usize) {

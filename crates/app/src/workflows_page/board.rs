@@ -27,8 +27,9 @@ impl WorkflowsPage {
             return;
         };
         let step = step.map(str::to_string);
+        let id = id.to_string();
         self.pick_then(pick, window, cx, move |page, window, cx| {
-            page.for_board = for_board.clone();
+            page.for_board = for_board.clone().map(|project| (project, id.clone()));
             let Some(step) = &step else {
                 return;
             };
@@ -61,7 +62,7 @@ impl WorkflowsPage {
 
     /// The board the workflow open was opened from.
     pub(crate) fn for_board(&self) -> Option<&ProjectId> {
-        self.for_board.as_ref()
+        self.for_board.as_ref().map(|(project, _)| project)
     }
 
     /// Pick the workflow of id `id`, as its card does.
