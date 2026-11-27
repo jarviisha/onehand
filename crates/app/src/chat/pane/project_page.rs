@@ -3,6 +3,7 @@ use super::{ChatPane, ChatPaneEvent, ProjectFacts, build_chip, rel_time};
 use crate::controls::Short as _;
 use crate::page_parts::{count_of, page_card, page_head, ruled};
 use crate::tokens::PAGE_PROSE;
+use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, Context, FocusHandle, InteractiveElement, IntoElement, ParentElement, SharedString,
     StatefulInteractiveElement, Styled, Window, div,
@@ -15,6 +16,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 mod host;
+mod no_agent;
 pub(super) use host::focus_rows as host_rows;
 mod offload_box;
 mod worktrees_box;
@@ -30,6 +32,28 @@ mod tests;
 /// the cap cut off is said on screen rather than silently dropped. The list
 /// scrolls as well, because this many rows already outgrows a short window.
 const HOME_ROWS: usize = 8;
+
+/// How much faster than the part beside it a part of a line that gives way
+/// first shrinks. Flex shares a shortfall by each part's shrink factor times
+/// its width, so a factor this large makes it give way all but whole before
+/// the other starts to.
+const GIVES_FIRST: f32 = 1e3;
+
+/// The least a past conversation's title keeps before its facts beside it
+/// are dropped: about twenty characters, room for a short title whole or
+/// enough of a long one's start to tell it from its neighbours. Narrower
+/// than this, the facts go and the title has the row.
+const TITLE_LEAST: gpui::Rems = gpui::rems(10.);
+
+/// The most of a row's middle what a conversation continued takes, beside
+/// its title.
+const CONTINUED_SHARE: f32 = 0.4;
+
+/// The least a title and what it continued keep together, so the title
+/// itself still has [`TITLE_LEAST`] once what it continued takes its share
+/// and the half-rem gap between them.
+const TITLE_BESIDE_CONTINUED: gpui::Rems =
+    gpui::rems((TITLE_LEAST.0 + 0.5) / (1. - CONTINUED_SHARE));
 
 /// The project the pane is standing in while no conversation is showing.
 ///
@@ -361,7 +385,7 @@ impl ChatPane {
         // Ahead of whether there is a project: with no agent nothing can be
         // started anywhere, and that is the first thing to put right.
         if crate::state::Shared::global(cx).settings.agents.is_empty() {
-            return no_agent(cx);
+            return no_agent::no_agent(cx);
         }
         let Some(project) = self.empty.as_ref() else {
             // Not a project with nothing in it -- no project at all. Naming
@@ -399,15 +423,44 @@ impl ChatPane {
 
         let root = project.path.clone();
         let checking = crate::task::checking(&root, cx);
+        let on_host = project.host.is_some() && project.mirror.is_none();
         let path = host::place(
             project.host.as_ref().filter(|_| project.mirror.is_none()),
             &project.path,
             std::env::home_dir().as_deref(),
         );
-        let place = std::iter::once(path)
-            .chain(self.git.as_ref().map(ToString::to_string))
-            .collect::<Vec<_>>()
-            .join(" · ");
+        // On one line: the path gives way first, and then what git says. It
+        // is cut from its start, so the folder's own name is the last of it
+        // to go; one on a host from its middle, so the host's name before it
+        // stays too. Cut, it is said whole in its tooltip.
+        let whole = SharedString::from(path.clone());
+        let place = div()
+            .h_flex()
+            .min_w_0()
+            .child(
+                div()
+                    .id("project-page-path")
+                    .debug_selector(|| "project-page-path".into())
+                    .flex_shrink(GIVES_FIRST)
+                    .min_w_0()
+                    .overflow_hidden()
+                    .whitespace_nowrap()
+                    .map(|path| match on_host {
+                        true => path.text_ellipsis_middle(),
+                        false => path.text_ellipsis_start(),
+                    })
+                    .child(path)
+                    .tooltip(onehand_ui::tip(move |window, cx| {
+                        gpui_component::tooltip::Tooltip::new(whole.clone()).build(window, cx)
+                    })),
+            )
+            .children(self.git.as_ref().map(|git| {
+                div()
+                    .debug_selector(|| "project-page-git".into())
+                    .min_w_0()
+                    .truncate()
+                    .child(format!(" · {git}"))
+            }));
         // The project as the store has it, for its worktrees: none for a
         // folder of no project, or one on a host, which has none. An
         // offloaded folder's worktrees run here or on their own.
@@ -522,6 +575,9 @@ impl ChatPane {
                         .gap_2()
                         .w_full()
                         .rounded_none()
+                        // Held to one line's height: what its facts' line
+                        // wraps away stays out of sight below it.
+                        .h(onehand_ui::tokens::ROW_H)
                         .group(group.clone())
                         .track_focus(focus)
                         .border_1()
@@ -536,43 +592,91 @@ impl ChatPane {
                                 .text_color(crate::theme::meta_ink(cx))
                                 .child(rel_time(now, meta.updated)),
                         )
+                        // The title, with what it continued, and the facts on
+                        // one line that wraps, its second line out of sight:
+                        // the facts never shrink, so where they and the
+                        // title's least width do not both fit they go to that
+                        // line, whole, and the title takes the room.
                         .child(
                             div()
-                                .debug_selector(move || format!("home-title-{i}"))
+                                .debug_selector(move || format!("home-middle-{i}"))
                                 .flex_1()
                                 .min_w_0()
-                                .truncate()
-                                .child(meta.title.clone()),
-                        )
-                        // The agent *is* named here, unlike in a session's
-                        // own picker: this list crosses every agent that
-                        // has worked in the project, and resuming a row
-                        // starts a session on the one that held it.
-                        // What it continued gives way first, so the row's
-                        // own title keeps its room.
-                        .children(meta.continued.as_ref().map(|earlier| {
-                            div()
-                                .flex_shrink_1()
-                                .min_w_0()
-                                .max_w(gpui::relative(0.4))
-                                .truncate()
-                                .text_xs()
-                                .text_color(muted)
-                                .child(format!("Continued from {earlier}"))
-                        }))
-                        // Its facts give way after the title does, so the
-                        // row's ⋯ keeps its place at the row's end.
-                        .child(
-                            div()
-                                .min_w_0()
-                                .truncate()
-                                .text_xs()
-                                .text_color(muted)
-                                .child(format!(
-                                    "{} · {}",
-                                    count_of(meta.item_count, "item"),
-                                    meta.agent
-                                )),
+                                .h_full()
+                                .flex()
+                                .flex_row()
+                                .flex_wrap()
+                                .gap_x_2()
+                                .overflow_hidden()
+                                .child(
+                                    div()
+                                        .debug_selector(move || format!("home-title-{i}"))
+                                        .h_full()
+                                        .flex()
+                                        .items_center()
+                                        .gap_2()
+                                        .flex_basis(match meta.continued {
+                                            Some(_) => TITLE_BESIDE_CONTINUED,
+                                            None => TITLE_LEAST,
+                                        })
+                                        .flex_grow(1.)
+                                        .min_w_0()
+                                        .child(
+                                            div()
+                                                .id(("home-title", i))
+                                                .debug_selector(move || {
+                                                    format!("home-title-text-{i}")
+                                                })
+                                                .flex_1()
+                                                .min_w_0()
+                                                .truncate()
+                                                .child(meta.title.clone())
+                                                // Said whole, since the row
+                                                // cuts it at a narrow width.
+                                                .tooltip({
+                                                    let whole =
+                                                        SharedString::from(meta.title.clone());
+                                                    onehand_ui::tip(move |window, cx| {
+                                                        gpui_component::tooltip::Tooltip::new(
+                                                            whole.clone(),
+                                                        )
+                                                        .build(window, cx)
+                                                    })
+                                                }),
+                                        )
+                                        // What it continued beside the
+                                        // title, as wide as its words up to
+                                        // two fifths of the room.
+                                        .children(meta.continued.as_ref().map(|earlier| {
+                                            div()
+                                                .flex_shrink_1()
+                                                .min_w_0()
+                                                .max_w(gpui::relative(CONTINUED_SHARE))
+                                                .truncate()
+                                                .text_xs()
+                                                .text_color(muted)
+                                                .child(format!("Continued from {earlier}"))
+                                        })),
+                                )
+                                // The agent *is* named here, unlike in a
+                                // session's own picker: this list crosses
+                                // every agent that has worked in the project,
+                                // and resuming a row starts a session on the
+                                // one that held it.
+                                .child(
+                                    div().h_full().flex_none().flex().items_center().child(
+                                        div()
+                                            .debug_selector(move || format!("home-facts-{i}"))
+                                            .whitespace_nowrap()
+                                            .text_xs()
+                                            .text_color(muted)
+                                            .child(format!(
+                                                "{} · {}",
+                                                count_of(meta.item_count, "item"),
+                                                meta.agent
+                                            )),
+                                    ),
+                                ),
                         )
                         .on_click(
                             cx.listener(move |_: &mut Self, _, _, cx| cx.emit(resumed.event())),
@@ -695,72 +799,4 @@ fn board_link(
             }))
             .into_any_element(),
     )
-}
-
-/// What the pane shows while no agent is set up: the line saying so, each
-/// built-in agent offered when it is on this machine and its install command
-/// when it is not, and the way to the agent settings, where any other agent
-/// is declared.
-///
-/// **More than a hint's one line, on purpose.** Every action in the window
-/// waits on an agent, so the state names what fixes it rather than only that
-/// something is missing; the commands stand in the code face, as a command
-/// line does everywhere else.
-fn no_agent(cx: &mut Context<ChatPane>) -> gpui::AnyElement {
-    let muted = cx.theme().muted_foreground;
-    let mono = cx.theme().mono_font_family.clone();
-    let on_machine = crate::state::Shared::global(cx).on_machine.clone();
-    // An agent already installed is offered rather than explained: the list can
-    // be empty with one on the machine (it was emptied, or written while
-    // nothing was installed), and telling someone to install what they have
-    // is a way out that leads back here.
-    let install = onehand_core::config::Preset::ALL.map(|preset| {
-        if on_machine.contains(&preset) {
-            div()
-                .h_flex()
-                .items_center()
-                .gap_2()
-                .child(format!("{} is on this machine", preset.info().shown_name))
-                .child(
-                    crate::controls::action(("no-agent-add", preset as usize))
-                        .secondary()
-                        .short()
-                        .label("Add")
-                        .on_click(cx.listener(move |_: &mut ChatPane, _, _, cx| {
-                            cx.emit(ChatPaneEvent::AddFoundAgent(preset));
-                        })),
-                )
-                .into_any_element()
-        } else {
-            div()
-                .font_family(mono.clone())
-                .child(format!(
-                    "{}: {}",
-                    preset.info().shown_name,
-                    preset.info().install
-                ))
-                .into_any_element()
-        }
-    });
-    div()
-        .flex_1()
-        .v_flex()
-        .items_center()
-        .justify_center()
-        .gap_2()
-        .text_xs()
-        .text_color(muted)
-        .child("No agent is set up")
-        .children(install)
-        .child("Then restart onehand, or add another agent in the settings")
-        .child(
-            crate::controls::action("no-agent-settings")
-                .secondary()
-                .short()
-                .label("Open the agent settings")
-                .on_click(cx.listener(|_: &mut ChatPane, _, _, cx| {
-                    cx.emit(ChatPaneEvent::OpenAgentSettings);
-                })),
-        )
-        .into_any_element()
 }

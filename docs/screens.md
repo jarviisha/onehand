@@ -399,14 +399,17 @@ room and leaves the terminal as it is.
   the code face), *Then restart onehand, or add another agent in the settings*, and
   *Open the agent settings* (secondary), which opens Settings on Agents.
 - A project's page, reached by its row or with no session open, shows, from the top: a head (the project's name, its path and git line
-  under it, then at the end the *Builds* chip and *Run check* (spinning while a check runs)); then *What are we building?*,
+  under it on one line, the path cut from its start (a host's from its middle, so the host's name
+  stays) before the git line is cut, the path whole in its tooltip, then at the end the *Builds* chip and *Run check* (spinning while a check runs)); then *What are we building?*,
   semibold and centred, over the page's composer: an edged card as the session's, its field, then
   `+` (a menu: *Attach files…*, the native picker; *Mention a file* and *Run a slash command*,
   which type `@` and `/` from code), the agent chip (*Agent*, each configured agent, the one picked ticked; the first while none is
   picked or the one picked is gone), then what that agent offered when a session of it last
   came up: its model and effort as pickers headed by the group's own name, its fast switch as the
   session's bolt, its mode headed *Mode*, each starting on what was then in force; *Agent's
-  default*, muted, while no session of it has come up. What the chips show (picked there, or
+  default*, muted, while no session of it has come up, and dropped when the room the chips leave
+  cannot hold it whole. The card's pickers and the strip's are cut on an ellipsis inside the
+  card and the pane when their row runs short, each saying its words whole in its tooltip. What the chips show (picked there, or
   what was last in force where the agent still lists it as a choice) is set on the session as its
   agent comes up, the model first, before its first prompt; a pick the agent no longer offers is
   not sent, and the session says *<group> <value> is no longer offered; the session runs on the
@@ -417,7 +420,7 @@ room and leaves the terminal as it is.
   where the session runs, *Project folder*, a worktree's branch or *New worktree*, whose menu
   lists *Project folder*, each recorded worktree on disk (capped at 20, *N more not shown*) and,
   on a repository whose sessions run here, *New worktree…*; picked, a *Branch name* field stands
-  beside the chip and takes the caret, its rule's refusal said under it in the danger ink as it
+  beside the chip (on a line of its own under it when the strip is short of room) and takes the caret, its rule's refusal said under it in the danger ink as it
   is typed. At the strip's end, on a project on this machine (a host's is the host's switch,
   below), *Cards: <level>*, its menu (*Cards,
   this project's default*) setting the level a session sent from the page starts on; a level
@@ -447,7 +450,10 @@ room and leaves the terminal as it is.
   draft. An agent that never comes up leaves no session: the page says why under the card, the
   words kept, a host's or an offloaded project's session as one here, over the host's attach. Then, in one column at every width, the box *Past
   conversations* with its count, its rows the overview's (age, title, then items and agent at the
-  edge, led by *Continued from <title>* for one that continued another, then a `⋯` on hover
+  edge, led by *Continued from <title>* for one that continued another; the items and agent are
+  shown whole or not at all, dropped where the row cannot leave the title its least width (about
+  twenty characters); the title is cut on an ellipsis in whatever room it has and says itself
+  whole in its tooltip; then a `⋯` on hover
   holding *Resume*, on a page whose sessions run here *Continue in a new session…*, and
   *Delete…*, the same on a right-click), capped, its wait and empty lines inside it:
   every one of the project, in whichever of its folders it ran, and one that ran in a folder it

@@ -3,7 +3,10 @@
 //! said. What is picked here is set on the session before its first prompt.
 
 use super::ChatPane;
-use gpui::{AnyElement, App, Context, IntoElement, ParentElement, SharedString, Styled, div};
+use gpui::{
+    AnyElement, App, Context, InteractiveElement as _, IntoElement, ParentElement, SharedString,
+    Styled, div,
+};
 use gpui_component::ActiveTheme;
 use gpui_component::button::ButtonVariants as _;
 use onehand_core::acp::Role;
@@ -36,8 +39,13 @@ impl ChatPane {
             .facts_of(agent)
             .cloned()
         else {
+            // Never cut: the agent's row drops it whole where it does not
+            // fit beside the agent's own name.
             return vec![
                 div()
+                    .debug_selector(|| "page-agent-default".into())
+                    .flex_none()
+                    .whitespace_nowrap()
                     .text_xs()
                     .text_color(cx.theme().muted_foreground)
                     .child("Agent's default")
@@ -132,9 +140,16 @@ impl ChatPane {
         let at = root.to_path_buf();
         let id = SharedString::from(format!("page-group-{}", group.id));
         let trigger = SharedString::from(format!("page-group-{}-trigger", group.id));
-        crate::controls::menu_below(
+        super::page_draft::page_menu(
             id,
-            onehand_ui::picker(trigger, label, false, onehand_ui::ControlSize::Short, cx),
+            onehand_ui::picker(
+                trigger,
+                label.clone(),
+                false,
+                onehand_ui::ControlSize::Short,
+                cx,
+            ),
+            label,
             move |mut menu, _, _| {
                 menu = menu.item(crate::controls::menu_label(group.name.clone()));
                 for (value, label) in &group.choices {
@@ -231,7 +246,7 @@ impl ChatPane {
         let at = root.to_path_buf();
         let pane = cx.entity().downgrade();
         let choices = choices.to_vec();
-        let chip = crate::controls::menu_below(
+        let chip = super::page_draft::page_menu(
             "page-cards",
             onehand_ui::picker(
                 "page-cards-trigger",
@@ -240,6 +255,7 @@ impl ChatPane {
                 onehand_ui::ControlSize::Short,
                 cx,
             ),
+            format!("Cards: {}", level.label()),
             move |mut menu, _, _| {
                 menu = menu.item(crate::controls::menu_label(heading.clone()));
                 for choice in &choices {
@@ -265,6 +281,9 @@ impl ChatPane {
                 menu
             },
         )
+        // At the strip's end, on whichever line it stands when the strip
+        // wraps.
+        .trigger_style(gpui::StyleRefinement::default().min_w_0().ml_auto())
         .into_any_element();
         Some((chip, cost))
     }

@@ -4,8 +4,8 @@
 
 use super::HOME_ROWS;
 use crate::shell::rig::strain::{
-    NARROWEST, SHORT, TO_150, WIDE, assert_inside, assert_one_height, bounds, long, same, selector,
-    unbroken, width,
+    NARROWEST, SHORT, SLACK, TO_150, WIDE, assert_inside, assert_one_height, bounds, long, same,
+    selector, unbroken, width,
 };
 use crate::shell::rig::{folder, keep_projects, kept_conversation, nowhere, shell_on, zoom_pane};
 use gpui::{
@@ -25,6 +25,18 @@ fn page<'a>(
     titles: &[String],
     cx: &'a mut TestAppContext,
 ) -> (Entity<crate::shell::Shell>, &'a mut VisualTestContext) {
+    page_with(name, seed, titles, None, cx)
+}
+
+/// [`page`], each conversation having continued the one titled `continued`
+/// when it is given.
+fn page_with<'a>(
+    name: &str,
+    seed: u64,
+    titles: &[String],
+    continued: Option<&str>,
+    cx: &'a mut TestAppContext,
+) -> (Entity<crate::shell::Shell>, &'a mut VisualTestContext) {
     let dir = folder(name);
     let home = dir.join("p");
     std::fs::create_dir_all(&home).unwrap();
@@ -37,6 +49,15 @@ fn page<'a>(
     for (i, title) in titles.iter().enumerate() {
         let sid = format!("{name}-{i}-{}", std::process::id());
         kept_conversation(&sid, &home, &project.id, Some(title));
+        if let Some(earlier) = continued {
+            let at = onehand_core::chat::conversations_dir()
+                .join(&sid)
+                .join("meta.json");
+            let mut meta: serde_json::Value =
+                serde_json::from_str(&std::fs::read_to_string(&at).unwrap()).unwrap();
+            meta["prefs"]["continued"] = earlier.into();
+            std::fs::write(&at, meta.to_string()).unwrap();
+        }
     }
     let at = home.clone();
     cx.update(|window, cx| shell.update(cx, |shell, cx| shell.open_root(at, window, cx)));
@@ -176,15 +197,244 @@ fn rows_hold(
     }
 }
 
+/// A title of a few words: longer than a short one, shorter than a wide row.
+fn medium() -> String {
+    "word ".repeat(8).trim_end().to_string()
+}
+
+/// The widths a row is drawn at, narrowest last.
+const ROW_WIDTHS: [Pixels; 4] = [WIDE, px(1100.), px(900.), NARROWEST];
+
+/// Each zoom the page is drawn at, its titles short, medium, long and
+/// unbroken, each with and without what it continued, on a page of its own:
+/// `check` is given the zoom's factor and its page.
+fn each_page(name: &str, seed: u64, check: impl Fn(&str, f32, &mut VisualTestContext)) {
+    let mut seed = seed;
+    for &(zoom, steps, _) in DRAWN {
+        let factor = zoom.parse::<f32>().unwrap() / 100.;
+        for title in [SHORT.to_string(), medium(), long(), unbroken()] {
+            for continued in [None, Some(medium())] {
+                seed += 1;
+                let mut app = TestAppContext::single();
+                let (shell, cx) = page_with(
+                    &format!("{name}-{seed}"),
+                    seed,
+                    std::slice::from_ref(&title),
+                    continued.as_deref(),
+                    &mut app,
+                );
+                zoom_pane(&shell, steps, cx);
+                check(zoom, factor, cx);
+                app.quit();
+            }
+        }
+    }
+}
+
+/// Whether a row's facts at `facts` show in its middle at `middle`: on its
+/// first line, not on the one out of sight.
+fn shown(facts: Bounds<Pixels>, middle: Bounds<Pixels>) -> bool {
+    facts.top() + SLACK < middle.bottom()
+}
+
 #[gpui::test]
-fn a_short_title_shows_in_the_narrowest_pane(cx: &mut TestAppContext) {
-    let (_, cx) = page("strain-home-title", 913_060, &titled(1, SHORT), cx);
-    width(cx, NARROWEST);
-    let title = bounds(cx, "home-title-0");
-    assert!(
-        title.size.width > Pixels::ZERO,
-        "a row's title is down to nothing at 100% in the narrowest pane: {title:?}"
-    );
+fn a_rows_facts_stand_whole_or_not_at_all(_: &mut TestAppContext) {
+    each_page("strain-home-facts", 913_100, |zoom, factor, cx| {
+        let (least, line) = cx.update(|window, _| {
+            let rem = window.rem_size() * factor;
+            (
+                super::TITLE_LEAST.to_pixels(rem),
+                onehand_ui::tokens::ROW_H.to_pixels(rem),
+            )
+        });
+        width(cx, WIDE);
+        let whole = bounds(cx, "home-facts-0").size.width;
+        assert!(
+            shown(bounds(cx, "home-facts-0"), bounds(cx, "home-middle-0")),
+            "a row's facts are not shown in a wide pane at {zoom}%"
+        );
+        for w in ROW_WIDTHS {
+            width(cx, w);
+            let (row, middle, named, text, facts, more) = (
+                bounds(cx, "home-row-0"),
+                bounds(cx, "home-middle-0"),
+                bounds(cx, "home-title-0"),
+                bounds(cx, "home-title-text-0"),
+                bounds(cx, "home-facts-0"),
+                bounds(cx, "home-more-0"),
+            );
+            assert_inside(more, row, &format!("the row's ⋯ at {w:?}, {zoom}%"));
+            // One line high, whatever it wrapped out of sight.
+            assert!(
+                same(row.size.height, line),
+                "a row stands {:?} high, not one line's {line:?}, at {w:?}, {zoom}%",
+                row.size.height
+            );
+            assert!(
+                named.size.width + SLACK >= least.min(middle.size.width),
+                "the title is down to {named:?} under its least {least:?} at {w:?}, {zoom}%"
+            );
+            // That the second line is out of sight is the middle's clip,
+            // which bounds cannot read: a picture holds it.
+            if shown(facts, middle) {
+                // While the facts stand, the title's own words keep their
+                // least, whatever it continued takes beside them.
+                assert!(
+                    text.size.width + SLACK >= least,
+                    "the title's words are down to {text:?} under {least:?} beside its facts at {w:?}, {zoom}%"
+                );
+                assert_inside(facts, middle, &format!("a row's facts at {w:?}, {zoom}%"));
+                assert!(
+                    same(facts.size.width, whole),
+                    "a row's facts are drawn at {facts:?}, narrower than their words' {whole:?}, at {w:?}, {zoom}%"
+                );
+                assert!(
+                    same(facts.right(), middle.right()),
+                    "a row's facts leave its end at {w:?}, {zoom}%"
+                );
+                assert!(
+                    facts.left() >= named.right(),
+                    "the facts run over the title"
+                );
+                assert!(
+                    (facts.center().y - named.center().y).abs() <= px(1.),
+                    "a row's facts stand off its title's line at {w:?}, {zoom}%"
+                );
+            } else {
+                assert!(
+                    facts.top() + SLACK >= middle.bottom(),
+                    "a row's facts are partly in sight at {w:?}, {zoom}%: {facts:?} in {middle:?}"
+                );
+            }
+            if w == NARROWEST {
+                assert!(
+                    !shown(facts, middle),
+                    "a row's facts are shown in the narrowest pane at {zoom}%"
+                );
+            }
+        }
+    });
+}
+
+#[gpui::test]
+fn the_heads_place_stays_on_one_line_beside_its_actions(_: &mut TestAppContext) {
+    for (seed, &(zoom, steps, _)) in (913_080..).zip(DRAWN) {
+        let mut app = TestAppContext::single();
+        let (shell, cx) = page(&format!("strain-home-head-{zoom}"), seed, &[], &mut app);
+        zoom_pane(&shell, steps, cx);
+        width(cx, WIDE);
+        let line = bounds(cx, "project-page-path").size.height;
+        width(cx, NARROWEST);
+        let (path, head, actions) = (
+            bounds(cx, "project-page-path"),
+            bounds(cx, "page-head"),
+            bounds(cx, "page-head-actions"),
+        );
+        assert!(
+            same(path.size.height, line),
+            "the path breaks onto a second line at {zoom}%: {path:?}"
+        );
+        assert_inside(path, head, "the head's path");
+        assert!(
+            path.right() <= actions.left() + SLACK,
+            "the path runs under the head's actions at {zoom}%: {path:?} {actions:?}"
+        );
+        app.quit();
+    }
+}
+
+#[gpui::test]
+fn the_composers_controls_stay_inside_their_boxes(_: &mut TestAppContext) {
+    for (seed, &(zoom, steps, _)) in (913_090..).zip(DRAWN) {
+        let mut app = TestAppContext::single();
+        let (shell, cx) = page(&format!("strain-home-composer-{zoom}"), seed, &[], &mut app);
+        zoom_pane(&shell, steps, cx);
+        width(cx, NARROWEST);
+        width(cx, WIDE);
+        assert!(
+            bounds(cx, "page-agent-default").top() + SLACK < bounds(cx, "page-agent-row").bottom(),
+            "the agent's default line is not shown in a wide pane at {zoom}%"
+        );
+        width(cx, NARROWEST);
+        let (card, column, send) = (
+            bounds(cx, "page-card"),
+            bounds(cx, "project-page-column"),
+            bounds(cx, "page-send"),
+        );
+        // The agent's default line goes whole, out of sight, once it does
+        // not fit beside the agent's name, and the row keeps its height.
+        let line = bounds(cx, "page-agent-row");
+        let agent = bounds(cx, "page-agent");
+        assert!(
+            same(line.size.height, agent.size.height),
+            "the agent's row grows to {line:?} beside its picker's {agent:?} at {zoom}%"
+        );
+        let parts = std::iter::once(("page-agent", bounds(cx, "page-agent")))
+            .chain([("page-agent-default", bounds(cx, "page-agent-default"))]);
+        for (part, at) in parts {
+            if at.top() + SLACK >= line.bottom() {
+                continue;
+            }
+            assert!(
+                at.right() <= line.right() + SLACK,
+                "{part} is cut at {zoom}%: {at:?} in {line:?}"
+            );
+            assert_inside(at, card, &format!("{part} at {zoom}%"));
+            assert!(
+                at.right() <= send.left() + SLACK,
+                "{part} runs under Send at {zoom}%: {at:?} {send:?}"
+            );
+        }
+        for part in ["page-start-in", "page-cards"] {
+            assert_inside(bounds(cx, part), column, &format!("{part} at {zoom}%"));
+        }
+        // With no branch field the strip keeps one line.
+        assert!(
+            same(
+                bounds(cx, "page-start-in").top(),
+                bounds(cx, "page-cards").top()
+            ),
+            "the strip breaks onto a second line at {zoom}%"
+        );
+        // A new worktree's branch field beside them, or under them when the
+        // strip is short of room: it keeps its width, or the column's
+        // whole, and squeezes neither chip.
+        let pane = cx.update(|_, cx| shell.read(cx).chat_pane().clone());
+        cx.update(|window, cx| {
+            pane.update(cx, |pane, cx| {
+                pane.set_page_start(crate::chat::pane::StartIn::NewWorktree, None, window, cx);
+            })
+        });
+        cx.run_until_parked();
+        width(cx, WIDE);
+        let wide = ["page-branch", "page-start-in", "page-cards"].map(|part| bounds(cx, part));
+        width(cx, NARROWEST);
+        let column = bounds(cx, "project-page-column");
+        let field = bounds(cx, "page-branch");
+        assert_inside(field, column, &format!("the branch field at {zoom}%"));
+        assert!(
+            field.size.width + SLACK >= wide[0].size.width.min(column.size.width),
+            "the branch field is down to {field:?} at {zoom}%"
+        );
+        let cards = bounds(cx, "page-cards");
+        assert!(
+            same(cards.right(), column.right()),
+            "the Cards chip leaves the strip's end at {zoom}%: {cards:?} in {column:?}"
+        );
+        for (part, wide) in ["page-start-in", "page-cards"].into_iter().zip(&wide[1..]) {
+            let at = bounds(cx, part);
+            assert_inside(
+                at,
+                column,
+                &format!("{part} beside the branch field at {zoom}%"),
+            );
+            assert!(
+                same(at.size.width, wide.size.width),
+                "{part} is squeezed to {at:?} beside the branch field at {zoom}%"
+            );
+        }
+        app.quit();
+    }
 }
 
 #[gpui::test]

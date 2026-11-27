@@ -76,6 +76,7 @@ impl Composer {
         let drop_ring = cx.theme().ring;
         let anchors = self.anchors.clone();
         div()
+            .debug_selector(|| "page-card".into())
             .relative()
             .v_flex()
             .gap_1()
@@ -188,7 +189,12 @@ impl Composer {
                             .when(!locked, |row| row.child(add))
                             .child(agent),
                     )
-                    .child(div().flex_none().child(send)),
+                    .child(
+                        div()
+                            .debug_selector(|| "page-send".into())
+                            .flex_none()
+                            .child(send),
+                    ),
             )
     }
 }
