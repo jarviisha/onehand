@@ -40,7 +40,14 @@ fn a_person_column_offers_its_moves() {
     let got = offers(&board(), 9, None, false);
     assert_eq!(
         words(&got, false),
-        ["Move to PLAN", "Move to Done", "Move to REVIEW", "Move up", "Move down", "Back to Backlog"]
+        [
+            "Move to PLAN",
+            "Move to Done",
+            "Move to REVIEW",
+            "Move up",
+            "Move down",
+            "Back to Backlog"
+        ]
     );
 }
 
@@ -90,7 +97,13 @@ fn a_full_column_refuses_the_move_there() {
 #[test]
 fn up_and_down_refuse_at_the_ends() {
     let got = offers(&board(), 9, None, false);
-    let why = |w: &str| got.iter().find(|(o, _)| o.words(false) == w).unwrap().1.clone();
+    let why = |w: &str| {
+        got.iter()
+            .find(|(o, _)| o.words(false) == w)
+            .unwrap()
+            .1
+            .clone()
+    };
     assert!(why("Move up").is_some());
     assert!(why("Move down").is_some());
 }

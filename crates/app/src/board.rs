@@ -122,6 +122,77 @@ pub(crate) fn look(project: &ProjectId, cx: &mut App) {
     carry(fx, cx);
 }
 
+/// Put `issue` of `project`'s board in column `to`, just before `before`
+/// when it stands there, or in Done with none; what refuses it is said in
+/// `window`.
+pub(crate) fn place(
+    project: &ProjectId,
+    issue: u64,
+    to: Option<String>,
+    before: Option<u64>,
+    window: &mut gpui::Window,
+    cx: &mut App,
+) {
+    let working = entry_works(project, issue, cx);
+    let now = onehand_core::Now::read();
+    let placed = cx.update_global::<Shared, _>(|shared, _| {
+        shared
+            .boards
+            .place(project, issue, to.as_deref(), before, working, now)
+    });
+    match placed {
+        Ok(fx) => carry(fx, cx),
+        Err(why) => {
+            window.push_notification(crate::toast::failed(&format!("Moving #{issue}"), why), cx)
+        }
+    }
+}
+
+/// Start `issue` of `project`'s board in its column, on a press; what
+/// refuses it is said in `window`.
+pub(crate) fn start_on_press(
+    project: &ProjectId,
+    issue: u64,
+    window: &mut gpui::Window,
+    cx: &mut App,
+) {
+    let shared = Shared::global(cx);
+    let found = (shared.boards.board(project)).and_then(|board| {
+        let (at, entry) = board.at(issue)?;
+        let workflow = match &board.columns[at].work {
+            board::Work::Workflow { id } => id.clone(),
+            board::Work::Person => return None,
+        };
+        Some((workflow, entry.task.clone()))
+    });
+    let Some((workflow, task)) = found else {
+        return;
+    };
+    let template = crate::control::template(&workflow, cx);
+    // A task named but never kept is started anew.
+    let task_lost = task.is_some_and(|task| crate::task::task(&task, cx).is_none());
+    let ids = vec![onehand_core::task::new_id()];
+    let started = cx.update_global::<Shared, _>(|shared, _| {
+        shared
+            .boards
+            .start(project, issue, task_lost, ids, template)
+    });
+    match started {
+        Ok(fx) => carry(fx, cx),
+        Err(why) => {
+            window.push_notification(crate::toast::failed(&format!("Starting #{issue}"), why), cx)
+        }
+    }
+}
+
+/// Whether the task `issue`'s entry on `project`'s board names works.
+fn entry_works(project: &ProjectId, issue: u64, cx: &App) -> bool {
+    (Shared::global(cx).boards.board(project))
+        .and_then(|board| board.at(issue))
+        .and_then(|(_, entry)| entry.task.clone())
+        .is_some_and(|task| crate::task::is_working(&task, cx))
+}
+
 /// A new column's id: one no other column has.
 pub(crate) fn column_id() -> String {
     format!("col-{}", onehand_core::task::new_id())

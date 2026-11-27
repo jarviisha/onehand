@@ -176,34 +176,3 @@ fn room_freed_by_any_task_makes_the_board_pull(cx: &mut TestAppContext) {
     assert_eq!(todo(cx), Some(Vec::new()), "the board pulled its To do");
     let _ = std::fs::remove_dir_all(dir);
 }
-
-#[gpui::test]
-fn a_limited_columns_head_says_how_much_of_its_room_is_held(cx: &mut TestAppContext) {
-    let store = temp_dir("store");
-    let _window = app(cx, &store);
-    let root = PathBuf::from("/a-board");
-    let mut template = one_agent_step();
-    template.steps[0].limit = Some(1);
-    let key = onehand_core::task::rooms::RoomKey {
-        repo: root.clone(),
-        workflow: template.id.clone(),
-        step: "do".into(),
-    };
-    let project = onehand_core::project::ProjectId::mint(79);
-    let heads = cx.update(|cx| {
-        use gpui::BorrowAppContext as _;
-        // The board is shown, not written: its columns are what is drawn.
-        let board = onehand_core::board::Board::made(template.id.clone(), 1, &[], 0);
-        let _ = cx.update_global::<crate::state::Shared, _>(|shared, _| {
-            shared.boards.set_board(&project, Some(board))
-        });
-        crate::task::with_drive(cx, |t| ((), t.ask_room("x", key, 1)));
-        crate::task::board(&project, &root, &template, cx)
-            .steps
-            .into_iter()
-            .map(|column| (column.label, column.head))
-            .collect::<Vec<_>>()
-    });
-    assert_eq!(heads, [("Do".to_string(), "Do · 1 of 1".to_string())]);
-    let _ = std::fs::remove_dir_all(store);
-}

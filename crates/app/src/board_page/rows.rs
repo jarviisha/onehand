@@ -1,83 +1,82 @@
 //! A board's rows: an issue's, a task's, and the row both are drawn in,
 //! with what a task's row offers.
 
-use super::{BoardPage, BoardPageEvent, Column, IssueDrag, RowKey, Todo, change_todo};
-use crate::drag::DragGhost;
+use super::{BoardPage, BoardPageEvent, RowKey};
 use crate::task::Row;
 use gpui::{
-    AppContext as _, Context, InteractiveElement, IntoElement, ParentElement, SharedString,
-    Stateful, StatefulInteractiveElement, Styled, div,
+    Context, InteractiveElement, IntoElement, ParentElement, SharedString, Stateful,
+    StatefulInteractiveElement, Styled, div,
 };
+use gpui_component::button::ButtonVariants as _;
 use gpui_component::menu::ContextMenuExt as _;
 use gpui_component::{ActiveTheme, StyledExt};
-use onehand_core::project::ProjectId;
 use onehand_core::task::Section;
-use onehand_ui::RowAct;
+use onehand_ui::{Refuses as _, RowAct, Short as _};
 use std::rc::Rc;
 
+/// A row's one act drawn beside its `⋯`, for a row waiting on a person: its
+/// words, its press, and why it refuses when it does.
+pub(super) struct Button {
+    pub(super) label: String,
+    pub(super) press: onehand_ui::Press,
+    pub(super) refused: Option<String>,
+}
+
 impl BoardPage {
-    /// A row of an issue, in the Backlog or To do: its title over its
-    /// number, its acts in its `⋯` and on a right-click, dragged by its
-    /// title. A To do row, given its project, takes
-    /// a dragged issue in just before itself.
+    /// A row of an issue no task works: its title over `line`, its acts in
+    /// its `⋯` and on a right-click, `button` drawn beside them.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn issue_row(
         &mut self,
-        key: RowKey,
         number: u64,
         title: String,
+        line: (String, gpui::Hsla),
         acts: Rc<[RowAct]>,
-        todo: Option<ProjectId>,
+        button: Option<Button>,
+        drags: impl FnOnce(Stateful<gpui::Div>) -> Stateful<gpui::Div>,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
-        let line = (format!("#{number}"), crate::theme::meta_ink(cx));
-        let from = match todo {
-            Some(_) => Column::Todo,
-            None => Column::Backlog,
-        };
-        let ghost = SharedString::from(title.clone());
         let drags = move |row: Stateful<gpui::Div>| {
-            let row = row
-                .debug_selector(move || format!("board-issue-{number}"))
-                .on_drag(
-                    IssueDrag {
-                        issue: number,
-                        from,
-                    },
-                    move |_, _, _, cx| {
-                        let ghost = ghost.clone();
-                        cx.new(|_| DragGhost(ghost))
-                    },
-                );
-            let Some(id) = todo else {
-                return row;
-            };
-            // The row under a drag fills, the issue landing just before it.
-            row.drag_over::<IssueDrag>(|style, _, _, cx| style.bg(cx.theme().list_hover))
-                .on_drop(move |drag: &IssueDrag, _, cx| {
-                    change_todo(&id, Todo::Before(drag.issue, number), cx);
-                })
+            drags(row.debug_selector(move || format!("board-issue-{number}")))
         };
-        self.row(key, title, line, acts, None, drags, cx)
+        self.row(
+            RowKey::Issue(number),
+            title,
+            line,
+            acts,
+            button,
+            None,
+            drags,
+            cx,
+        )
     }
 
-    /// A row of a task: its title over what it waits on, as the Tasks page
-    /// sorts it and its detail says it, and where it is when that is not the
-    /// column it stands in. Pressed, it opens the task; its `⋯` and
-    /// right-click offer the Tasks page's acts beside.
+    /// A row of a task: its title over `line`, else what it waits on as the
+    /// Tasks page sorts it and its detail says it. Pressed, it opens the
+    /// task; its `⋯` and right-click offer the Tasks page's acts, then
+    /// `more`.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn task_row(
         &mut self,
-        column: &str,
         row: Row,
+        line: Option<String>,
+        more: Vec<RowAct>,
+        button: Option<Button>,
+        drags: impl FnOnce(Stateful<gpui::Div>) -> Stateful<gpui::Div>,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
-        let said = task_line(&row, column);
-        let ink = match row.group.section() == Section::NeedsAttention {
-            true => crate::theme::status_ink(cx).warning,
-            false => cx.theme().muted_foreground,
+        let (said, ink) = match line {
+            Some(line) => (line, cx.theme().muted_foreground),
+            None => {
+                let ink = match row.group.section() == Section::NeedsAttention {
+                    true => crate::theme::status_ink(cx).warning,
+                    false => cx.theme().muted_foreground,
+                };
+                (task_line(&row, ""), ink)
+            }
         };
         let open = open_task(&row.id, cx);
         let page = cx.entity().downgrade();
-        let remove = removal(&row.id, cx);
         let acts: Rc<[RowAct]> = task_offers(&row)
             .into_iter()
             .map(|act| match act {
@@ -92,37 +91,40 @@ impl BoardPage {
                     RowAct::new(act.label(), press)
                 }
             })
-            .chain(remove)
+            .chain(more)
             .collect();
+        let key = RowKey::Task(row.id.clone());
         self.row(
-            RowKey::Task(row.id.clone()),
+            key,
             row.title,
             (said, ink),
             acts,
+            button,
             Some(open),
-            |row| row,
+            drags,
             cx,
         )
     }
 
     /// A row in a column: `title` over `line`, a tab stop whose `⋯` and
-    /// right-click offer `acts`; pressing its text runs `open` if it has one.
-    /// `drags` adds what the row does under a drag.
+    /// right-click offer `acts`, `button` drawn beside them; pressing its
+    /// text runs `open` if it has one. `drags` adds what the row does under a
+    /// drag.
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn row(
+    fn row(
         &mut self,
         key: RowKey,
         title: String,
         (line, ink): (String, gpui::Hsla),
         acts: Rc<[RowAct]>,
+        button: Option<Button>,
         open: Option<onehand_ui::Press>,
         drags: impl FnOnce(Stateful<gpui::Div>) -> Stateful<gpui::Div>,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         let focus = self.handle(key.clone(), cx);
         let (name, what) = match &key {
-            RowKey::Backlog(n) => (format!("board-backlog-{n}"), "Issue actions"),
-            RowKey::Todo(n) => (format!("board-todo-{n}"), "Issue actions"),
+            RowKey::Issue(n) => (format!("board-issue-{n}"), "Issue actions"),
             RowKey::Task(id) => (format!("board-task-{id}"), "Task actions"),
         };
         let group = SharedString::from(format!("{name}-row"));
@@ -150,6 +152,28 @@ impl BoardPage {
                 .on_click(move |event, window, cx| open(event, window, cx)),
             None => text,
         };
+        // The act a person is waited on for stays drawn, as the Tasks page's
+        // rows needing attention keep theirs.
+        let button = button.map(
+            |Button {
+                 label,
+                 press,
+                 refused,
+             }| {
+                let selector = format!("{name}-button");
+                div()
+                    .flex_none()
+                    .debug_selector(move || selector.clone())
+                    .child(
+                        crate::controls::action(SharedString::from(format!("{name}-act")))
+                            .short()
+                            .secondary()
+                            .label(label)
+                            .refuses(refused)
+                            .on_click(move |event, window, cx| press(event, window, cx)),
+                    )
+            },
+        );
         let menu_acts = acts.clone();
         let row = onehand_ui::row(false, cx).id(SharedString::from(name.clone()));
         drags(row)
@@ -164,6 +188,7 @@ impl BoardPage {
             .gap_2()
             .py_1p5()
             .child(text)
+            .children(button)
             .child(
                 onehand_ui::hover_slot(
                     group,
@@ -222,31 +247,6 @@ pub(super) fn task_offers(row: &Row) -> Vec<Option<crate::tasks_page::TaskAct>> 
                 .filter(kept)
                 .map(Some),
         )
-        .collect()
-}
-
-/// *Remove from board* for task `id`, while it does not work: its issue goes
-/// back to the Backlog and the task stays as history.
-pub(super) fn removal(id: &str, cx: &Context<BoardPage>) -> Option<RowAct> {
-    if crate::task::is_working(id, cx) {
-        return None;
-    }
-    let (project, issue) = crate::task::task(id, cx)?
-        .board_issue()
-        .map(|(project, issue)| (project.clone(), issue))?;
-    let id = id.to_string();
-    let press: onehand_ui::Press = Rc::new(move |_, window, cx| {
-        crate::board::remove(&project, issue, Some(&id), window, cx);
-    });
-    Some(RowAct::new("Remove from board", press))
-}
-
-/// A row's acts, from their words and presses.
-pub(super) fn acts<'a>(
-    acts: impl IntoIterator<Item = (&'a str, onehand_ui::Press)>,
-) -> Rc<[RowAct]> {
-    acts.into_iter()
-        .map(|(label, press)| RowAct::new(label.to_string(), press))
         .collect()
 }
 

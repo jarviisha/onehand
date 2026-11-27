@@ -21,11 +21,8 @@ const SCROLLBAR_PULL: Rems = rems(-0.75);
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub(super) enum ColumnKey {
     Backlog,
-    Todo,
-    /// A step of the workflow, by its id.
-    Step(String),
-    /// What a step the workflow no longer has left behind, by its label.
-    Removed(String),
+    /// A column of the board, by its id.
+    Board(String),
     Done,
 }
 
@@ -34,9 +31,7 @@ impl ColumnKey {
     fn scroll_id(&self) -> SharedString {
         let key = match self {
             Self::Backlog => "backlog".to_string(),
-            Self::Todo => "todo".to_string(),
-            Self::Step(step) => format!("step-{step}"),
-            Self::Removed(label) => label.clone(),
+            Self::Board(id) => id.clone(),
             Self::Done => "Done".to_string(),
         };
         format!("board-column-{key}").into()
@@ -118,4 +113,17 @@ pub(super) fn column(parts: ColumnParts, cx: &App) -> gpui::Div {
                 .child(onehand_ui::scrollbar(&scroll).id(key.bar_id())),
         )
         .children((hidden > 0).then(|| muted_line(format!("{hidden} more not shown"))))
+}
+
+/// What a board column's head says: its name, and how full it is when it
+/// holds a limit, and that its workflow is gone when it is.
+pub(crate) fn column_head(column: &onehand_core::board::Column, gone: bool) -> String {
+    let mut head = match column.limit {
+        Some(limit) => format!("{} · {} of {limit}", column.name, column.entries.len()),
+        None => column.name.clone(),
+    };
+    if gone {
+        head.push_str(" · its workflow is gone");
+    }
+    head
 }

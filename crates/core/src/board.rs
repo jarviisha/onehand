@@ -14,10 +14,10 @@ pub mod drive;
 pub mod file;
 pub(crate) mod flow;
 pub mod line;
-pub mod offers;
 pub mod model;
+pub mod offers;
 
-pub use model::{Board, Entry, MovesOn, Starts, Work};
+pub use model::{Board, Column, Entry, MovesOn, Starts, Work};
 
 /// How many tasks one column of the board draws; the rest are counted.
 pub const BOARD_SHOWN: usize = 50;
@@ -194,7 +194,6 @@ pub fn taken<'a>(
     project: &ProjectId,
 ) -> HashSet<u64> {
     let named = (board.columns.iter())
-        .skip(1)
         .flat_map(|column| column.entries.iter())
         .chain(board.done())
         .map(|entry| entry.issue);
@@ -208,66 +207,6 @@ pub fn taken<'a>(
         Some(_) | None => None,
     });
     named.chain(done).collect()
-}
-
-/// The board's columns: a step each, then what is done.
-#[derive(Debug)]
-pub struct Columns<'a> {
-    pub steps: Vec<Column<'a>>,
-    /// Newest first.
-    pub done: Vec<&'a Task>,
-}
-
-/// One column: the tasks at a step.
-#[derive(Debug)]
-pub struct Column<'a> {
-    pub step: String,
-    pub label: String,
-    pub tasks: Vec<&'a Task>,
-}
-
-/// Place the tasks `board`'s work column names in the columns of
-/// `template`'s steps, by where their last run is, whatever it came to; a
-/// task at a step the template lost gets a column after the others, labelled
-/// by the step's id. Done is the tasks Done names, as it orders them.
-pub fn columns<'a>(
-    template: &Template,
-    board: &Board,
-    tasks: impl Iterator<Item = &'a Task>,
-) -> Columns<'a> {
-    let by_id: std::collections::HashMap<&str, &'a Task> =
-        tasks.map(|task| (task.id(), task)).collect();
-    let of = |entry: &Entry| entry.task.as_deref().and_then(|id| by_id.get(id).copied());
-    let mut steps: Vec<Column<'a>> = template
-        .steps
-        .iter()
-        .map(|step| Column {
-            step: step.id.clone(),
-            label: step.label.clone(),
-            tasks: Vec::new(),
-        })
-        .collect();
-    for task in board.work().iter().filter_map(of) {
-        // A task stopped while it was queued has no run left: it stands at
-        // the first step, where it would have started.
-        let at = match task.runs.last() {
-            Some(run) => run.current(),
-            None => template.steps.first(),
-        };
-        let Some(at) = at else {
-            continue;
-        };
-        match steps.iter_mut().find(|column| column.step == at.id) {
-            Some(column) => column.tasks.push(task),
-            None => steps.push(Column {
-                step: at.id.clone(),
-                label: at.id.clone(),
-                tasks: vec![task],
-            }),
-        }
-    }
-    let done = board.done().iter().filter_map(of).collect();
-    Columns { steps, done }
 }
 
 #[cfg(test)]

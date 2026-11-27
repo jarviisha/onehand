@@ -1,32 +1,27 @@
-//! A project's board: its Backlog, its To do, a column per step of its
-//! workflow and what is done, side by side, scrolling sideways when they do
+//! A project's board: its Backlog, the board's own columns and what is
+//! done, side by side, scrolling sideways when they do
 //! not fit, each column scrolling its own rows. What stands in each column is `onehand_core::board`'s to say;
-//! this draws it and carries the person's To do changes to the projects'
-//! drive. An entity of the window's, drawn by the chat pane as the Tasks
+//! this draws it and carries the person's moves to the boards' drive. An entity of the window's, drawn by the chat pane as the Tasks
 //! page is.
 
 use crate::controls::Short as _;
 use crate::page_parts::{page_head, page_top};
 use crate::state::Shared;
-use crate::task::Row;
 use gpui::{
-    App, BorrowAppContext as _, Context, EventEmitter, FocusHandle, InteractiveElement,
-    IntoElement, ParentElement, Render, ScrollHandle, StatefulInteractiveElement, Styled,
-    Subscription, Window, div,
+    App, Context, EventEmitter, FocusHandle, InteractiveElement, IntoElement, ParentElement,
+    Render, ScrollHandle, StatefulInteractiveElement, Styled, Subscription, Window, div,
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::{ActiveTheme, StyledExt};
-use onehand_core::board::BOARD_SHOWN;
-use onehand_core::project::{ProjectId, Toward};
-use std::collections::{HashMap, HashSet};
+use onehand_core::project::ProjectId;
+use std::collections::HashMap;
 use std::path::PathBuf;
-use std::rc::Rc;
 
 mod column;
+mod entries;
 mod rows;
 
-use column::{ColumnKey, ColumnParts, column};
-use rows::acts;
+use column::ColumnKey;
 #[cfg(test)]
 use rows::{task_line, task_offers};
 
@@ -52,24 +47,9 @@ pub(crate) struct BoardPage {
 /// Which row a focus handle is kept for.
 #[derive(Clone, PartialEq, Eq, Hash)]
 enum RowKey {
-    Backlog(u64),
-    Todo(u64),
+    /// An issue no task works, by its number.
+    Issue(u64),
     Task(String),
-}
-
-/// An issue row under the pointer, and the column it was taken from. A type
-/// of the board's own, as gpui hands a drop only to a target of its type.
-#[derive(Clone, Copy)]
-struct IssueDrag {
-    issue: u64,
-    from: Column,
-}
-
-/// The columns an issue is dragged between.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Column {
-    Backlog,
-    Todo,
 }
 
 /// What the board page asks of the window.
@@ -81,9 +61,10 @@ pub(crate) enum BoardPageEvent {
     /// Open the settings of the project at this folder, where its board is
     /// bound.
     ProjectSettings(PathBuf),
-    /// Open the board's workflow on the Workflows page, its step of this id
-    /// open when one is named.
-    EditWorkflow { step: Option<String> },
+    /// Open the workflow of id `workflow`, a column's, on the Workflows page.
+    EditWorkflow { workflow: String },
+    /// Open the column dialog on the board's column of id `column`.
+    EditColumn { column: String },
 }
 
 impl EventEmitter<BoardPageEvent> for BoardPage {}
@@ -187,31 +168,18 @@ impl BoardPage {
             );
             return self.frame(head, body);
         };
-        let template = crate::control::template(board.workflow(), cx).ok();
-        let refused = onehand_core::board::local(&project)
-            .and(onehand_core::board::usable(template.as_ref()).map(|_| ()))
-            .err();
-        let line = match &template {
-            Some(t) => format!("{} · {} · team of {}", project.name, t.name, board.team),
-            None => project.name.clone(),
-        };
-        // A workflow that is gone has nothing to open; its refusal says so.
-        let edit = template.is_some().then(|| edit_workflow(cx));
-        let head = head("Board", line, edit, cx);
-        let (Some(template), None) = (template, refused.clone()) else {
-            let body = refusal(
-                refused.unwrap_or_default(),
-                project.path.clone(),
-                cx.entity().downgrade(),
-                cx,
-            );
+        let line = format!("{} · team of {}", project.name, board.team);
+        let head = head(
+            "Board",
+            line,
+            Some(edit_columns(project.path.clone(), cx)),
+            cx,
+        );
+        if let Err(why) = onehand_core::board::local(&project) {
+            let body = refusal(why, project.path.clone(), cx.entity().downgrade(), cx);
             return self.frame(head, body);
-        };
-
-        let tasks = crate::task::board(&id, &project.path, &template, cx);
-        let mut taken = tasks.taken;
-        taken.extend(Shared::global(cx).boards.starting(&id));
-        let columns = self.columns(&id, &board, tasks.steps, tasks.done, &taken, cx);
+        }
+        let columns = self.columns(&id, &board, cx);
         // Sideways alone: gpui turns a plain wheel into sideways travel only
         // on a box that scrolls on x and not y, so the gaps and the heads
         // move the board while each column moves its own rows. The scroller
@@ -242,222 +210,6 @@ impl BoardPage {
         self.frame(head, body)
     }
 
-    /// Every column, left to right.
-    fn columns(
-        &mut self,
-        id: &ProjectId,
-        board: &onehand_core::board::Board,
-        steps: Vec<crate::task::StepColumn>,
-        done: Vec<Row>,
-        taken: &HashSet<u64>,
-        cx: &mut Context<Self>,
-    ) -> Vec<gpui::AnyElement> {
-        // What the rows need of the issues, taken out first so the rows can
-        // be drawn while the page is borrowed to make their focus handles.
-        let kept = self.issues.as_ref().map(|(_, held)| held.kept(cx));
-        let (backlog_rows, backlog_note, todo_titles) = match kept {
-            Some(onehand_core::issues::drive::Kept {
-                issues: Some(issues),
-                forge,
-                ..
-            }) => {
-                let listed: Vec<(u64, String)> =
-                    onehand_core::board::backlog(issues, *forge, board, taken)
-                        .into_iter()
-                        .map(|issue| (issue.number(), issue.title().to_string()))
-                        .collect();
-                let note = listed.is_empty().then(|| {
-                    "No open issues; talk one through with an agent, which can write it here \
-                     with create_issue"
-                        .to_string()
-                });
-                let todo = board.todo();
-                let titles: Vec<Option<String>> = (todo.iter().take(BOARD_SHOWN))
-                    .map(|&n| issues.get(n).map(|issue| issue.title().to_string()))
-                    .collect();
-                (listed, note, titles)
-            }
-            unread => (
-                Vec::new(),
-                Some(match unread.and_then(|kept| kept.failed.as_ref()) {
-                    Some(why) => format!("The issues could not be read: {why}"),
-                    None => "Reading the issues…".to_string(),
-                }),
-                Vec::new(),
-            ),
-        };
-        let title_of = |at: usize, n: u64| {
-            todo_titles
-                .get(at)
-                .cloned()
-                .flatten()
-                .unwrap_or_else(|| format!("#{n}"))
-        };
-        let count = backlog_rows.len();
-        let drawn = backlog_rows
-            .into_iter()
-            .take(BOARD_SHOWN)
-            .map(|(n, title)| {
-                let acts = acts([("Move to To do", todo_press(id, Todo::Add(n)))]);
-                self.issue_row(RowKey::Backlog(n), n, title, acts, None, cx)
-            })
-            .collect();
-        // Taking an issue out of To do is the one drop the Backlog takes.
-        let backlog = {
-            let id = id.clone();
-            column(
-                ColumnParts {
-                    title: "Backlog".into(),
-                    count,
-                    rows: drawn,
-                    note: backlog_note,
-                    control: None,
-                    scroll: self.column_scroll(&ColumnKey::Backlog),
-                    key: ColumnKey::Backlog,
-                },
-                cx,
-            )
-            .drag_over::<IssueDrag>(|style, drag, _, cx| match drag.from {
-                Column::Todo => style.bg(cx.theme().list_hover),
-                Column::Backlog => style,
-            })
-            .on_drop(move |drag: &IssueDrag, _, cx| {
-                if drag.from == Column::Todo {
-                    change_todo(&id, Todo::Drop(drag.issue), cx);
-                }
-            })
-            .into_any_element()
-        };
-
-        // To do, in the order the team pulls it.
-        let last = board.todo().len().saturating_sub(1);
-        let drawn = board
-            .todo()
-            .into_iter()
-            .take(BOARD_SHOWN)
-            .enumerate()
-            .map(|(at, n)| {
-                let mut moves = Vec::new();
-                if at > 0 {
-                    moves.push(("Move up", todo_press(id, Todo::Move(n, Toward::Up))));
-                }
-                if at < last {
-                    moves.push(("Move down", todo_press(id, Todo::Move(n, Toward::Down))));
-                }
-                moves.push(("Back to Backlog", todo_press(id, Todo::Drop(n))));
-                self.issue_row(
-                    RowKey::Todo(n),
-                    n,
-                    title_of(at, n),
-                    acts(moves),
-                    Some(id.clone()),
-                    cx,
-                )
-            })
-            .collect();
-        // A drop off its rows puts the issue last. Its rows fill under a
-        // drag, so the column fills only when it has none, or the two fills
-        // would hide the row the issue lands before.
-        let empty = board.todo().is_empty();
-        let todo = {
-            let id = id.clone();
-            column(
-                ColumnParts {
-                    title: "To do".into(),
-                    count: board.todo().len(),
-                    rows: drawn,
-                    note: empty
-                        .then(|| "Nothing to do; move an issue here from the Backlog".to_string()),
-                    control: None,
-                    scroll: self.column_scroll(&ColumnKey::Todo),
-                    key: ColumnKey::Todo,
-                },
-                cx,
-            )
-            .drag_over::<IssueDrag>(move |style, _, _, cx| match empty {
-                true => style.bg(cx.theme().list_hover),
-                false => style,
-            })
-            .on_drop(move |drag: &IssueDrag, _, cx| {
-                change_todo(&id, Todo::Last(drag.issue), cx);
-            })
-            .into_any_element()
-        };
-
-        let mut columns = vec![backlog, todo];
-        for crate::task::StepColumn {
-            label,
-            head,
-            rows,
-            step,
-        } in steps
-        {
-            let key = match step {
-                Some(step) => ColumnKey::Step(step),
-                None => ColumnKey::Removed(label.clone()),
-            };
-            let col = self.task_column(key, &label, head, rows, "Nothing at this step", cx);
-            columns.push(col);
-        }
-        columns.push(self.task_column(
-            ColumnKey::Done,
-            "Done",
-            "Done".into(),
-            done,
-            "Nothing done yet",
-            cx,
-        ));
-        columns
-    }
-
-    /// A column of tasks under `head`, its rows told apart from `label`;
-    /// with the id of the workflow's `step` it stands for, a `⋯` in its head
-    /// opens that step.
-    fn task_column(
-        &mut self,
-        key: ColumnKey,
-        label: &str,
-        head: String,
-        rows: Vec<Row>,
-        empty: &str,
-        cx: &mut Context<Self>,
-    ) -> gpui::AnyElement {
-        let count = rows.len();
-        let drawn = rows
-            .into_iter()
-            .take(BOARD_SHOWN)
-            .map(|row| self.task_row(label, row, cx))
-            .collect();
-        let scroll = self.column_scroll(&key);
-        let more = match &key {
-            ColumnKey::Step(step) => Some(step.clone()),
-            _ => None,
-        }
-        .map(|step| {
-            let page = cx.entity().downgrade();
-            let key = format!("board-step-{step}-more");
-            let press: onehand_ui::Press = Rc::new(move |_, _, cx| {
-                let step = Some(step.clone());
-                let _ = page.update(cx, |_, cx| cx.emit(BoardPageEvent::EditWorkflow { step }));
-            });
-            onehand_ui::row_more(key, "Step actions", acts([("Edit step", press)]), cx)
-                .into_any_element()
-        });
-        column(
-            ColumnParts {
-                title: head.into(),
-                count,
-                rows: drawn,
-                note: (count == 0).then(|| empty.to_string()),
-                control: more,
-                scroll,
-                key,
-            },
-            cx,
-        )
-        .into_any_element()
-    }
-
     /// The page around `body`: its head kept in place over it.
     fn frame(&self, head: gpui::AnyElement, body: gpui::AnyElement) -> gpui::AnyElement {
         div()
@@ -477,8 +229,8 @@ impl Render for BoardPage {
     }
 }
 
-/// The page's head: its name over the project, its workflow and its team,
-/// and `edit` at its end when there is a workflow to open.
+/// The page's head: its name over the project and its team, and `edit` at
+/// its end.
 fn head(
     title: &'static str,
     line: String,
@@ -487,16 +239,6 @@ fn head(
 ) -> gpui::AnyElement {
     let line = (!line.is_empty()).then(|| line.into_any_element());
     page_head(title, line, edit.into_iter().collect(), cx).into_any_element()
-}
-
-/// *Edit workflow*, opening the board's workflow on the Workflows page.
-fn edit_workflow(cx: &Context<BoardPage>) -> gpui::AnyElement {
-    crate::controls::action("board-edit-workflow")
-        .short()
-        .secondary()
-        .label("Edit workflow")
-        .on_click(cx.listener(|_, _, _, cx| cx.emit(BoardPageEvent::EditWorkflow { step: None })))
-        .into_any_element()
 }
 
 /// Why the board cannot run, in place of its columns, with the way to the
@@ -528,42 +270,17 @@ fn refusal(
         .into_any_element()
 }
 
-/// A change a person makes to To do.
-#[derive(Clone, Copy)]
-enum Todo {
-    /// Put the issue last in To do.
-    Add(u64),
-    /// Move the issue one place up, or down.
-    Move(u64, Toward),
-    /// Put the issue back in the Backlog.
-    Drop(u64),
-    /// Put the issue last in To do.
-    Last(u64),
-    /// Put the first issue just before the second in To do.
-    Before(u64, u64),
-}
-
-/// A press making `change` to project `id`'s To do.
-fn todo_press(id: &ProjectId, change: Todo) -> onehand_ui::Press {
-    let id = id.clone();
-    Rc::new(move |_, _, cx| change_todo(&id, change, cx))
-}
-
-/// Make `change` to project `id`'s To do, a press's or a drop's: through the
-/// boards' drive, and To do looked at again at once, since the team may
-/// have room.
-fn change_todo(id: &ProjectId, change: Todo, cx: &mut App) {
-    let now = onehand_core::Now::read();
-    let fx = cx.update_global::<Shared, _>(|shared, _| match change {
-        Todo::Add(n) => shared.boards.add_todo(id, n, now),
-        Todo::Move(n, toward) => shared.boards.move_todo(id, n, toward, now),
-        Todo::Drop(n) => shared.boards.drop_todo(id, n, now),
-        Todo::Last(n) => shared.boards.place_todo(id, n, usize::MAX, now),
-        Todo::Before(n, target) => shared.boards.place_todo_before(id, n, target, now),
-    });
-    crate::board::carry(fx, cx);
-    crate::board::look(id, cx);
-    cx.refresh_windows();
+/// *Edit columns*, opening the settings of the project at `root`, where its
+/// board's columns are defined.
+fn edit_columns(root: PathBuf, cx: &Context<BoardPage>) -> gpui::AnyElement {
+    crate::controls::action("board-edit-columns")
+        .short()
+        .secondary()
+        .label("Edit columns")
+        .on_click(
+            cx.listener(move |_, _, _, cx| cx.emit(BoardPageEvent::ProjectSettings(root.clone()))),
+        )
+        .into_any_element()
 }
 
 #[cfg(test)]

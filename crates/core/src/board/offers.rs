@@ -79,7 +79,9 @@ pub fn offers(
     match act {
         Some(EntryAct::Start) => wanted.push(Offer::Start),
         Some(EntryAct::MoveTo(column)) => {
-            let index = column.as_ref().and_then(|id| board.columns.iter().position(|c| &c.id == id));
+            let index = column
+                .as_ref()
+                .and_then(|id| board.columns.iter().position(|c| &c.id == id));
             wanted.push(to(index, index.is_some_and(|i| i + 1 == at)));
         }
         None => {}
@@ -103,7 +105,11 @@ pub fn offers(
         fresh
     });
     let column = &board.columns[at];
-    let place = column.entries.iter().position(|e| e.issue == issue).unwrap_or(0);
+    let place = column
+        .entries
+        .iter()
+        .position(|e| e.issue == issue)
+        .unwrap_or(0);
     let last = column.entries.len().saturating_sub(1);
     wanted
         .into_iter()
@@ -113,7 +119,11 @@ pub fn offers(
                 Offer::MoveTo { .. } | Offer::Up | Offer::Down | Offer::Back if working => {
                     Some("It is at work: Stop it first".to_string())
                 }
-                Offer::MoveTo { column: Some(id), name, .. } => board.column(id).and_then(|c| {
+                Offer::MoveTo {
+                    column: Some(id),
+                    name,
+                    ..
+                } => board.column(id).and_then(|c| {
                     let others = c.entries.iter().filter(|e| e.issue != issue).count();
                     c.limit
                         .is_some_and(|limit| others >= limit as usize)
