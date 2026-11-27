@@ -279,15 +279,16 @@ advertises a `clear` of its own, the row is not offered and `/clear` goes to the
 *Run a workflow…* (the `+` menu, the keymap, the Workflows page's *Run…*) opens the launcher,
 drawn as `docs/workflows.md` describes.
 
-The composer is the input surface, a role of its own rather than a box or a field: a card
-edged in `input` at `radius_lg`, on its own fill (`theme::raised`) under a light lift
-(`composer_lift`). Its pickers (the model, the effort, the mode, *Fast*, the branch) are
-`.short()` ghosts with a caret whatever they hold, where a picker elsewhere takes the secondary
-fill once set: each always holds a choice, and a fill on every chip would crowd the field they
-sit under. Its popup is one shell for `@`, `/`, the pickers, the `+` and branch menus and the
-attachment tray, on the library's popup surface as the window's other menus: a pinned title on
-the `@` and `/` lists and the tray alone, no key hints, a row's detail at its end, at most ten
-rows, grouped, then how many more; a menu opens just above the control that opened it.
+The composer is the input surface, a role of its own rather than a box or a field (`input` at
+`radius_lg`, `theme::raised`, `composer_lift`). Its pickers (the model, the effort, the mode,
+*Fast*, the branch) are `.short()` ghosts with a caret whatever they hold (*Fast* is its bolt
+alone, lit in the warning ink while fast, as a mode switched on is, and as a toggle opens no
+menu and carries none), where a picker elsewhere takes the secondary fill once set: each always
+holds a choice, and a fill on every chip would crowd the field they sit under. Its popup is one
+shell for `@`, `/`, the pickers, the `+` and branch menus and the attachment tray, on the
+library's popup surface as the window's other menus: a pinned title on the `@` and `/` lists
+and the tray alone, no key hints, a row's detail at its end, at most ten rows, grouped, then
+how many more.
 
 A card pinned over the composer (a permission, a question) takes the keyboard once, as it is
 pinned, and only from nowhere, an empty composer (no words, no staged files) or the card answered

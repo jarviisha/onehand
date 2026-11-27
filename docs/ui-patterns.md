@@ -71,7 +71,7 @@ The neutral inks of T-04, on a neutral surface:
 | Compact metadata, or a tightly coupled mark and label | `gap_1` |
 | Icon and label in a row the app draws; adjacent controls; parts within a box | `gap_2` |
 | Row inset | `px_2` |
-| Strip inset; box padding | `px_3`, inside the Workbench `tokens::ROW_INSET`; `p_3` |
+| Strip inset; box padding | `px_3`, inside the Workbench `tokens::ROW_INSET` (a tab bar's tabs stand a step in from its ends and apart, so their fills never touch); `p_3` |
 | A box whose body scrolls inside it | `p_4`, a step more so the scrollbar's thumb has room beside the text |
 | Form fields | `gap_4` |
 | Page sections; page outer padding | `gap_6`; `px_8` `py_6` |
@@ -117,7 +117,8 @@ The neutral inks of T-04, on a neutral surface:
   minimum and grows to fit its lines at shared padding and leading, never clipping to that
   height. Multi-line variants align their primary labels and second lines across peers.
 - Checked by: tests `a_project_row_stays_inside_the_rail`,
-  `every_history_row_keeps_its_height_and_its_trailing_slot`.
+  `every_history_row_keeps_its_height_and_its_trailing_slot` for one height; picture for a
+  second line.
 
 ### Control sizes
 
@@ -174,11 +175,11 @@ The neutral inks of T-04, on a neutral surface:
 
 #### C-19 The hit area is not the icon
 
-- When: an icon-only control is drawn.
-- Then: it keeps its peers' hit area, its box no larger than a worded peer's, and is named
-  with `.named(..)`, its tooltip and its accessible name at once. Nothing is enlarged to fill
-  its box, and the hit area is never shrunk to the SVG.
-- Checked by: test `the_title_bar_controls_share_one_height`; review.
+- When: a button holds an icon.
+- Then: a worded `.short()` button carries the extra small icon beside its words; an icon
+  alone at `.short_icon()` takes the small one, its box no larger than a worded peer's.
+  Nothing is enlarged to fill its box.
+- Checked by: review.
 
 #### C-20 Some components keep their own geometry
 
@@ -212,11 +213,13 @@ The neutral inks of T-04, on a neutral surface:
 - When: a strip stands along the top of a region.
 - Then: `strip`: `BAR_H` tall, padded `px_3`, its parts `gap_2` apart, at the chrome size. What
   it names stands at the start in full ink; its controls stand at the end as ghost buttons at
-  their control sizes (`strip_control` for an icon alone). Filters belong below the region's
-  header, with the content they filter. Every bar inside a region's box draws a line where it
-  ends.
+  their control sizes (`strip_control` for an icon alone); an icon-only control is named
+  through `.named(..)`, its tooltip and the same words as its accessible name. Filters belong
+  below the region's header, with the content they filter. Every bar inside a region's box
+  draws a line where it ends.
 - Unless: a control that shows a region the strip's own panel hid may lead (the way back to a
-  list, a list's toggle).
+  list, a list's toggle). A bar whose content fades out under it draws no line, nor does the
+  conversation's header.
 - Checked by: picture.
 
 ### Cuts
@@ -241,20 +244,19 @@ large or its list overfull. Each came from a fault seen in the app.
 
 - When: a control holds words.
 - Then: they never wrap; a control that cannot hold them truncates them or gives way as L-07 says.
-- Checked by: test `a_page_heads_actions_share_one_height_and_one_line`; picture, since only
-  the real font shows where a line would break.
+- Checked by: test `a_page_heads_actions_share_one_height_and_one_line` for one height on the
+  test platform's text; picture, since only the real font shows where a line would break.
 
 #### L-04 A long name never moves its neighbours
 
 - When: a name of unknown length stands in a row or a bar beside other parts.
 - Then: the name takes the room left (`min_w_0`) and is cut (L-02); the parts beside it do not
-  shrink, grow or move. A name that is cut is said whole in its tooltip.
+  shrink, grow or move.
 - Unless: the name is the only part on its line.
 - Checked by: tests `a_long_workspace_name_leaves_the_toggles_in_place`,
   `a_long_page_title_leaves_its_actions_in_place`,
   `a_long_project_name_truncates_and_its_tail_keeps_its_width`,
-  `a_long_task_title_stays_inside_its_column`,
-  `the_workspace_hint_says_the_name_whole_before_what_a_press_does`.
+  `a_long_task_title_stays_inside_its_column`.
 
 #### L-05 A control with a fixed place keeps it
 
@@ -270,7 +272,6 @@ large or its list overfull. Each came from a fault seen in the app.
 - Then: the trailing slot keeps its width while the name truncates, and showing a row's hover
   actions moves nothing beside them: where a row has trailing facts its hover actions are laid
   over them, hiding them while they show; a row without them keeps its actions in a held slot.
-  Where the row is still too narrow, the facts give way before the actions leave the row.
 - Checked by: tests `one_history_row_keeps_its_height_and_its_trailing_slot`,
   `every_history_row_keeps_its_height_and_its_trailing_slot`,
   `a_long_project_name_truncates_and_its_tail_keeps_its_width`.
@@ -289,8 +290,8 @@ large or its list overfull. Each came from a fault seen in the app.
 #### L-08 The last item stands off its container's end
 
 - When: a list or a column ends inside a box or a region.
-- Then: its last item stands off the end by the container's own inset, as its first stands off
-  the start.
+- Then: its last item stands off the end by the list's own inset, as its first stands off the
+  start.
 - Checked by: test `the_last_row_stands_off_the_end_of_its_box`.
 
 #### L-09 What scrolls keeps a lane beside its scrollbar, and its rows their height
@@ -316,8 +317,8 @@ large or its list overfull. Each came from a fault seen in the app.
 #### L-11 A popup never covers the field it serves
 
 - When: a list or a menu opens for a field or a control.
-- Then: it opens beside it (under a field, just above a control at the window's foot), at a
-  width of its own, and leaves the field in view.
+- Then: it opens beside it (under a field, just above a control at the window's foot) and
+  leaves the field in view.
 - Checked by: test `the_palettes_list_opens_below_its_field`; picture.
 
 #### L-12 A split or a stack reads its container, never the window
@@ -351,14 +352,16 @@ large or its list overfull. Each came from a fault seen in the app.
 
 #### K-12 A page's top stays while the rest scrolls under it
 
-- When: a page that is reached from the rail, or holds settings, is drawn.
+- When: a workspace-wide page (one the rail's own navigation rows open) or the settings page
+  is drawn.
 - Then: `page_top`: the head, then, where the page has them, a row of its search and its
   filters, inset `px_8` and `pt_4`, its parts `gap_3` apart, in the same column as the body
-  under it. The head's hairline parts it from what the page holds; the body's own top inset
+  under it (the whole pane on a list page, and on the settings page, whose name starts on its
+  nav column's edge). The head's hairline parts it from what the page holds; the body's own top inset
   stands what scrolls clear of the top. A table's column names head its rows and scroll with
   them.
-- Unless: a page reached from one of these (one thing's own page, a form) scrolls as one
-  column under its trail back.
+- Unless: a page reached from one of these (one thing's own page, a form, a project's page)
+  scrolls as one column under its trail back.
 - Checked by: picture.
 
 #### K-13 A page's head holds its actions in one order
@@ -400,8 +403,8 @@ large or its list overfull. Each came from a fault seen in the app.
 - When: a list page is laid out.
 - Then: its top is every page's (K-12). The list is inset `px_6`, its rows' fills on that edge
   and their words on the top's `px_8`. Its rows are on one line at `.text_xs()` with no lines
-  between them: the name and the column read down the list in `font_medium`, the rest at the
-  regular weight. Trailing slots drop, least needed first, where the pane is too narrow to
+  between them: the name and the column read down the list in `font_medium`, carried by weight
+  and ink rather than size, the rest at the regular weight. Trailing slots drop, least needed first, where the pane is too narrow to
   leave the name room. Rows keep their place while a person reads. The foot, parted from the
   list by a `faint_rule` line the pane's whole width, says *Showing N of M <things>*.
 - Checked by: picture.
@@ -431,10 +434,12 @@ large or its list overfull. Each came from a fault seen in the app.
     label naming what it is set to: a ghost in the muted ink while it is where it starts, on
     the secondary fill once it narrows the content;
   - after them, where more than one thing narrows the content and only while one is set,
-    *Clear filters*, which puts the search and every filter back (a choice is not a filter);
-    last in its group, so nothing moves as it comes and goes.
+    *Clear filters*, a ghost on a page and on the secondary fill in a dock's bar, which puts
+    the search and every filter back (a choice is not a filter); last in its group, so nothing
+    moves as it comes and goes.
   A page's row wraps under the choices when narrow; a dock's bar never wraps, its search
-  shrinks instead. The content's foot says how many it shows of how many match, and a
+  shrinks instead. A dock's bar that stands over a list and its detail both leaves the choices
+  out: they split the list, so they stand over its rows, under the bar's line. The content's foot says how many it shows of how many match, and a
   filter's choice and the search are kept while the view is left and shown again.
 - Checked by: picture.
 
@@ -448,7 +453,7 @@ large or its list overfull. Each came from a fault seen in the app.
   muted count, and at most one control at the end, at a fixed height so boxes side by side
   line up. Boxes sit side by side while the measured column holds two, and stack when it does
   not (L-12).
-- Checked by: test `a_box_stands_apart_from_the_window`; picture.
+- Checked by: picture.
 
 #### K-20 A box that opens what it shows is pressed on its body
 
@@ -470,14 +475,16 @@ large or its list overfull. Each came from a fault seen in the app.
   own padding, a list page by its inset.
 - Unless: rows inside a box are the box's parts: their fills run to its edge, as the hairlines
   between them do (K-25).
-- Checked by: test `a_project_row_stays_inside_the_rail`; picture.
+- Checked by: test `a_project_row_stays_inside_the_rail` for one height and staying inside;
+  picture for the fills.
 
 #### K-22 Two fills never touch
 
 - When: a row in a list can be selected, or choices stand in a pick-one track.
 - Then: a hovered row beside the selected one stays parted from it: a tree's fills by
-  `tokens::ROW_GUTTER` inside the row's pitch, any other list by a gap between its rows, a
-  track's choices held in from its rim and parted `gap_0p5`.
+  `tokens::ROW_GUTTER` inside the row's pitch, any other list by a gap between its rows; a
+  track's choices likewise (`switch` draws a filled, edgeless track at the role's height, holds
+  its choices in 3px from its rim and parts them `gap_0p5`).
 - Unless: a list in which nothing is ever selected may run its hover fills together.
 - Checked by: test `tree_row_fill_is_odd_and_rows_stack_at_the_pitch`; picture.
 
@@ -492,7 +499,8 @@ large or its list overfull. Each came from a fault seen in the app.
 #### K-24 A row's actions show when the row is the one in hand
 
 - When: a row has actions of its own.
-- Then: ghost buttons at their control sizes, shown on hover, on the selected row, on keyboard
+- Then: a row's actions follow what the person must do next. They are ghost buttons at their
+  control sizes, shown on hover, on the selected row, on keyboard
   focus and while their action runs; a focus a click leaves does not show them. They sit
   behind a `⋯` (`row_more`), shown on hover, on the keyboard's row and always on the current
   one, and the same items open on a right-click (`row_menu_items`), one list for both, a
@@ -507,8 +515,10 @@ large or its list overfull. Each came from a fault seen in the app.
 
 - When: rows stand inside a box.
 - Then: each is parted from the next by a hairline (`ruled`), drawn on a wrapper of the row's
-  own so its focus ring moves nothing; a table in a box is such rows under a head row in meta
-  text on the page's own surface, its rows square at the row inset. A row's trailing facts
+  own so its focus ring moves nothing; so are a settings group's list rows (`list_rows`),
+  inside their group's box. A table in a box is rows split by hairlines, each with one under
+  it, under a head row in meta text on the page's own surface, its rows square at the row
+  inset. A row's trailing facts
   reach the box's edge.
 - Unless: a list page's table keeps the list page's rows, with no lines between them (K-16).
 - Checked by: picture.
@@ -566,7 +576,8 @@ large or its list overfull. Each came from a fault seen in the app.
 
 - When: a dialog holds fields.
 - Then: the library's `Dialog` at its own width over a backdrop that dims the window, titled
-  through `title_row` (`DIALOG_TITLE`), its close mark muted and named in its tooltip. Its
+  through `title_row` (`DIALOG_TITLE`, a step over the chrome and a step under the library's
+  own title), its close mark muted and named in its tooltip. Its
   fields are `field`s, `gap_4` apart; what blocks it stands above the footer in the danger
   ink. Its footer (`footer_row`) sits on the right: the dismissing button first, then the one
   primary action or the danger word, at its fields' size. A third action stands at the
@@ -574,7 +585,7 @@ large or its list overfull. Each came from a fault seen in the app.
   line (C-06). One that asks one thing stands at its own width with `.short()` controls; one
   that holds a form stands at `DIALOG_FORM` with `.tall()` ones.
 - Unless: a question without fields (a retry, a removal) is an alert dialog (S-13), never a
-  dialog of its own.
+  dialog of its own; a start that fails is said once, in an error toast.
 - Checked by: review.
 
 #### K-31 A dialog that starts a run says what the run is before its fields
@@ -584,8 +595,7 @@ large or its list overfull. Each came from a fault seen in the app.
   stands in the way, what the person adds) with a hairline (`sections`). The branch it cuts
   stands in a well beside its branch mark. Each thing found before the start leads with its
   state's mark: a warning in the danger ink when it blocks the start, an information mark in
-  meta ink when it only tells; an action beside one takes the secondary fill (C-07). A start
-  that fails is said once, in an error toast.
+  meta ink when it only tells; an action beside one takes the secondary fill (C-07).
 - Checked by: review.
 
 ### Details
@@ -652,7 +662,7 @@ large or its list overfull. Each came from a fault seen in the app.
 - Then: the screen goes back to the last value known saved, not the one before the change,
   and says so once, as an `error` toast (*Renaming the session failed: <why>*). What goes back
   is the one change, not the file: each thing a write carried goes back alone to its own last
-  saved value. A pick the agent applies (a mode, a model) is the same: the agent refusing it
+  saved value, and a write that carries a thing and lands moves its saved value forward. A pick the agent applies (a mode, a model) is the same: the agent refusing it
   is its failed save.
 - Unless: a later save that carries the thing supersedes the failure. A save that is an act
   rather than a value (closing an issue, adding a comment) is superseded by nothing: each
@@ -692,8 +702,8 @@ large or its list overfull. Each came from a fault seen in the app.
 - Unless: an empty state that blocks every action in the window may carry, under its line,
   what fixes it: commands in the code face and one secondary button to the place it is fixed,
   all centred in one column.
-- Checked by: tests `a_project_page_with_no_conversations_draws_no_rows`,
-  `a_flat_list_names_no_projects_and_says_when_nothing_matches`; review for the words.
+- Checked by: test `a_flat_list_names_no_projects_and_says_when_nothing_matches` for one
+  list; review.
 
 ### Failing and refusing
 
@@ -718,7 +728,8 @@ large or its list overfull. Each came from a fault seen in the app.
 #### S-12 A toast's kind is what it means
 
 - When: transient news is shown.
-- Then: `window.push_notification` with a notification built by the shared `toast` builder,
+- Then: `window.push_notification` with a notification built by the UI crate's `toast`
+  (`crate::toast` in the app, which gives a failure its form and trims the period),
   one sentence without a trailing period: `error` when an action failed; `warning` when it was
   done only in part, or something now needs the person; `success` when a long or background
   action finished that the screen does not already show; `info` for news that asks for nothing.
@@ -733,12 +744,14 @@ large or its list overfull. Each came from a fault seen in the app.
   and in a feature crate: the title asks the question naming the thing (*Remove <name> from
   the workspace?*); the description says what goes and what stays; the buttons read *Keep*,
   then the danger word, the same verb as the control that asked. A lesser way ahead stands
-  between them, secondary, and then Enter answers the danger word; a question with only that
-  word keeps Enter closing it. The control starting a removal is a word in the danger tint
+  between them, secondary (closing a lead reads *Keep*, *Close the lead only*, *Close all*),
+  and then Enter answers the danger word; a question with only that word keeps Enter closing
+  it. The control starting a removal is a word in the danger tint
   (C-09).
 - Unless: what can be undone or resumed goes ahead without asking (stopping what offers
   *Resume*, taking an item off a queue, unbinding a key, closing what can be opened again),
-  except where it also ends something that cannot be.
+  except where it also ends something that cannot be: closing an issue a run is working on
+  asks (*Close <title>?*), since it ends that run too.
 - Checked by: review.
 
 ### Keys and focus
@@ -750,7 +763,7 @@ Keyboard focus and its ring are T-24.
 - When: a key acts.
 - Then: it is a command in the keymap (`crates/app/src/keymap.rs`), so it can be rebound;
   `on_key_down` is for typing only.
-- Checked by: test `every_menu_item_is_a_command`; review.
+- Checked by: test `every_menu_item_is_a_command` for a menu's items; review for a key.
 
 #### W-02 A control bound to a command shows its key
 

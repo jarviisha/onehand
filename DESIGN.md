@@ -4,7 +4,8 @@ The whole-app UI contract for `onehand`: the principles every view follows, the 
 the transcript, and the visual rules every screen is drawn with. `docs/screens.md` says what
 each region holds and in what order, a feature's own document (`docs/tasks.md`,
 `docs/workflows.md`) its screens' detail, and `docs/ui-patterns.md` the patterns every screen
-repeats, how they hold under strain and how they behave. Code never cites this file.
+repeats, how they hold under strain and how they behave. It binds at the level written here;
+below it, the code and its tests decide. Code never cites this file.
 
 This contract defines onehand's own visual language: quiet navigation, clear content hierarchy,
 compact controls and predictable alignment. Its values (each size, each colour) are the
@@ -262,7 +263,7 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
 | A heading in reading text | a step up the scale per level, two at most; then the body's size |
 | A page's title, in its head | `CHROME_TEXT`, semibold |
 | The title of one thing read in full (an issue, a task) | `.text_lg()` |
-| The display size, for the one heading of an empty view | `.text_xl()` |
+| The empty session's heading, the display size | `.text_xl()` |
 
 - Checked by: test `the_sizes_are_the_listed_ones` for each constant's value; review for the role.
 
@@ -314,12 +315,11 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
 - Unless: what a cut draws (L-02).
 - Checked by: review.
 
-#### T-08 Mono for machines, the interface face for people, both shipped
+#### T-08 The interface and mono faces ship with the app
 
-- When: any text is drawn.
-- Then: code, paths, terminal output and diffs use `mono_font_family`; anything a person wrote
-  uses the default family. Both faces ship with the app (`crate::fonts`), so text looks and
-  centres the same everywhere; `[font].monospace` may name another installed mono family.
+- When: text is drawn in either face (*Principles*, 3, says which text takes which).
+- Then: both ship with the app (`crate::fonts`), so text looks and centres the same
+  everywhere; `[font].monospace` may name another installed mono family.
 - Checked by: review.
 
 #### T-09 Space takes one of gpui's steps
@@ -327,7 +327,7 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
 - When: a gap, an inset or a padding is set.
 - Then: one of `0p5`, `1`, `1p5`, `2`, `3`, `4`, `6`, `8`, picked by the relationship (K-05),
   not by what fits one screenshot. A named spacing constant equals one of them.
-- Checked by: review; guard `a_size_is_written_once_in_a_constant` holds a number written anywhere else.
+- Checked by: review.
 
 #### T-10 A size is in rems, has a name, and is written once
 
@@ -380,7 +380,8 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
 - Then: its box is wrapped in a hairline (`border`) and stands on the window's fill, its own
   fill a step off it, parted from its neighbours and the window's edge by `REGION_GAP`, which
   shows the window's fill.
-- Checked by: tests `the_regions_stand_a_step_apart`, `a_box_stands_apart_from_the_window`.
+- Checked by: tests `the_regions_stand_a_step_apart`, `a_box_stands_apart_from_the_window` for
+  the fills' step; picture for the hairline and the gap.
 
 #### T-16 Lines part content inside a region
 
@@ -389,8 +390,7 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
   facing its detail, on the box's own fill; under a page's head, where the page's own content
   starts. A list page's line over its foot is a step fainter (`faint_rule`), so the
   edge-to-edge list reads as one surface. A box on a page takes a step stronger edge, a
-  control's (`input`); a group of settings keeps the hairline. Tabs in a tab bar are parted by
-  space, not lines, the open one a rounded `secondary` fill with its name in the content ink.
+  control's (`input`); a group of settings keeps the hairline.
 - Unless: a folding block has no edge at all (*Transcript*).
 - Checked by: review.
 
@@ -405,7 +405,8 @@ WCAG AA are in `docs/known-gaps.md`; `crate::theme`'s tests hold each at what it
 - Then: `cx.theme()`'s slot named for the role (T-21). A step no slot holds is derived in
   `crate::theme` or `onehand_ui::ink` from the slots, with its contrast asserted there, and a
   step between two tokens is mixed perceptually (`mix_oklab`), so both modes derive it by one
-  rule. Never a value in a view.
+  rule. Never a value in a view: a hex literal is a bug even when it looks right, as no theme
+  switch reaches it.
 - Checked by: lint (the colour constructors are banned outside the palette); guard
   `a_colour_is_written_in_the_palette_alone`.
 
@@ -423,7 +424,9 @@ WCAG AA are in `docs/known-gaps.md`; `crate::theme`'s tests hold each at what it
 #### T-19 Surfaces are neutral greys, a visible step apart
 
 - When: a surface is filled.
-- Then: on the dark palette the reading surface is the deepest, a charcoal still clear of
+- Then: reading content is the visual anchor, on the reading surface; the title bar and the
+  rail stand a step off it on the window's fill, and a box's own chrome stays quieter by its
+  inks. On the dark palette the reading surface is the deepest, a charcoal still clear of
   black, and every region's box is drawn on it; the window's fill, under the title bar, the
   rail and the gaps between the boxes, a step over it; a floating surface a step over the
   page, told apart by its fill and its edge. The light palette turns it over: the boxes white
@@ -436,10 +439,9 @@ WCAG AA are in `docs/known-gaps.md`; `crate::theme`'s tests hold each at what it
 
 - When: a part takes a hue rather than a grey.
 - Then: it says a state, a link, a label's kind or code in prose, or it is the primary action,
-  the palette's one blue. Focus and selection are greys.
-- Unless: the control that switched a mode on may carry a state's hue on its own mark while the
-  mode is on, and nowhere else.
-- Checked by: test `hover_stays_neutral`; picture.
+  the palette's one blue. Focus and selection are greys. *Principles*, 2, holds the one other
+  place a hue may stand: the mark of a control that switched a mode on.
+- Checked by: test `hover_stays_neutral` for the greys; picture.
 
 #### T-21 A role takes its token
 
@@ -470,9 +472,10 @@ WCAG AA are in `docs/known-gaps.md`; `crate::theme`'s tests hold each at what it
 
 - When: the pointer is over something pickable.
 - Then: a row takes the hover step (`list_hover`; on the rail `sidebar_accent`). A ghost button
-  takes the library's own hover; a secondary button its pointed-at step. Hover changes a fill,
-  never an ink or a layout (K-04).
-- Checked by: test `hover_stays_neutral`; picture.
+  takes the library's own hover; a secondary button rests on a fill of its own and takes its
+  pointed-at step, the selected step being a chosen row's alone. Hover changes a fill, never an
+  ink or a layout (K-04).
+- Checked by: test `hover_stays_neutral` for the greys; picture.
 
 #### T-23 The chosen item stands on the selected grey
 
@@ -505,7 +508,7 @@ WCAG AA are in `docs/known-gaps.md`; `crate::theme`'s tests hold each at what it
 - Then: a box on a page is a border; a region's box is a fill in a hairline; a well and a
   bubble are fills; an ordinary section is unboxed (K-01). A border, a contrasting fill and a
   shadow are never combined just to make a group visible.
-- Checked by: test `a_waiting_card_keeps_every_fill_and_line_drawn_on_it` for the card; review.
+- Checked by: review.
 
 #### T-27 One control carries a lift
 
@@ -556,8 +559,7 @@ WCAG AA are in `docs/known-gaps.md`; `crate::theme`'s tests hold each at what it
 | `danger` | C-09 |
 | ghost (`.quiet(cx)`) | the familiar, low-emphasis commands of a toolbar, a strip or a row; an unset picker's trigger (through `picker`) |
 
-- Then: each is drawn as the library draws it; no variant and no size is the library's default
-  and is never what a role takes.
+- Then: each is drawn as the library draws it.
 - Checked by: review.
 
 #### C-05 A control that cannot act refuses, and says why
@@ -597,8 +599,8 @@ WCAG AA are in `docs/known-gaps.md`; `crate::theme`'s tests hold each at what it
 #### C-09 Danger is a word, and a fill only to end or confirm
 
 - When: an action destroys something.
-- Then: a word in the danger tint. The solid `danger` fill marks two buttons only: the one that
-  stops work while it runs, and the one confirming a removal inside its modal (S-13).
+- Then: a word in the danger tint. The solid `danger` fill marks two buttons only: *Stop* in the
+  composer while a turn runs, and the button confirming a removal inside its modal (S-13).
 - Unless: nothing that destroys nothing takes the danger ink.
 - Checked by: review.
 
@@ -624,7 +626,8 @@ WCAG AA are in `docs/known-gaps.md`; `crate::theme`'s tests hold each at what it
   and size.
 - Unless: inside a fixed object smaller than a row of controls (an attachment's plate, a
   thumbnail) an icon-only control takes `.xsmall()` and a caption `MICRO_TEXT`, so neither
-  crowds what it sits on. A worded control never takes `.xsmall()`, whose words run to its edges.
+  crowds what it sits on. Anywhere else `.short()`, `.short_icon()` and the meta size are the
+  floor, and a worded control never takes `.xsmall()`, whose words run to its edges.
 - Checked by: review; test `the_sizes_are_the_listed_ones` for `CONTROL_H` and `FIELD_H`.
 
 ## Icons
