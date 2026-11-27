@@ -326,7 +326,8 @@ What each region holds, and in what order, is `docs/screens.md`'s, under the reg
 
 - When: a gap, an inset or a padding is set.
 - Then: one of `0p5`, `1`, `1p5`, `2`, `3`, `4`, `6`, `8`, picked by the relationship (K-05),
-  not by what fits one screenshot. A named spacing constant equals one of them.
+  not by what fits one screenshot. A named spacing constant equals one of them; `0`, `auto`
+  and `full` are not steps and stay allowed.
 - Checked by: review.
 
 #### T-10 A size is in rems, has a name, and is written once
@@ -466,7 +467,8 @@ WCAG AA are in `docs/known-gaps.md`; `crate::theme`'s tests hold each at what it
 | `theme::raised` | the input surface's card |
 | `secondary` | a document's code on a dock, a tab bar's open tab |
 
-- Checked by: review; the slots' names that mislead are in `.claude/skills/ui/tokens.md`.
+- Checked by: review. Several slot names are the library's and mislead (`accent` is the
+  selected grey, `muted` the well's fill, `link` the prose ink): the table says what each holds.
 
 #### T-22 Hover is a fill, a neutral step from the surface under it
 
