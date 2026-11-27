@@ -425,8 +425,9 @@ mod strain {
         assert!(drawn(cx, "settings-nav") && !drawn(cx, "settings-page"));
         pick(&shell, SettingsPage::Agents, cx);
         assert!(!drawn(cx, "settings-nav") && drawn(cx, "settings-page"));
+        // The way back stands over the page's scroll, never in it.
         let named = bounds(cx, "settings-back");
-        assert_inside(named, bounds(cx, "settings-page"), "the way back");
+        assert!(named.bottom() <= bounds(cx, "settings-page").top() + SLACK);
 
         // Back goes to the nav, the page still the one picked, and the
         // keyboard still on Settings.
@@ -446,6 +447,48 @@ mod strain {
         let _ = std::fs::remove_dir_all(dir);
     }
 
+    /// The least window that holds the nav beside the page, found from the
+    /// room Settings is given at the narrowest and the rule that splits it.
+    fn least_side_by_side(shell: &Entity<Shell>, cx: &mut VisualTestContext) -> Pixels {
+        at(shell, NARROWEST, cx);
+        let room = bounds(cx, "settings-room").size.width;
+        let rem = cx.update(|window, _| window.rem_size());
+        let mut need = room;
+        while !onehand_ui::fits_beside(super::super::NAV_W, gpui::rems(need / rem)) {
+            need += px(1.);
+        }
+        NARROWEST + (need - room)
+    }
+
+    /// Narrowing with the keyboard inside the page keeps the page, rather
+    /// than falling to the nav and taking the keyboard out of Settings.
+    #[gpui::test]
+    fn narrowing_with_the_keyboard_in_the_page_keeps_the_page(cx: &mut TestAppContext) {
+        let dir = folder("strain-settings-focus");
+        let (_, shell, cx) = shell(cx, dir.join("tasks"), Vec::new());
+        // Wide on Workspace, the nav the half last chosen.
+        at(&shell, NARROWEST, cx);
+        pick(&shell, SettingsPage::Workspace, cx);
+        let named = bounds(cx, "settings-back");
+        let link = point(named.left() + px(8.), named.center().y);
+        cx.simulate_click(link, Modifiers::none());
+        at(&shell, NARROWEST, cx);
+        assert!(drawn(cx, "settings-nav") && !drawn(cx, "settings-page"));
+        at(&shell, WIDE, cx);
+        assert!(drawn(cx, "settings-nav") && drawn(cx, "settings-page"));
+        cx.update(|window, cx| {
+            let field = shell.read(cx).workspace_name_input().clone();
+            gpui::Focusable::focus_handle(field.read(cx), cx).focus(window, cx);
+        });
+        cx.run_until_parked();
+        at(&shell, NARROWEST, cx);
+        assert!(!drawn(cx, "settings-nav") && drawn(cx, "settings-page"));
+        cx.update(|window, cx| {
+            assert!(shell.read(cx).settings_focus().contains_focused(window, cx));
+        });
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
     #[gpui::test]
     fn an_agents_command_and_its_actions_stay_inside_its_box(cx: &mut TestAppContext) {
         let dir = folder("strain-settings-agents");
@@ -456,9 +499,12 @@ mod strain {
             agent(unbroken(), path),
         ];
         let (_, shell, cx) = shell(cx, dir.join("tasks"), agents);
+        let edge = least_side_by_side(&shell, cx);
+        at(&shell, edge, cx);
+        assert!(drawn(cx, "settings-nav") && drawn(cx, "settings-page"));
         // Zoomed in the narrowest window, a row's actions outrun its box: a
         // known gap until the least needed go behind a menu.
-        let zooms: [(usize, &[Pixels]); 2] = [(0, &[NARROWEST, WIDE]), (TO_150, &[WIDE])];
+        let zooms: [(usize, &[Pixels]); 2] = [(0, &[NARROWEST, edge, WIDE]), (TO_150, &[WIDE])];
         for (steps, widths) in zooms {
             zoom_pane(&shell, steps, cx);
             for &w in widths {

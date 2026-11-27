@@ -555,14 +555,26 @@ impl SettingsView {
 }
 
 impl gpui::Render for SettingsView {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let Some(handle) = self.shell.upgrade() else {
             return div().into_any_element();
         };
-        let shown = match (
-            onehand_ui::fits_beside(NAV_W, self.width.get()),
-            self.page_alone,
-        ) {
+        let side_by_side = onehand_ui::fits_beside(NAV_W, self.width.get());
+        // Falling to one at a time with the keyboard inside the page keeps
+        // the page: drawing the nav instead would take what holds the
+        // keyboard out of the frame, and the keyboard out of Settings with
+        // it. The nav holds nothing that takes focus, so focus inside
+        // Settings but not on its own handle is inside the page, as the
+        // last frame drew it.
+        let focus = handle.read(cx).settings_focus();
+        if !side_by_side
+            && !self.page_alone
+            && focus.contains_focused(window, cx)
+            && !focus.is_focused(window)
+        {
+            self.page_alone = true;
+        }
+        let shown = match (side_by_side, self.page_alone) {
             (true, _) => Halves::Both,
             (false, true) => Halves::Page,
             (false, false) => Halves::Nav,
@@ -676,6 +688,7 @@ fn settings(
         // the pane's, never its content's.
         .child(
             div()
+                .debug_selector(|| "settings-room".into())
                 .relative()
                 .flex_1()
                 .min_h_0()
@@ -717,29 +730,43 @@ fn settings_nav(nav: Vec<AnyElement>, alone: bool, cx: &App) -> impl IntoElement
 
 /// The page beside the nav, or in its place under `named`, the way back.
 fn settings_body(page: AnyElement, named: Option<Div>) -> impl IntoElement {
-    // The page scrolls, not the frame: the nav has to stay reachable
-    // from the bottom of a long page, and the keymap is longer than
-    // any window.
+    // A reading measure, so a wide window does not stretch a field across
+    // it, centred in whatever room is left.
+    let measure = |child: AnyElement| {
+        div().h_flex().justify_center().w_full().child(
+            div()
+                .v_flex()
+                .w_full()
+                .max_w(crate::tokens::PAGE_PROSE)
+                .child(child),
+        )
+    };
+    let alone = named.is_some();
     div()
-        .id("settings-page")
-        .debug_selector(|| "settings-page".into())
         .flex_1()
         .min_w_0()
         .h_full()
-        .overflow_y_scroll()
-        .px_8()
-        .py_6()
+        .v_flex()
+        // The way back stands over the scroll, as the nav stands beside it:
+        // reachable from the bottom of a long page.
+        .when_some(named, |body, named| {
+            body.child(div().px_8().pt_6().child(measure(named.into_any_element())))
+        })
         .child(
-            // A reading measure, so a wide window does not stretch a
-            // field across it, centred in whatever room is left.
-            div().h_flex().justify_center().w_full().child(
-                div()
-                    .v_flex()
-                    .w_full()
-                    .max_w(crate::tokens::PAGE_PROSE)
-                    .when_some(named, |column, named| column.gap_4().child(named))
-                    .child(page),
-            ),
+            // The page scrolls, not the frame: the keymap is longer than
+            // any window.
+            div()
+                .id("settings-page")
+                .debug_selector(|| "settings-page".into())
+                .flex_1()
+                .min_h_0()
+                .overflow_y_scroll()
+                .px_8()
+                .map(|scroll| match alone {
+                    true => scroll.pt_4().pb_6(),
+                    false => scroll.py_6(),
+                })
+                .child(measure(page)),
         )
 }
 

@@ -22,7 +22,7 @@ impl Shell {
     }
 
     /// Show Settings in the agent pane, on the page it was left on, with the
-    /// keyboard on its nav. The docks go aside as for every page.
+    /// keyboard on Settings. The docks go aside as for every page.
     ///
     /// **A page, so nothing guards leaving it.** What it holds saves as it
     /// changes; the agent form is a dialog, so the page is not left while it
