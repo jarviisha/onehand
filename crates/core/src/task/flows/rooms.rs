@@ -64,6 +64,7 @@ fn starting(project: &Path, template: &Template, title: &str) -> Starting {
         grant: Default::default(),
         agent: None,
         mode: None,
+        column: None,
     }
 }
 

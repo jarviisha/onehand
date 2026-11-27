@@ -771,6 +771,7 @@ fn starting(place: crate::workflow::Place) -> crate::task::Starting {
         grant: Default::default(),
         agent: None,
         mode: None,
+        column: None,
     }
 }
 

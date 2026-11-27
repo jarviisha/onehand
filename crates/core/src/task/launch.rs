@@ -21,6 +21,8 @@ pub struct Starting {
     pub grant: Grant,
     pub agent: Option<String>,
     pub mode: Option<String>,
+    /// The board's column it starts in, when a board starts it.
+    pub column: Option<String>,
 }
 
 /// A launch that may go: a workflow, its brief, its setup, and what its task
@@ -32,6 +34,7 @@ pub struct Launch {
     setup: Setup,
     origin: Option<Origin>,
     grant: Grant,
+    column: Option<String>,
 }
 
 impl Launch {
@@ -69,6 +72,7 @@ impl Launch {
             setup,
             origin: None,
             grant: Grant::default(),
+            column: None,
         })
     }
 
@@ -105,6 +109,7 @@ impl Launch {
             setup: on_agent(setup, first),
             origin: Some(starting.origin),
             grant: starting.grant,
+            column: starting.column,
         })
     }
 
@@ -142,11 +147,15 @@ impl Launch {
 
     /// The new task, as task `id`.
     pub fn task(self, id: String) -> Task {
-        Task {
+        let mut task = Task {
             origin: self.origin,
             grant: self.grant,
             ..Task::new(id, self.template, self.brief, self.setup)
+        };
+        if let Some(run) = task.runs.first_mut() {
+            run.column = self.column;
         }
+        task
     }
 }
 
@@ -288,7 +297,26 @@ mod tests {
             grant: Grant::default(),
             agent: None,
             mode: Some("plan".into()),
+            column: None,
         }
+    }
+
+    /// A start a board makes in one of its columns: its first run keeps the
+    /// column's name, which a run read from an older file has none of.
+    #[test]
+    fn a_run_keeps_the_column_it_started_in() {
+        let given = Starting {
+            column: Some("Work".into()),
+            ..starting()
+        };
+        let task = Launch::off_screen(&[], given, None, None)
+            .unwrap()
+            .task("t".into());
+        assert_eq!(task.runs[0].column.as_deref(), Some("Work"));
+        let mut old = serde_json::to_value(&task.runs[0]).unwrap();
+        old.as_object_mut().unwrap().remove("column");
+        let read: crate::workflow::Run = serde_json::from_value(old).unwrap();
+        assert!(read.column.is_none());
     }
 
     /// Off screen, every block is said at once, and a start with no title

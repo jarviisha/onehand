@@ -76,6 +76,7 @@ fn adopted(board: &crate::board::Board, tasks: &[&Seen], now: Now) -> crate::boa
         task: Some(seen.id.clone()),
         run,
         since: now.secs,
+        done: false,
     };
     let work = (on.iter())
         .filter(|seen| seen.standing == Some(false))

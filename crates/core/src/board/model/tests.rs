@@ -55,21 +55,27 @@ fn rebound_keeps_team_and_to_do() {
     assert_eq!(board.team, 3);
 }
 
+/// A board of an earlier version is read only in the shape it had then.
 #[test]
-fn shape_refuses_what_step_one_does_not_know() {
-    assert!(made().shape().is_ok());
-    let mut third = made();
+fn shape_refuses_what_an_earlier_version_did_not_know() {
+    let old = || {
+        let mut board = made();
+        board.schema_version = 2;
+        board
+    };
+    assert!(old().shape().is_ok());
+    let mut third = old();
     third.columns.push(third.columns[0].clone());
     assert!(third.shape().is_err());
-    let mut person = made();
+    let mut person = old();
     person.columns[1].work = Work::Person;
     assert!(person.shape().is_err());
-    let mut flow = made();
+    let mut flow = old();
     flow.columns[0].work = Work::Workflow { id: "w".into() };
     assert!(flow.shape().is_err());
-    let mut done = made();
+    let mut done = old();
     done.done.push(done.columns[0].entries[0].clone());
-    assert!(done.shape().is_err());
+    assert!(done.shape().is_err(), "an issue on the board twice, and done with no task");
     let mut newer = made();
     newer.schema_version = SCHEMA_VERSION + 1;
     assert!(newer.shape().is_err());
@@ -81,6 +87,7 @@ fn work(issue: u64, task: &str) -> Entry {
         task: Some(task.into()),
         run: Some(task.into()),
         since: 5,
+        done: false,
     }
 }
 
@@ -110,13 +117,15 @@ fn version_two_with_work_and_done_is_read() {
 }
 
 #[test]
-fn a_work_entry_without_a_task_is_refused() {
+fn a_work_entry_without_a_task_is_refused_at_version_two() {
     let mut board = made();
+    board.schema_version = 2;
     board.columns[1].entries.push(Entry {
         issue: 3,
         task: None,
         run: None,
         since: 0,
+        done: false,
     });
     assert!(board.shape().is_err());
 }

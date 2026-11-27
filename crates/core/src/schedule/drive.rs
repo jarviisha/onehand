@@ -439,6 +439,7 @@ fn starting(s: &Schedule, library: &[Template]) -> Result<Starting, String> {
         },
         agent: s.agent.clone(),
         mode: s.mode.clone(),
+        column: None,
     })
 }
 

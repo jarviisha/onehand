@@ -10,7 +10,11 @@
 use serde::{Deserialize, Serialize};
 
 /// The version of the board file this build writes and reads.
-pub const SCHEMA_VERSION: u32 = 2;
+pub const SCHEMA_VERSION: u32 = 3;
+
+/// The version a board was written at while it had To do and one work
+/// column alone: read as it is.
+const SECOND_VERSION: u32 = 2;
 
 /// The version a board was written at before its columns named their
 /// tasks: read, and upgraded once the tasks are read.
@@ -89,7 +93,7 @@ pub enum MovesOn {
 }
 
 /// One issue's place on a board.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Entry {
     pub issue: u64,
     /// The task working the issue, once a column with work took it.
@@ -100,6 +104,13 @@ pub struct Entry {
     pub run: Option<String>,
     /// When it entered its column, in seconds.
     pub since: u64,
+    /// Its run ended done in its column, which it may now leave.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub done: bool,
+}
+
+fn is_false(done: &bool) -> bool {
+    !*done
 }
 
 impl Board {
@@ -108,9 +119,8 @@ impl Board {
     pub fn made(workflow: String, team: u8, todo: &[u64], since: u64) -> Board {
         let entry = |&issue: &u64| Entry {
             issue,
-            task: None,
-            run: None,
             since,
+            ..Entry::default()
         };
         Board {
             schema_version: SCHEMA_VERSION,
@@ -139,18 +149,22 @@ impl Board {
         }
     }
 
-    /// The id of the workflow the board's tasks run.
+    /// The id of the workflow of the board's first column that runs one.
     pub fn workflow(&self) -> &str {
-        match self.columns.get(1).map(|column| &column.work) {
-            Some(Work::Workflow { id }) => id,
-            Some(Work::Person) | None => "",
-        }
+        (self.columns.iter())
+            .find_map(|column| match &column.work {
+                Work::Workflow { id } => Some(id.as_str()),
+                Work::Person => None,
+            })
+            .unwrap_or("")
     }
 
-    /// The issues in To do, first first.
+    /// The issues of the first column that no task works yet, first first.
     pub fn todo(&self) -> Vec<u64> {
         (self.columns.first().into_iter())
-            .flat_map(|column| column.entries.iter().map(|entry| entry.issue))
+            .flat_map(|column| column.entries.iter())
+            .filter(|entry| entry.task.is_none())
+            .map(|entry| entry.issue)
             .collect()
     }
 
@@ -181,14 +195,15 @@ impl Board {
                     .find(|entry| entry.issue == issue)
                     .map_or(now, |entry| entry.since)
             };
-            let entries = (todo.iter())
+            let mut entries: Vec<Entry> = (todo.iter())
                 .map(|&issue| Entry {
                     issue,
-                    task: None,
-                    run: None,
                     since: since(issue),
+                    ..Entry::default()
                 })
                 .collect();
+            // What a task works there stays, after the issues in order.
+            entries.extend(column.entries.iter().filter(|e| e.task.is_some()).cloned());
             column.entries = entries;
         }
         board
@@ -197,12 +212,16 @@ impl Board {
     /// Whether this build can keep the board: its version, and the one shape
     /// it knows.
     pub(crate) fn shape(&self) -> Result<(), String> {
-        if self.schema_version != SCHEMA_VERSION && self.schema_version != FIRST_VERSION {
+        let known = [FIRST_VERSION, SECOND_VERSION, SCHEMA_VERSION];
+        if !known.contains(&self.schema_version) {
             return Err(format!(
                 "it was written as version {}, and this build of onehand reads version \
                  {SCHEMA_VERSION}",
                 self.schema_version
             ));
+        }
+        if self.schema_version == SCHEMA_VERSION {
+            return self.any_shape();
         }
         let known = match self.columns.as_slice() {
             [todo, work] => {
@@ -262,9 +281,12 @@ impl Board {
         self.schema_version == FIRST_VERSION
     }
 
-    /// The work column's entries, first first.
+    /// The entries of the board's first column that runs a workflow, first
+    /// first: what a board of one workflow column draws.
     pub fn work(&self) -> &[Entry] {
-        self.columns.get(1).map_or(&[], |column| &column.entries)
+        (self.columns.iter())
+            .find(|column| matches_workflow(&column.work))
+            .map_or(&[], |column| &column.entries)
     }
 
     /// What is done, newest first.
@@ -272,16 +294,18 @@ impl Board {
         &self.done
     }
 
-    /// Whether the board holds task `task`: its work column names it. One in
-    /// Done is the person's to take up again.
+    /// Whether the board holds task `task`: one of its columns names it. One
+    /// in Done is the person's to take up again.
     pub fn holds(&self, task: &str) -> bool {
         self.names(task) == Some(Place::Work)
     }
 
-    /// Where an entry naming `task` stands, if one does.
+    /// Where an entry naming `task` stands, if one does: in any column, or
+    /// in Done.
     pub fn names(&self, task: &str) -> Option<Place> {
         let named = |entries: &[Entry]| entries.iter().any(|e| e.task.as_deref() == Some(task));
-        match (named(self.work()), named(&self.done)) {
+        let in_columns = self.columns.iter().any(|column| named(&column.entries));
+        match (in_columns, named(&self.done)) {
             (true, _) => Some(Place::Work),
             (false, true) => Some(Place::Done),
             (false, false) => None,
@@ -319,6 +343,7 @@ impl Board {
                 task: Some(task.to_string()),
                 run: Some(task.to_string()),
                 since: now,
+                done: false,
             });
         }
         board
@@ -364,6 +389,8 @@ fn matches_workflow(work: &Work) -> bool {
         Work::Person => false,
     }
 }
+
+mod edit;
 
 #[cfg(test)]
 mod tests;

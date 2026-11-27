@@ -173,6 +173,7 @@ fn holding(work: &[(&str, u64)], done: &[(&str, u64)]) -> Board {
         task: Some(task.into()),
         run: Some(task.into()),
         since: 0,
+        done: false,
     };
     board(2, &[]).upgraded(
         work.iter().map(entry).collect(),
