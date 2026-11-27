@@ -652,7 +652,11 @@ Appearance, Workspace, Agents, Hosts, Projects, Connections and Shortcuts (rows 
 step under a list row), and beside
 it the sub-page, untitled (its nav row names it), opening on its scope as a badge and a hint, its
 groups in the library's setting-page shape: each a box with an edge, its semibold heading and the
-line about it at the top inside. Every button there is secondary:
+line about it at the top inside. The nav and the sub-page stand side by side only while the room
+under the head holds the nav beside a readable page; else one at a time: the nav alone, the room's
+whole width, and a row picked there, or a way in that opens a sub-page (*Project settings…*, *Open
+the agent settings*), shows the sub-page alone under *Settings* (back) and its name. Back shows the
+nav again, the same row picked and the keyboard on Settings; Esc does neither. Every button there is secondary:
 Settings holds no primary. The Projects page, its scope *Project*, shows one project of the
 window whose sessions run here, a worker's row aside: *Project*, a menu of them (capped at 50,
 *N more not shown*), the one last picked while the window still has it, else the first; then one

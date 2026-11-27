@@ -558,7 +558,8 @@ large or its list overfull. Each came from a fault seen in the app.
   the freed width empty; its scroll spans the detail, the scrollbar on the detail's edge.
 - Checked by: tests `a_list_and_its_detail_share_a_container_only_when_both_fit`,
   `the_detail_mirrors_the_lists_range_across_the_container`,
-  `a_drag_never_takes_the_detail_under_its_minimum`.
+  `a_drag_never_takes_the_detail_under_its_minimum`,
+  `the_nav_and_the_page_show_one_at_a_time_where_both_do_not_fit`.
 
 ### Forms
 

@@ -228,6 +228,11 @@ the ones that exist. What workflows and tasks do not do is listed at the end of
   Comfortable / Compact density; no recorder that takes a pressed key combination (a shortcut is
   typed as text); and no export or import of the whole configuration. Managing MCP servers
   would be a group of its own on Connections. There is no search across Settings, and none is planned.
+- **An agent's row of actions outruns its box when the agent pane is zoomed in the narrowest
+  window.** At 100% the Agents page alone holds *Make default*, *Test*, the edit mark and
+  *Delete…* on one line; at 150% in a 720-wide window it does not. Fixing it means putting the
+  least needed of them behind a menu when the row is short of room, and which go there is the
+  owner's call.
 - **The Issues views say nothing of the work on an issue.** A task started on an issue (a
   lead's `start_issue`) is a task like any other, on the Tasks page; the issue it was briefed from shows no progress, pull request or review. *Work here* is
   the one way an issue leads to a session.
