@@ -2,8 +2,9 @@
 //
 // A headless sway seat has no pointer device, so `swaymsg seat cursor` moves
 // nothing a client sees. This creates a wlr virtual pointer, moves it to
-// X Y (pixels on the 1600x1000 output session.sh makes), and clicks, only
-// moves, or scrolls N notches down (negative: up). Built by session.sh.
+// X Y on a 1600x1000 extent stretched over the output, whatever its size
+// (drive.sh scales output pixels to it), and clicks, only moves, or scrolls
+// N notches down (negative: up). Built by session.sh.
 //
 // The pointer is destroyed when it is done, and the seat then has none, so
 // a client stops counting anything as hovered. HOLD_MS keeps it for that

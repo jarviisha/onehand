@@ -103,6 +103,57 @@ div().p_3().border_1().border_color(theme.border).bg(theme.muted).shadow(lift(cx
 div().v_flex().gap_2().child(heading).child(group)
 ```
 
+## The reviewer
+
+A change a person can see ends with a review its author does not write.
+
+**When.** Every change a person can see, before it is called finished. Skip it for a change to
+words alone, or one no screenshot can show (a key binding, focus order, a refusal's tooltip
+text), and say so in one line in the report and the pull request: *Not pictured: words only*,
+or *Not pictured: nothing a screenshot shows*. Where no headless session can run, the pull
+request says *Not pictured: no headless session here*. A contract-only change takes the
+contract path below and no reviewer.
+
+**The author first.** Build the app and drive the changed view with the `drive` skill's
+`matrix`: both palettes, at the narrowest width the view's region allows and a wide one. The
+scripts cannot drag, so a dock is pictured at the width the window gives it, and where the
+window cannot hold the conversation beside the narrowest useful Workbench (at 720 wide), the
+Workbench takes the whole area under a way back to the conversation: a dock's own narrowest
+width beside the conversation goes under what the reviewer could not see.
+Picture the states the change touches (a long name, an empty list, a hover) with more steps
+files. Read each picture yourself first.
+
+**The reviewer is fresh**: an agent with no part in the change, started for this alone. A
+subagent, or a second session where the host has no subagents (in Claude Code, for example, the
+Agent tool with `general-purpose`). Never the author answering for it. Where no second agent
+can be started, the pull request says *Not reviewed: no second agent*, and the owner's look
+stands alone.
+
+**Its brief**, filled in and handed over whole:
+
+```text
+You review a UI change you did not write. Intent, in one line: <what the change is for>.
+The diff, pasted whole: the output of
+  git diff BASE...HEAD -- crates .claude docs DESIGN.md AGENTS.md CONTEXT.md
+  (BASE the branch's base, main as a rule).
+The pictures, each with its width, palette and state: <path> (<width>, <light|dark>, <state>) …
+The rules the change touches; read each before answering: <the rule by its document and
+section, e.g. DESIGN.md, Colour and state; by its id once rules carry ids> …
+Answer one line per rule: holds; broken (which picture and where on it, the file and line in
+the diff); or cannot see (why: a hover not pictured, a zoom, text the view did not hold).
+Then "What I could not see": the states and widths no picture shows.
+Then anything else a picture shows wrong that no rule above names.
+```
+
+It is told nothing of the author's own judgment of the work.
+
+**Its findings** are fixed in the change, with the affected pictures taken again and given to the
+same reviewer, or to a fresh one given the earlier findings where it cannot be continued; at most
+two rounds, after which what is left is listed in the pull request as open. The pull request
+says in words what was pictured (the view, the widths, the palettes, the states) and what the
+reviewer found, fixed or left open. It gives no path: a picture under `/tmp` means nothing to a
+later reader. Nothing is dropped silently.
+
 ## Finishing
 
 Take the path the diff needs; neither path's evidence proves the other complete.
@@ -125,17 +176,21 @@ Take the path the diff needs; neither path's evidence proves the other complete.
 
 **Implementation changes.**
 
-1. **Answer [checklist.md](checklist.md)**: each item yes, no (its file and line) or n/a (why),
-   after reading the rule the item names.
-2. **Run the checks**: `cargo test -p onehand --locked`,
+1. **Run the checks**: `cargo test -p onehand --locked`,
    `cargo test -p <crate> --locked` for every other crate touched,
    `make clippy CLIPPY_EXTRA="-- -D warnings"` and `make fmt`. Quote any failure.
+2. **Picture and review**, as *The reviewer* says, or say why it was skipped.
 3. **Carry the documents** in the same change: what a screen holds or its order to
    `docs/screens.md` (or the feature's own document); a principle, the frame, the transcript or a
    visual rule to `DESIGN.md`, which gets at most one line per new region; a pattern or a
    behaviour to `docs/ui-patterns.md`; a token or a builder to tokens.md or catalog.md.
-4. **Compare peers and report**: the same-role component compared, the shared builder or tokens
+4. **Answer [checklist.md](checklist.md)**: each item yes, no (its file and line) or n/a (why),
+   after reading the rule the item names. Items 5, 8 and 9, which a picture can show, cite the
+   reviewer's lines from step 2 rather than your own judgment; item 17 stays the owner's own
+   checks, named.
+5. **Compare peers and report**: the same-role component compared, the shared builder or tokens
    checked, a changed shared default's callers inspected; failures, fixes, remaining gaps and
-   checks run. Hand the user a focused visual check in `make dev` or `make showcase` (both
-   themes, narrow and wide containers, zoom, long text, the states that apply), and claim no
-   visual verification: passing tests are not evidence of visual consistency.
+   checks run. Report what was pictured and what the reviewer found; passing tests are not
+   evidence of visual consistency. The owner's look stays, for taste: hand them a focused
+   visual check in `make dev` or `make showcase` (both themes, narrow and wide containers,
+   zoom, long text, the states that apply).
