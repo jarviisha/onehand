@@ -1,7 +1,7 @@
 //! What a row of a board says under its title, and the one thing it offers
 //! a person, worked out each time from where its issue stands.
 
-use super::model::Column;
+use super::model::{Column, Entry};
 use super::{Board, MovesOn, Starts, Work};
 
 /// What a row says of where its issue stands.
@@ -94,6 +94,39 @@ pub fn line(
             }
         }
     }
+}
+
+/// What the front end knows of an entry beside the board, as [`line`]
+/// takes it.
+#[derive(Debug, Clone, Default)]
+pub struct Facts {
+    pub run_here: bool,
+    pub working: bool,
+    pub starting: bool,
+    /// Why its column cannot start it, when it cannot.
+    pub start: Option<String>,
+}
+
+/// How many entries of `board` wait on a person: those whose line offers
+/// an act (a Start, or a move on), given what `facts` knows of each. The
+/// board's own waits, not a run's: a run waiting on an approval or a card
+/// is counted where tasks are.
+pub fn waiting(board: &Board, facts: impl Fn(&Column, &Entry) -> Facts) -> usize {
+    (board.columns.iter())
+        .flat_map(|column| column.entries.iter().map(move |entry| (column, entry)))
+        .filter(|(column, entry)| {
+            let f = facts(column, entry);
+            let (_, act) = line(
+                board,
+                entry.issue,
+                f.run_here,
+                f.working,
+                f.starting,
+                f.start.as_deref(),
+            );
+            act.is_some()
+        })
+        .count()
 }
 
 /// What a row done in `column` says, `next` the column it moves on to.

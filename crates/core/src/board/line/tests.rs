@@ -188,3 +188,51 @@ fn a_task_carried_in_at_work_is_its_task_not_waiting() {
     );
     assert_eq!(line(&b, 4, false, true, false, None), (Line::Task, None));
 }
+
+#[test]
+fn waiting_counts_what_waits_on_a_person() {
+    let mut b = board(
+        column("plan", flow(), Starts::OnPress, MovesOn::ByPerson),
+        entry(None, false),
+        Some(column(
+            "review",
+            Work::Person,
+            Starts::OnEntry,
+            MovesOn::ByPerson,
+        )),
+    );
+    let more = [
+        (5, Some("r5"), true),  // done here, a person moves it on
+        (6, Some("r6"), false), // a run asked for that never landed
+        (7, Some("r7"), false), // at work
+    ];
+    for (issue, run, done) in more {
+        b.columns[0].entries.push(Entry {
+            issue,
+            task: run.map(Into::into),
+            run: run.map(Into::into),
+            since: 1,
+            done,
+        });
+    }
+    b.columns[1].entries.push(Entry {
+        issue: 8,
+        ..Entry::default()
+    });
+    let facts = |_: &Column, e: &Entry| Facts {
+        run_here: e.issue == 7,
+        working: e.issue == 7,
+        starting: false,
+        start: None,
+    };
+    // 4 waits for Start, 5 is done here, 6 did not start; 7 works, 8 is a
+    // person's column at rest.
+    assert_eq!(waiting(&b, facts), 3);
+    let gone = |c: &Column, e: &Entry| Facts {
+        start: Some("Its workflow, w, is gone".into()),
+        ..facts(c, e)
+    };
+    // Nothing starts there: only 5, done, waits on a person, and 6 still
+    // says it did not start.
+    assert_eq!(waiting(&b, gone), 2);
+}
