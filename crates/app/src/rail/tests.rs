@@ -5,6 +5,7 @@ use super::model::{
 use super::model::{emptied, nest_workers};
 use super::project::{GitLine, project_hint};
 use super::row::project_key;
+use super::search::workspace_hint;
 use super::session::{LABEL_SHAPE_CAP, session_label, signal_hint};
 use super::workspace::new_session_hint;
 use crate::chat::pane::SessionSignal;
@@ -737,4 +738,167 @@ fn a_session_in_a_worktree_is_marked_with_its_branch() {
         Some("feat")
     );
     assert_eq!(super::model::branch_mark(&root, Path::new("/a")), None);
+}
+
+/// The workspace control is named with the workspace's name whole, short
+/// or long, before what a press does.
+#[test]
+fn the_workspace_hint_says_the_name_whole_before_what_a_press_does() {
+    for name in ["Notes".to_string(), "word ".repeat(40)] {
+        let hint = workspace_hint(&name);
+        let what = hint
+            .strip_prefix(name.as_str())
+            .unwrap_or_else(|| panic!("{hint:?} does not start with the name whole"));
+        assert!(
+            what.contains("Open another workspace"),
+            "{hint:?} does not say what a press does after the name"
+        );
+    }
+}
+
+mod strain {
+    use crate::shell::rig::strain::{
+        SHORT, SLACK, assert_inside, assert_one_height, bounds, long, same, selector, unbroken,
+    };
+    use crate::shell::rig::{folder, git, shell_on};
+    use gpui::{Bounds, Pixels, TestAppContext, VisualTestContext};
+    use onehand_core::config::PanelLayout;
+    use onehand_core::workspace::{ProjectRoot, Workspace};
+    use std::time::Duration;
+
+    /// A project row's parts, by the row's place.
+    struct Row {
+        row: Bounds<Pixels>,
+        name: Bounds<Pixels>,
+        tail: Bounds<Pixels>,
+        actions: Bounds<Pixels>,
+    }
+
+    fn row(i: usize, cx: &mut VisualTestContext) -> Row {
+        let part = |p: &str| selector(format!("rail-project-{p}{i}"));
+        Row {
+            row: bounds(cx, part("")),
+            name: bounds(cx, part("name-")),
+            tail: bounds(cx, part("tail-")),
+            actions: bounds(cx, part("actions-")),
+        }
+    }
+
+    /// A rail `rail_w` wide over three projects, each a repository on
+    /// `main`, named short, long and with nowhere to break, once their
+    /// branches are read.
+    fn rail<'a>(name: &str, rail_w: f32, cx: &'a mut TestAppContext) -> &'a mut VisualTestContext {
+        let dir = folder(&format!("strain-rail-{name}-{rail_w}"));
+        let names = [SHORT.to_string(), long(), unbroken()];
+        let roots = names.iter().enumerate().map(|(i, name)| {
+            let path = dir.join(format!("p{i}"));
+            std::fs::create_dir_all(&path).unwrap();
+            git(&path, &["init", "-q", "-b", "main"]);
+            git(
+                &path,
+                &[
+                    "-c",
+                    "user.email=t@example.com",
+                    "-c",
+                    "user.name=T",
+                    "commit",
+                    "-q",
+                    "--allow-empty",
+                    "-m",
+                    "one",
+                ],
+            );
+            let mut root = ProjectRoot::new(std::fs::canonicalize(&path).unwrap());
+            root.label = name.clone();
+            root
+        });
+        let mut ws = Workspace::seeded("/tmp");
+        ws.roots = roots.collect();
+        ws.layout.rail_w = rail_w;
+        let (_, shell, cx) = shell_on(cx, dir.join("tasks"), Vec::new(), ws);
+        cx.update(|_, cx| shell.update(cx, |shell, cx| shell.refresh_git(cx)));
+        // The branch is read off the UI thread; the row is drawn again when it lands.
+        for _ in 0..200 {
+            cx.run_until_parked();
+            if (0..3).all(|i| row(i, cx).tail.size.width > Pixels::ZERO) {
+                return cx;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        panic!(
+            "the projects' branches were never drawn: {:?}",
+            (0..3).map(|i| row(i, cx).tail).collect::<Vec<_>>()
+        );
+    }
+
+    /// How wide `text` is in the rail's own size, laid out on one line.
+    fn text_width(text: &str, cx: &mut VisualTestContext) -> Pixels {
+        cx.update(|window, _| {
+            let size = crate::tokens::CHROME_TEXT.to_pixels(window.rem_size());
+            let run = window.text_style().to_run(text.len());
+            window
+                .text_system()
+                .shape_line(text.to_string().into(), size, &[run], None)
+                .width
+        })
+    }
+
+    #[gpui::test]
+    fn a_long_project_name_truncates_and_its_tail_keeps_its_width(cx: &mut TestAppContext) {
+        let names = [SHORT.to_string(), long(), unbroken()];
+        let cx = rail("cut", PanelLayout::RAIL_MIN, cx);
+        let short = row(0, cx);
+        for (i, name) in names.iter().enumerate().skip(1) {
+            let named = row(i, cx);
+            assert!(
+                named.name.size.width < text_width(name, cx),
+                "row {i}'s name of {} chars is not cut: {:?}",
+                name.len(),
+                named.name
+            );
+            assert!(
+                same(named.tail.size.width, short.tail.size.width),
+                "row {i}'s tail gave way to its name: {:?} against {:?}",
+                named.tail,
+                short.tail
+            );
+            assert!(
+                same(named.actions.size.width, short.actions.size.width),
+                "row {i}'s actions gave way to its name"
+            );
+            assert!(
+                named.name.right() <= named.tail.left() + SLACK,
+                "row {i}'s name runs into its tail: {:?} {:?}",
+                named.name,
+                named.tail
+            );
+        }
+    }
+
+    /// Every row of the rail `cx` draws stands inside it, at a row's height,
+    /// its name and its tail inside it.
+    fn inside(cx: &mut VisualTestContext) {
+        let rem = cx.update(|window, _| window.rem_size());
+        let rail = bounds(cx, "rail");
+        let rows: Vec<Row> = (0..3).map(|i| row(i, cx)).collect();
+        for (i, named) in rows.iter().enumerate() {
+            assert!(
+                same(named.row.size.height, crate::tokens::ROW_H.to_pixels(rem)),
+                "row {i} is {:?} tall",
+                named.row.size.height
+            );
+            assert_inside(named.row, rail, "a project row");
+            assert_inside(named.name, named.row, "a project's name");
+            assert_inside(named.tail, named.row, "a project's tail");
+        }
+        assert_one_height(&rows.iter().map(|r| r.row).collect::<Vec<_>>(), "the rows");
+    }
+
+    #[gpui::test]
+    fn a_project_row_stays_inside_the_rail(cx: &mut TestAppContext) {
+        inside(rail("inside", PanelLayout::RAIL_MIN, cx));
+        let mut wide = TestAppContext::single();
+        inside(rail("inside", PanelLayout::RAIL_MAX, &mut wide));
+        wide.quit();
+    }
 }

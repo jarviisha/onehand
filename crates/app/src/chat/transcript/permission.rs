@@ -298,64 +298,67 @@ fn permission_footer(
         PermissionWeight::AllowOnce => 2,
     });
 
-    card_foot().children(options.into_iter().map(|(i, option)| {
-        let (id, session) = (option.id.clone(), session.clone());
-        // The kind's word on the button; the agent's own wording of the
-        // answer, where it says more, is the tooltip.
-        let label = SharedString::from(p.req.label(option).to_string());
-        let name = option.name.clone();
-        // **A key on the one button it answers with**: two refusals share a
-        // weight, and only the narrower carries the refusing keys.
-        let keyed = p
-            .req
-            .keyed(option.weight())
-            .is_some_and(|k| k.id == option.id);
-        grows(crate::controls::action(("perm", i)))
-            // One primary per card, and it is the grant that expires with this
-            // call. "Always allow" is the same word with a far longer reach:
-            // drawn as loudly it is the one clicked by muscle memory, and the
-            // one that cannot be taken back from the card. It stays reachable
-            // on the neutral secondary fill -- a decision, not a reflex. The
-            // answer that dismisses is a quiet ghost, as Skip is.
-            .map(|b| match (option.weight(), keyed) {
-                (PermissionWeight::AllowOnce, true) => b.primary().tooltip_with_action(
-                    name.clone(),
-                    &super::PermissionAllow,
-                    Some("PermissionCard"),
-                ),
-                (PermissionWeight::AllowOnce, false) => b.primary(),
-                (PermissionWeight::AllowAlways, _) => b.secondary(),
-                (PermissionWeight::Deny, true) => b.quiet(cx).tooltip_with_action(
-                    name.clone(),
-                    &super::PermissionDeny,
-                    Some("PermissionCard"),
-                ),
-                (PermissionWeight::Deny, false) => b.quiet(cx),
-            })
-            // The agent's wording, where it says more than the kind's word, on
-            // every button whose key's tooltip above does not carry it: the
-            // widest grant's reach is read there.
-            .when(
-                name != label.as_ref()
-                    && !(keyed && option.weight() != PermissionWeight::AllowAlways),
-                |b| b.tooltip(name.clone()),
-            )
-            // Its key beside its words, always in sight; the words are
-            // children, so they are named for a screen reader too.
-            .accessibility_label(name.clone())
-            .child(super::ask::labelled_owned(
-                label,
-                keyed.then_some(match option.weight() {
-                    PermissionWeight::AllowOnce => &super::PinnedAllow as &dyn gpui::Action,
-                    PermissionWeight::AllowAlways => &super::PinnedAlways,
-                    PermissionWeight::Deny => &super::PinnedDeny,
-                }),
-                cx,
-            ))
-            .on_click(move |_, _, cx: &mut App| {
-                answer_permission(&session, idx, &id, cx);
-            })
-    }))
+    card_foot()
+        .debug_selector(|| "perm-foot".into())
+        .children(options.into_iter().map(|(i, option)| {
+            let (id, session) = (option.id.clone(), session.clone());
+            // The kind's word on the button; the agent's own wording of the
+            // answer, where it says more, is the tooltip.
+            let label = SharedString::from(p.req.label(option).to_string());
+            let name = option.name.clone();
+            // **A key on the one button it answers with**: two refusals share a
+            // weight, and only the narrower carries the refusing keys.
+            let keyed = p
+                .req
+                .keyed(option.weight())
+                .is_some_and(|k| k.id == option.id);
+            grows(crate::controls::action(("perm", i)))
+                .debug_selector(move || format!("perm-answer-{i}"))
+                // One primary per card, and it is the grant that expires with this
+                // call. "Always allow" is the same word with a far longer reach:
+                // drawn as loudly it is the one clicked by muscle memory, and the
+                // one that cannot be taken back from the card. It stays reachable
+                // on the neutral secondary fill -- a decision, not a reflex. The
+                // answer that dismisses is a quiet ghost, as Skip is.
+                .map(|b| match (option.weight(), keyed) {
+                    (PermissionWeight::AllowOnce, true) => b.primary().tooltip_with_action(
+                        name.clone(),
+                        &super::PermissionAllow,
+                        Some("PermissionCard"),
+                    ),
+                    (PermissionWeight::AllowOnce, false) => b.primary(),
+                    (PermissionWeight::AllowAlways, _) => b.secondary(),
+                    (PermissionWeight::Deny, true) => b.quiet(cx).tooltip_with_action(
+                        name.clone(),
+                        &super::PermissionDeny,
+                        Some("PermissionCard"),
+                    ),
+                    (PermissionWeight::Deny, false) => b.quiet(cx),
+                })
+                // The agent's wording, where it says more than the kind's word, on
+                // every button whose key's tooltip above does not carry it: the
+                // widest grant's reach is read there.
+                .when(
+                    name != label.as_ref()
+                        && !(keyed && option.weight() != PermissionWeight::AllowAlways),
+                    |b| b.tooltip(name.clone()),
+                )
+                // Its key beside its words, always in sight; the words are
+                // children, so they are named for a screen reader too.
+                .accessibility_label(name.clone())
+                .child(super::ask::labelled_owned(
+                    label,
+                    keyed.then_some(match option.weight() {
+                        PermissionWeight::AllowOnce => &super::PinnedAllow as &dyn gpui::Action,
+                        PermissionWeight::AllowAlways => &super::PinnedAlways,
+                        PermissionWeight::Deny => &super::PinnedDeny,
+                    }),
+                    cx,
+                ))
+                .on_click(move |_, _, cx: &mut App| {
+                    answer_permission(&session, idx, &id, cx);
+                })
+        }))
 }
 
 /// Answer the pinned card, where it is a permission, with its option of

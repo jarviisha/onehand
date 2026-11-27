@@ -9,26 +9,24 @@ use crate::controls::Quiet as _;
 use crate::controls::Short as _;
 use crate::shell::Shell;
 use gpui::prelude::FluentBuilder as _;
-use gpui::{Anchor, Context, IntoElement, ParentElement, Styled, div};
+use gpui::{Anchor, Context, InteractiveElement as _, IntoElement, ParentElement, Styled, div};
 use gpui_component::menu::DropdownMenu as _;
 use gpui_component::{ActiveTheme, Icon, IconName, Selectable as _, StyledExt, h_flex};
 use onehand_ui::ShortIcon as _;
 
 /// The workspace's name and a chevron, a quiet button and a tab stop of its
 /// own, which opens the workspace menu when pressed and on Enter. It stands at
-/// the title bar's start; the name is cut at a character, as a menu row's is,
-/// and said whole on hover when it is.
+/// the title bar's start. The name is cut at a character, as a menu row's is,
+/// and its ellipsis cuts it further where the bar has less room, so any name
+/// may be cut: its tooltip always says the name whole, before what a press
+/// does.
 pub(crate) fn workspace_control(
     shell: &Shell,
     cx: &mut Context<Shell>,
 ) -> impl IntoElement + use<> {
     let workspace = &shell.workspace_window().workspace;
     let name = ellipsize(&workspace.name, MAX_LABEL);
-    let what = "Open another workspace, or start one";
-    let hint = match name.as_ref() == workspace.name {
-        true => what.to_string(),
-        false => format!("{}: {what}", workspace.name),
-    };
+    let hint = workspace_hint(&workspace.name);
     let initial: String = workspace
         .name
         .trim_start()
@@ -68,20 +66,32 @@ pub(crate) fn workspace_control(
         cx.entity().downgrade(),
     );
     h_flex()
-        .flex_none()
+        .min_w_0()
         .items_center()
         .gap_1p5()
         .children(tile)
-        .child(onehand_ui::menu_below(
-            "workspace-menu",
-            crate::controls::action("workspace-segment")
-                .quiet(cx)
-                .short()
-                .child(label)
-                .dropdown_caret(true)
-                .named(hint),
-            menu,
-        ))
+        .child(
+            onehand_ui::menu_below(
+                "workspace-menu",
+                crate::controls::action("workspace-segment")
+                    .debug_selector(|| "title-workspace".into())
+                    .min_w_0()
+                    .quiet(cx)
+                    .short()
+                    .child(label)
+                    .dropdown_caret(true)
+                    .named(hint),
+                menu,
+            )
+            // The wrapper the bar lays out gives way with the name in it.
+            .trigger_style(gpui::StyleRefinement::default().min_w_0()),
+        )
+}
+
+/// What the workspace control is named with: the workspace's name whole,
+/// then what a press does.
+pub(crate) fn workspace_hint(name: &str) -> String {
+    format!("{name}: Open another workspace, or start one")
 }
 
 /// *Sessions*, how many wait on the person, the search and the filter: a heading over

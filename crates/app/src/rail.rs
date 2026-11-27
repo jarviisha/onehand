@@ -46,6 +46,12 @@ pub(crate) use search::workspace_control;
 pub(crate) use session::{session_label, signal_mark, status_icon, word_ink};
 pub(crate) use workspace::ellipsize_front;
 
+/// A name as a menu row or the workspace control cuts it at a character.
+#[cfg(test)]
+pub(crate) fn cut_at_count(name: &str) -> gpui::SharedString {
+    row::ellipsize(name, row::MAX_LABEL)
+}
+
 /// How far a session row is set in under its project: one mark's slot, the
 /// fold's, and the gap after it. With the inset every row keeps, a session's
 /// mark stands under its project's folder and its title under the project's

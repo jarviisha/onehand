@@ -138,6 +138,12 @@ impl BoardPage {
         cx.notify();
     }
 
+    /// How far the columns can scroll sideways, as last drawn.
+    #[cfg(test)]
+    pub(crate) fn across_max(&self) -> gpui::Pixels {
+        self.across.max_offset().x
+    }
+
     fn handle(&mut self, key: RowKey, cx: &mut Context<Self>) -> FocusHandle {
         // ponytail: kept for every row the page has drawn on this project, a
         // few hundred at most; let go of when another project is shown.
@@ -211,6 +217,7 @@ impl BoardPage {
             .child(
                 div()
                     .id("board-columns")
+                    .debug_selector(|| "board-columns".into())
                     .size_full()
                     .h_flex()
                     .items_start()
@@ -462,16 +469,18 @@ impl BoardPage {
         };
         let ghost = SharedString::from(title.clone());
         let drags = move |row: Stateful<gpui::Div>| {
-            let row = row.on_drag(
-                IssueDrag {
-                    issue: number,
-                    from,
-                },
-                move |_, _, _, cx| {
-                    let ghost = ghost.clone();
-                    cx.new(|_| DragGhost(ghost))
-                },
-            );
+            let row = row
+                .debug_selector(move || format!("board-issue-{number}"))
+                .on_drag(
+                    IssueDrag {
+                        issue: number,
+                        from,
+                    },
+                    move |_, _, _, cx| {
+                        let ghost = ghost.clone();
+                        cx.new(|_| DragGhost(ghost))
+                    },
+                );
             let Some(id) = todo else {
                 return row;
             };
@@ -550,7 +559,12 @@ impl BoardPage {
             .gap_0p5()
             .flex_1()
             .min_w_0()
-            .child(div().truncate().child(title))
+            .child(
+                div()
+                    .debug_selector(|| format!("{name}-title"))
+                    .truncate()
+                    .child(title),
+            )
             .child(div().text_xs().text_color(ink).truncate().child(line));
         #[expect(
             clippy::disallowed_methods,
@@ -748,85 +762,4 @@ fn change_todo(id: &ProjectId, change: Todo, cx: &mut App) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{task_line, task_offers};
-    use crate::task::Row;
-    use onehand_core::task::Group;
-
-    fn row(group: Group, at: &str, waits: Option<&str>) -> Row {
-        Row {
-            id: "t".into(),
-            title: "Fix it".into(),
-            name: "from the board · Build".into(),
-            at: at.into(),
-            waits: waits.map(str::to_string),
-            waits_for_room: false,
-            project: "/p".into(),
-            group,
-            session: None,
-            resumable: false,
-            stoppable: false,
-            stopping: false,
-            extendable: false,
-        }
-    }
-
-    #[test]
-    fn a_task_says_what_it_waits_on() {
-        let approval = row(Group::Waiting, "Build", Some("Approving starts Review"));
-        assert_eq!(
-            task_line(&approval, "Build"),
-            "Needs attention · Approving starts Review"
-        );
-        let card = row(
-            Group::Waiting,
-            "Build",
-            Some("The agent asks something in its session"),
-        );
-        assert_eq!(
-            task_line(&card, "Build"),
-            "Needs attention · The agent asks something in its session"
-        );
-        let mut room = row(Group::Running, "Waiting for room at Review", None);
-        room.waits_for_room = true;
-        assert_eq!(task_line(&room, "Review"), "Waiting for room at Review");
-        assert_eq!(
-            task_line(&row(Group::Running, "Build", None), "Build"),
-            "Running"
-        );
-        assert_eq!(
-            task_line(&row(Group::Queued, "Build", None), "Gone"),
-            "Queued · Build"
-        );
-        let failed = row(
-            Group::Ended,
-            "failed",
-            Some("The agent of Build did not start"),
-        );
-        assert_eq!(
-            task_line(&failed, "Build"),
-            "Needs attention · The agent of Build did not start"
-        );
-    }
-
-    #[test]
-    fn a_task_offers_the_tasks_pages_acts() {
-        let labels = |row: &Row| -> Vec<&'static str> {
-            task_offers(row)
-                .into_iter()
-                .map(|act| act.map_or("Show task", |act| act.label()))
-                .collect()
-        };
-        let mut ended = row(Group::Ended, "failed", Some("It failed"));
-        ended.resumable = true;
-        assert_eq!(labels(&ended), ["Show task", "Resume", "Retry…", "Dismiss"]);
-        let mut running = row(Group::Running, "Build", None);
-        running.stoppable = true;
-        assert_eq!(labels(&running), ["Show task", "Stop"]);
-        assert_eq!(labels(&row(Group::Finished, "done", None)), ["Show task"]);
-        let mut out = row(Group::Waiting, "Build", Some("Out of time at Build"));
-        out.stoppable = true;
-        out.extendable = true;
-        assert_eq!(labels(&out), ["Show task", "Extend", "Stop"]);
-    }
-}
+mod tests;

@@ -239,26 +239,6 @@ fn enter_in_the_name_field_renames_the_project(cx: &mut TestAppContext) {
     let _ = std::fs::remove_dir_all(dir);
 }
 
-/// A conversation as a build kept it: `sid`, ran in `folder`, of `project`.
-fn kept_conversation(sid: &str, folder: &std::path::Path, project: &ProjectId) {
-    let dir = onehand_core::chat::conversations_dir().join(sid);
-    std::fs::create_dir_all(&dir).unwrap();
-    let meta = serde_json::json!({
-        "format": 2,
-        "session_id": sid,
-        "root": folder.display().to_string(),
-        "project": project.as_str(),
-        "agent": "Claude",
-        "created": 1,
-        "updated": 2,
-        "items": 1,
-        "title": null,
-        "preview": "hello",
-        "prefs": {},
-    });
-    std::fs::write(dir.join("meta.json"), meta.to_string()).unwrap();
-}
-
 /// `P` at `<dir>/p` recording its worktree `<dir>/p-x`, both folders made.
 fn project_with_worktree(
     dir: &std::path::Path,
@@ -291,7 +271,7 @@ fn a_conversation_of_a_removed_worktree_shows_on_its_projects_page(cx: &mut Test
     crate::shell::rig::keep_projects(handle, &_shell, vec![project.clone()], cx);
     let gone = dir.join("p-gone");
     let sid = format!("conv-stray-{}", std::process::id());
-    kept_conversation(&sid, &gone, &project.id);
+    crate::shell::rig::kept_conversation(&sid, &gone, &project.id, None);
     let own = cx.update(|_, cx| crate::projects::scope_of(&home, cx));
     let store = onehand_core::chat::conversations_dir();
     let listed = onehand_core::chat::list_conversations(&store, &own, None)
@@ -314,8 +294,8 @@ fn a_projects_row_lists_every_conversation_of_it(cx: &mut TestAppContext) {
     }
     let sid = format!("conv-once-{}", std::process::id());
     let stray = format!("conv-once-stray-{}", std::process::id());
-    kept_conversation(&sid, &worktree, &project.id);
-    kept_conversation(&stray, &dir.join("p-gone"), &project.id);
+    crate::shell::rig::kept_conversation(&sid, &worktree, &project.id, None);
+    crate::shell::rig::kept_conversation(&stray, &dir.join("p-gone"), &project.id, None);
     crate::shell::rig::show_workspace(&shell, cx);
     let mut found = Vec::new();
     for _ in 0..100 {
@@ -355,7 +335,7 @@ fn a_stray_conversation_never_resumes_in_its_projects_folder(cx: &mut TestAppCon
     cx.update(|window, cx| shell.update(cx, |shell, cx| shell.open_root(at, window, cx)));
     let gone = dir.join("p-gone");
     let sid = format!("conv-stray-resume-{}", std::process::id());
-    kept_conversation(&sid, &gone, &project.id);
+    crate::shell::rig::kept_conversation(&sid, &gone, &project.id, None);
     let archive = onehand_core::chat::conversations_dir().join(&sid);
     let sessions = |shell: &gpui::Entity<crate::shell::Shell>, cx: &mut gpui::VisualTestContext| {
         cx.update(|_, cx| {

@@ -371,6 +371,11 @@ minor bump may break any of them.
 
 ### Fixed
 
+- A long workspace name no longer moves the title bar: in a window narrower than about 1000 px it
+  is cut sooner, instead of pushing the search off the bar's centre and the toggles out of the
+  window. Its tooltip now always says the name whole, a short one too.
+- At a large zoom in a narrow pane, a past conversation's "N items · agent" line on a project's
+  page is cut, instead of the row's actions standing past its end.
 - A list that outgrows its box scrolls instead of squeezing its rows: the Issues list in the
   Workbench lost its titles under a scrollbar once it held more issues than fit, and the rail, the
   file tree, the documents list, the palette, the completion menu and the other scrolled lists were
