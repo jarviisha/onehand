@@ -258,6 +258,7 @@ fn start(project: ProjectId, issue: u64, task: String, template: Template, cx: &
                 grant: Grant::default(),
                 agent: None,
                 mode: None,
+                column: None,
             };
             let (_, placed) =
                 crate::control::start_task_as(id.clone(), window, shell, starting, cx).await?;
