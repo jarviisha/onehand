@@ -331,6 +331,10 @@ pub struct Run {
     /// it there.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub column: Option<String>,
+    /// What the task's run before it last answered, handed to it on the
+    /// board as `{handover}`; none on a first run.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub handover: Option<String>,
     #[serde(skip)]
     awaiting: Await,
     /// An extend's prompt, held while the run waits for room at the step it
@@ -340,6 +344,35 @@ pub struct Run {
 }
 
 impl Run {
+    /// What its task's detail calls it, as its `n`th run: by the board's
+    /// column it ran in, when it ran in one.
+    pub fn label(&self, n: usize) -> String {
+        match &self.column {
+            Some(column) => format!("Run {n} · {column}"),
+            None => format!("Run {n}"),
+        }
+    }
+
+    /// The answer its last visit to an agent step that keeps its answer
+    /// kept, if one did.
+    pub(crate) fn last_answer(&self) -> Option<&str> {
+        self.visits.iter().rev().find_map(|visit| {
+            let step = self.template.steps.iter().find(|s| s.id == visit.step)?;
+            match step.kind {
+                StepKind::Agent {
+                    keep_answer: true, ..
+                } => visit.output.as_deref(),
+                StepKind::Agent { .. }
+                | StepKind::Review { .. }
+                | StepKind::Command { .. }
+                | StepKind::Approval { .. }
+                | StepKind::Push
+                | StepKind::PullRequest
+                | StepKind::StatusChecks { .. } => None,
+            }
+        })
+    }
+
     /// A run of `template` on `brief`, not started: [`Run::resume`] starts
     /// it, so a run that waited for its place and one picked up again take
     /// the same way in.
@@ -366,6 +399,7 @@ impl Run {
             failure: None,
             pull_request: None,
             column: None,
+            handover: None,
             awaiting: Await::Nothing,
             extend_text: None,
         }

@@ -237,6 +237,9 @@ impl Run {
         // The same branch, so the same pull request: a retry from after the
         // pull request step works on the one the last run opened.
         run.pull_request = prev.pull_request.clone();
+        // The same column's run again: it is labelled and handed as it was.
+        run.column = prev.column.clone();
+        run.handover = prev.handover.clone();
         run
     }
 

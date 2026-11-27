@@ -2812,3 +2812,55 @@ fn a_command_runs_on_the_path_it_is_given() {
     assert!(ran.passed, "{}", ran.tail);
     assert!(ran.tail.starts_with("/onehand-shims:"), "{}", ran.tail);
 }
+
+/// `checkout()` with its first agent step's prompt set to `prompt`.
+fn first_prompt_is(prompt: &str) -> Template {
+    let mut template = checkout();
+    let step = template
+        .steps
+        .iter_mut()
+        .find(|s| matches!(s.kind, StepKind::Agent { .. }))
+        .unwrap();
+    if let StepKind::Agent { prompt: p, .. } = &mut step.kind {
+        *p = prompt.to_string();
+    }
+    template
+}
+
+#[test]
+fn handover_is_what_the_run_was_handed() {
+    let template = first_prompt_is("Go on from: {handover}");
+    let mut run = Run::new("1".into(), template.clone(), brief(), setup(None));
+    run.handover = Some("the plan".into());
+    assert_eq!(run.resume(0), Action::Measure);
+    let said = prompt_of(run.measured(mark("a", "d0"), 0));
+    assert!(said.starts_with("Go on from: the plan"), "{said}");
+    let mut first = Run::new("2".into(), template, brief(), setup(None));
+    assert_eq!(first.resume(0), Action::Measure);
+    let said = prompt_of(first.measured(mark("a", "d0"), 0));
+    assert!(said.starts_with("Go on from:\n"), "{said}");
+}
+
+#[test]
+fn handover_is_a_variable_anywhere() {
+    let template = first_prompt_is("Go on from: {handover}");
+    assert!(validate(&template).is_empty(), "{:?}", validate(&template));
+}
+
+#[test]
+fn a_retry_keeps_its_handover_and_its_column() {
+    let mut prev = Run::new("1".into(), checkout(), brief(), setup(None));
+    prev.handover = Some("the plan".into());
+    prev.column = Some("Ship".into());
+    let next = Run::retry_of(&prev, "2".into(), checkout(), None);
+    assert_eq!(next.handover.as_deref(), Some("the plan"));
+    assert_eq!(next.column.as_deref(), Some("Ship"));
+}
+
+#[test]
+fn a_run_labels_itself_by_its_column() {
+    let mut run = Run::new("1".into(), checkout(), brief(), setup(None));
+    assert_eq!(run.label(2), "Run 2");
+    run.column = Some("Review".into());
+    assert_eq!(run.label(2), "Run 2 · Review");
+}

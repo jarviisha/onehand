@@ -265,8 +265,11 @@ empty mode, an option with no id or no value, and an option `mode`, which is set
 ### Prompts
 
 A variable is `{name}`: `{brief}` (the title and details), `{instructions}`, `{check_output}` (what
-the failed command printed), `{revise}` (a person's note on a revision), `{output.<id>}` (what an
-earlier step kept). **Any other brace is text**, so a code sample needs no escaping. Because
+the failed command printed), `{revise}` (a person's note on a revision), `{handover}` (on a board,
+what the task's run before this one last answered: its last visit to an agent step keeping its
+answer; empty on a first run, and never refused as always empty, since a workflow cannot know
+whether it runs first), `{output.<id>}` (what an earlier step kept). `{handover}` is placed only
+where the prompt names it; onehand never adds it. **Any other brace is text**, so a code sample needs no escaping. Because
 validation refuses unknown names, filling a prompt in never fails.
 
 onehand adds, after the prompt: the instructions, a failed command's output and a revision note
@@ -639,6 +642,14 @@ agent by itself. *Resume* adds the task's folder back as a project if it left th
 starts a session on the agent the run used, and calls `Run::resume`, which also starts a run that
 never took a step. *Retry* starts a new run instead; [tasks.md](tasks.md#retry-and-resume) holds
 what it carries over.
+
+**A board starts a next run on an existing task** when one of its issues enters a workflow column
+after another (`Task::next_run`, through `TasksDrive::next_run`). The run is of that column's
+workflow, from its first step, on the task's own place (its project, folder, branch and forge),
+carrying no answer, with the agent, mode, check command and timeout a new task takes now. It keeps
+the column's name (`Run::column`), which labels it in the task's detail, and is handed what the
+run before it last answered, as `{handover}`. A Retry of it keeps both. It is refused while the
+task works or once its worktree was removed. [board.md](board.md) holds when a board starts one.
 
 At boot, behind the instance lock and right after the templates move, every run a build from
 before tasks kept in `<config_dir>/onehand/pipeline-runs/` becomes a task of the same id in
