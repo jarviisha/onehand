@@ -345,6 +345,11 @@ fn the_composers_controls_stay_inside_their_boxes(_: &mut TestAppContext) {
             field.size.width + SLACK >= wide[0].size.width.min(column.size.width),
             "the branch field is down to {field:?} at {zoom}%"
         );
+        let cards = bounds(cx, "page-cards");
+        assert!(
+            same(cards.right(), column.right()),
+            "the Cards chip leaves the strip's end at {zoom}%: {cards:?} in {column:?}"
+        );
         for (part, wide) in ["page-start-in", "page-cards"].into_iter().zip(&wide[1..]) {
             let at = bounds(cx, part);
             assert_inside(

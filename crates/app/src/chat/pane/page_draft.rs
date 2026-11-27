@@ -498,7 +498,7 @@ impl ChatPane {
                 )
             });
         let (cards, cost) = self.page_cards_chip(root, cx).unzip();
-        let strip = strip.child(div().flex_1()).children(cards);
+        let strip = strip.children(cards);
         div()
             .v_flex()
             .gap_2()

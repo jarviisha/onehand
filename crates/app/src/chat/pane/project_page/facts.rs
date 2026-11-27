@@ -34,9 +34,10 @@ pub(in crate::chat::pane) fn natural(
 }
 
 /// `child`, which draws `text` as [`natural`]'s does, in the room the parts
-/// before it leave over, up to the width `text` takes whole, once a
-/// [`Facts::ahead`] beside it holds its own; it is not drawn once that room
-/// cannot hold `lead`, the start of `text` that says what it is.
+/// before it leave over, up to the width `text` takes whole, sharing it with
+/// a [`Facts::ahead`] beside it in the order [`FACTS_KEEP_ROOM_FIRST`] sets;
+/// it is not drawn once that room cannot hold `lead`, the start of `text`
+/// that says what it is, cut after it.
 pub(in crate::chat::pane) fn leftover(
     text: impl Into<SharedString>,
     lead: impl Into<SharedString>,
@@ -50,10 +51,25 @@ pub(in crate::chat::pane) fn leftover(
     }
 }
 
-/// How far ahead of a [`leftover`] a [`Facts::ahead`] takes the room left
-/// over: flex shares it by grow factor, so this far apart the leftover gets
-/// all but nothing until the facts hold their whole width.
+/// Which of a [`Facts::ahead`] and a [`leftover`] beside it takes the room
+/// left over first, and so gives way last: the facts while this holds, else
+/// the leftover. The one order of a history row's facts and what it
+/// continued, set here alone.
+const FACTS_KEEP_ROOM_FIRST: bool = true;
+
+/// How far ahead the one that takes the room first takes it: flex shares it
+/// by grow factor, so this far apart the other gets all but nothing until the
+/// first holds its whole width.
 const AHEAD: f32 = 1e6;
+
+/// The grow factors of a [`Facts::ahead`] and of a [`leftover`], in the order
+/// [`FACTS_KEEP_ROOM_FIRST`] sets.
+const fn grows() -> (f32, f32) {
+    match FACTS_KEEP_ROOM_FIRST {
+        true => (AHEAD, 1.),
+        false => (1., AHEAD),
+    }
+}
 
 pub(in crate::chat::pane) struct Natural {
     text: SharedString,
@@ -79,9 +95,10 @@ impl Natural {
     }
 }
 
-/// The width `text` takes on one line in `style`, up to the next device
-/// pixel: layout rounds each edge to one, and a width off that grid can come
-/// out a fraction short, which cuts the text by its last character.
+/// The width `text` takes on one line in `style`, as a text element sizes
+/// it, up to the whole pixel, and then up to the next device pixel: layout
+/// rounds each edge to one, and a width off that grid can come out a fraction
+/// short, which cuts the text by its last character.
 fn whole_width(text: &SharedString, style: &TextStyle, window: &Window) -> Pixels {
     let size = style.font_size.to_pixels(window.rem_size());
     // Shaped as one line, which a hand-written title or a folder's name may
@@ -96,7 +113,7 @@ fn whole_width(text: &SharedString, style: &TextStyle, window: &Window) -> Pixel
         .shape_line(line, size, &[run], None)
         .width;
     let scale = window.scale_factor();
-    (width * scale).ceil() / scale
+    (width.ceil() * scale).ceil() / scale
 }
 
 /// Whether `room` holds `width`, in device pixels, where layout put both
@@ -150,11 +167,16 @@ impl Element for Natural {
             Give::Grows(lead) => {
                 let mut style = Style {
                     flex_basis: Length::from(Pixels::ZERO),
-                    flex_grow: 1.,
+                    flex_grow: grows().1,
                     ..Style::default()
                 };
                 style.max_size.width = Length::from(whole);
-                (style, whole_width(lead, &text, window))
+                // The lead cut after it, with the ellipsis, and a space's
+                // room more: the cut counts each letter's own width, which
+                // runs a little past the line's, and drops a trailing space,
+                // so short of this it takes a letter of the lead.
+                let cut = SharedString::from(format!("{lead} …"));
+                (style, whole_width(&cut, &text, window))
             }
         };
         style.min_size.width = Length::from(Pixels::ZERO);
@@ -209,19 +231,21 @@ pub(in crate::chat::pane) struct Facts {
     lead: AnyElement,
     rest: AnyElement,
     end: bool,
-    ahead: Option<(SharedString, TextStyleRefinement)>,
+    ahead: Option<(SharedString, SharedString, TextStyleRefinement)>,
 }
 
 impl Facts {
-    /// Up to the width `text`, all it says lettered as `lettered`, takes
-    /// whole, and that ahead of a [`leftover`] beside it, which gets what is
-    /// left once these hold it; at the row's end still if `end`.
+    /// Up to the width its lead and its rest take whole, `lead` and `rest`
+    /// being what they say lettered as `lettered`, and sharing the room with
+    /// a [`leftover`] beside it in the order [`FACTS_KEEP_ROOM_FIRST`] sets;
+    /// at the row's end still if `end`.
     pub(in crate::chat::pane) fn ahead(
         mut self,
-        text: impl Into<SharedString>,
+        lead: impl Into<SharedString>,
+        rest: impl Into<SharedString>,
         lettered: TextStyleRefinement,
     ) -> Self {
-        self.ahead = Some((text.into(), lettered));
+        self.ahead = Some((lead.into(), rest.into(), lettered));
         self
     }
 }
@@ -275,11 +299,14 @@ impl Element for Facts {
             ..Style::default()
         };
         style.min_size.width = Length::from(Pixels::ZERO);
-        if let Some((text, lettered)) = &self.ahead {
+        if let Some((lead, rest, lettered)) = &self.ahead {
             let mut letters = window.text_style();
             letters.refine(lettered);
-            style.max_size.width = Length::from(whole_width(text, &letters, window));
-            style.flex_grow = AHEAD;
+            // Each part as its own text element sizes it: rounded up on its
+            // own, the two can take a pixel more than the line whole.
+            let whole = whole_width(lead, &letters, window) + whole_width(rest, &letters, window);
+            style.max_size.width = Length::from(whole);
+            style.flex_grow = grows().0;
             // Held to its width, it still stands at the row's end.
             if self.end {
                 style.margin.left = Length::Auto;

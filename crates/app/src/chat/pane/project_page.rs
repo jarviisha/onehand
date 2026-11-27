@@ -604,9 +604,10 @@ impl ChatPane {
                         // has worked in the project, and resuming a row
                         // starts a session on the one that held it.
                         // The title is what the row is for, so what stands
-                        // beside it takes only the room the title leaves:
-                        // the facts first, and what it continued the rest,
-                        // which gives way first.
+                        // beside it takes only the room the title leaves,
+                        // and gives way first: what it continued and the
+                        // facts in the order `facts::FACTS_KEEP_ROOM_FIRST`
+                        // sets, the facts keeping theirs first.
                         .children(meta.continued.as_ref().map(|earlier| {
                             let said = format!("Continued from {earlier}");
                             facts::leftover(
@@ -645,7 +646,8 @@ impl ChatPane {
                                 true,
                             )
                             .ahead(
-                                format!("{} · {}", count_of(meta.item_count, "item"), meta.agent),
+                                count_of(meta.item_count, "item"),
+                                format!(" · {}", meta.agent),
                                 gpui::StyleRefinement::default().text_xs().text,
                             ),
                         )

@@ -286,6 +286,9 @@ impl ChatPane {
                 menu
             },
         )
+        // At the strip's end, on whichever line it stands when the strip
+        // wraps.
+        .trigger_style(gpui::StyleRefinement::default().min_w_0().ml_auto())
         .into_any_element();
         Some((chip, cost))
     }
